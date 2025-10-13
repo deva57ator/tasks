@@ -58,8 +58,12 @@ body.theme-dark .switch-knob{background:#dcdcdc;box-shadow:0 1px 4px rgba(0,0,0,
 .ctx-submenu-item{padding:8px 10px;border-radius:8px;cursor:pointer;user-select:none}
 .ctx-submenu-item:hover{background:var(--hover)}
 .due-btn{border:none;background:transparent;color:var(--text);padding:6px 8px;font-size:14px;cursor:pointer;border-radius:10px;opacity:0;transition:opacity .12s ease,background .12s ease}
-.task:hover .due-btn{opacity:1}
+.task:hover .due-btn,.due-btn:focus-visible{opacity:1}
 .due-btn:hover{background:var(--hover)}
+.delete-btn{border:none;background:transparent;color:var(--muted);padding:6px 8px;font-size:16px;line-height:1;cursor:pointer;border-radius:10px;opacity:0;transition:opacity .12s ease,background .12s ease,color .12s ease}
+.task:hover .delete-btn,.delete-btn:focus-visible{opacity:1;color:var(--text)}
+.task.is-selected .delete-btn{opacity:1}
+.delete-btn:hover{background:var(--hover);color:var(--text)}
 .toggle{width:20px;height:20px;display:grid;place-items:center;cursor:pointer;border-radius:6px;user-select:none}
 .toggle:hover{background:var(--hover)}
 .toggle::before{content:"▾"}

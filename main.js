@@ -67,7 +67,7 @@ function renderTaskRow(t,depth,container){
   const cb=document.createElement('div');cb.className='checkbox';cb.dataset.checked=t.done;cb.title=t.done?'Снять отметку выполнения':'Отметить как выполненную';cb.onclick=e=>{e.stopPropagation();toggleTask(t.id)};
   const title=document.createElement('div');title.className='task-title';title.textContent=t.title;
   const dueBtn=document.createElement('button');dueBtn.className='due-btn';dueBtn.title='Установить дедлайн';dueBtn.textContent='📅';dueBtn.onclick=e=>{e.stopPropagation();openDuePicker(t.id,dueBtn)};
-  const del=document.createElement('button');del.className='icon-btn';del.textContent='Удалить';del.onclick=e=>{e.stopPropagation();handleDelete(t.id)};
+  const del=document.createElement('button');del.className='delete-btn';del.type='button';del.setAttribute('aria-label','Удалить задачу');del.title='Удалить задачу';del.textContent='×';del.onclick=e=>{e.stopPropagation();handleDelete(t.id)};
   row.append(toggle,cb,title,dueBtn,del);
   if(t.due){const tag=document.createElement('span');tag.className='due-tag';tag.textContent=formatDue(t.due);title.appendChild(tag)}
   if(t.project){const ptag=document.createElement('span');ptag.className='proj-tag';ptag.textContent=getProjectTitle(t.project);title.appendChild(ptag)}
