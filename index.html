@@ -57,17 +57,21 @@
       </div>
     </section>
 
-    <div class="theme-toggle">
-      <span class="label">Тема</span>
-      <div class="switch" id="themeSwitch" role="switch" aria-checked="false" tabindex="0" data-mode="light">
-        <div class="switch-knob"></div>
-      </div>
-    </div>
   </aside>
 
   <main class="main">
     <div class="header">
       <div class="title" id="viewTitle">Все задачи</div>
+      <div class="header-actions">
+        <button
+          type="button"
+          class="icon-btn theme-btn"
+          id="themeToggle"
+          aria-label="Переключить на тёмную тему"
+          aria-pressed="false"
+          title="Переключить на тёмную тему"
+        ></button>
+      </div>
     </div>
     <div class="composer">
       <input id="taskInput" class="input" type="text" placeholder="Новая задача…" />

@@ -96,10 +96,10 @@ function startEdit(row,t){
   input.addEventListener('blur',()=>{setTimeout(()=>input.focus(),0)})
 }
 
-function applyTheme(mode){const dark=mode==='dark';document.body.classList.toggle('theme-dark',dark);const sw=$('#themeSwitch');sw.dataset.mode=dark?'dark':'light';sw.setAttribute('aria-checked',String(dark))}
-const themeSwitch=$('#themeSwitch');
+function applyTheme(mode){const dark=mode==='dark';document.body.classList.toggle('theme-dark',dark);const btn=$('#themeToggle');if(btn){const label=dark?'Переключить на светлую тему':'Переключить на тёмную тему';btn.dataset.mode=dark?'dark':'light';btn.setAttribute('aria-pressed',String(dark));btn.setAttribute('aria-label',label);btn.title=label}}
+const themeToggle=$('#themeToggle');
 function toggleTheme(){const dark=!document.body.classList.contains('theme-dark');applyTheme(dark?'dark':'light');ThemeStore.write(dark?'dark':'light')}
-if(themeSwitch){themeSwitch.addEventListener('click',toggleTheme);themeSwitch.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();toggleTheme()}})}
+if(themeToggle){themeToggle.addEventListener('click',toggleTheme)}
 
 const cal={track:null,curr:null,nextbuf:null,title:null,legend:null,toggle:null,prev:null,next:null,today:null,month:null,year:null,collapsed:false,focusDate:null,monthWeeks:[],activeWeekIndex:0};
 function normalizeDate(value){const d=new Date(value);d.setHours(0,0,0,0);return d}
