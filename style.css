@@ -17,7 +17,7 @@ code, .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consol
 .cal-today::before{content:"○";font-size:14px;line-height:1}
 .cal-legend{display:grid;grid-template-columns:38px repeat(7,1fr);gap:2px;padding:4px 0;color:var(--muted);font-size:11px}
 .cal-legend div{padding:2px 0;text-align:center}
-.cal-viewport{overflow:hidden;position:relative;height:calc(6*32px + 18px)}
+.cal-viewport{overflow:hidden;position:relative;height:calc(5*32px + 16px)}
 .calendar .cal-viewport{display:flex;flex-direction:column;justify-content:flex-end}
 .cal-spacer{height:8px}
 .cal-track{display:flex;transition:transform .24s ease;will-change:transform}
