@@ -1,7 +1,7 @@
 :root{--bg:#f6f7f9;--text:#171717;--muted:#7a7a7a;--hint:#c2c2c2;--hover:#ededed;--hover-strong:#e2e5eb;--icon:#171717;--surface:#ffffff;--toast-bg:rgba(255,255,255,.92);--toast-border:#e5e5e5;--shadow:0 6px 18px rgba(0,0,0,.10);--sidebar-bg:#ffffff;--sidebar-shadow:0 8px 24px rgba(0,0,0,.10);--radius:14px;--cal-grid:#e9e9e9;--cal-today:#dcdcdc;--cal-week-bg:#f3f3f3;--sel-bg:#e9eef9}
 body.theme-dark{--bg:#0f1115;--text:#e7e7e7;--muted:#a5a5a5;--hint:#4b4f57;--hover:#1a1d23;--hover-strong:#22262d;--icon:#e7e7e7;--surface:transparent;--toast-bg:rgba(22,24,29,.95);--toast-border:#2a2e36;--shadow:0 10px 24px rgba(0,0,0,.35);--sidebar-bg:#171b22;--sidebar-shadow:none;--radius:16px;--cal-grid:#2a2e36;--cal-today:#262a31;--cal-week-bg:#1c2129;--sel-bg:#1b2433}
-body{margin:0;background:var(--bg);color:var(--text);font-family:"IBM Plex Sans",sans-serif;font-size:15px;line-height:1.45;height:100vh;display:grid;grid-template-columns:260px 1fr;gap:16px;box-sizing:border-box;padding:16px}
-code, .mono{font-family:"IBM Plex Mono",monospace}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,Inter,"Noto Sans",Ubuntu,Cantarell,"Helvetica Neue",Arial,sans-serif;font-size:15px;line-height:1.45;height:100vh;display:grid;grid-template-columns:260px 1fr;gap:16px;box-sizing:border-box;padding:16px}
+code, .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
 .sidebar{display:grid;grid-template-rows:auto 1fr auto auto;gap:6px;padding:12px;background:var(--sidebar-bg);border-radius:var(--radius);box-shadow:var(--sidebar-shadow)}
 .sidebar h2{margin:2px 6px 6px;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px}
 .nav{display:flex;flex-direction:column;gap:6px}
@@ -105,3 +105,5 @@ body.theme-dark .switch-knob{background:#dcdcdc;box-shadow:0 1px 4px rgba(0,0,0,
 .proj-item .name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .proj-input{width:100%;border:none;border-bottom:1px solid var(--hint);padding:6px 2px;background:transparent;color:var(--text);outline:none}
 @media (max-width:860px){body{grid-template-columns:1fr}.sidebar{order:2}.main{order:1}}
+
+button,input,select,textarea{font:inherit}
