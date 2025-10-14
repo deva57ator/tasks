@@ -112,12 +112,19 @@ code, .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consol
 .proj-item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:10px}
 .proj-item:hover{background:var(--hover)}
 .proj-item .name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.emoji-btn{width:28px;height:28px;border-radius:8px;border:1px solid transparent;background:var(--hover);display:flex;align-items:center;justify-content:center;font-size:18px;cursor:pointer;transition:background .12s ease,border-color .12s ease,transform .08s ease}
-.emoji-btn:hover{background:var(--hover-strong);border-color:var(--hint)}
-.emoji-btn:active{transform:translateY(1px)}
-.emoji-menu{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:8px;min-width:auto}
-.emoji-menu button{border:none;background:transparent;font-size:20px;cursor:pointer;border-radius:8px;padding:6px}
-.emoji-menu button:hover{background:var(--hover)}
+.proj-main{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
+.proj-emoji-badge{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:28px;border-radius:8px;background:var(--hover);font-size:18px;line-height:1}
+.proj-actions{display:flex;align-items:center;gap:4px}
+.proj-action-btn{appearance:none;border:none;background:transparent;color:var(--text);padding:6px;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;min-width:28px;min-height:28px;transition:background .12s ease,color .12s ease}
+.proj-action-btn:hover{background:var(--hover)}
+.proj-action-btn:focus-visible{outline:2px solid var(--hint);outline-offset:2px}
+.proj-action-btn.is-active{background:var(--hover-strong)}
+.proj-action-btn:disabled{opacity:.45;cursor:default;pointer-events:none}
+
+#emojiPickerHost{position:fixed;z-index:14000;background:var(--surface);border:1px solid var(--toast-border);box-shadow:var(--shadow);border-radius:14px;min-width:320px;max-width:360px;max-height:420px;overflow:hidden;display:flex}
+#emojiPickerHost[hidden]{display:none}
+#emojiPickerHost emoji-picker{flex:1;max-height:420px;--background:var(--surface);--border-color:var(--toast-border);--border-radius:0;--color:var(--text);--button-hover-background:var(--hover);--button-active-background:var(--hover-strong);--category-button-color:var(--muted);--category-button-active-color:var(--text);--category-button-active-background:var(--hover);--input-border-radius:12px;--search-background:var(--hover);--search-border-color:var(--toast-border);--search-color:var(--text);font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,Inter,"Noto Sans",Ubuntu,Cantarell,"Helvetica Neue",Arial,sans-serif}
+body.theme-dark #emojiPickerHost emoji-picker{--button-hover-background:var(--hover-strong);--button-active-background:var(--hover-strong);--search-background:var(--hover-strong)}
 .proj-input{width:100%;border:none;border-bottom:1px solid var(--hint);padding:6px 2px;background:transparent;color:var(--text);outline:none}
 @media (max-width:860px){body{grid-template-columns:1fr}.sidebar{order:2}.main{order:1}}
 

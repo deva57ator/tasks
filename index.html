@@ -11,6 +11,7 @@
     rel="stylesheet"
   />
   <link rel="stylesheet" href="style.css" />
+  <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1"></script>
 </head>
 <body>
   <aside class="sidebar">
@@ -84,7 +85,7 @@
   <div class="context-menu" id="ctxMenu" role="menu" aria-hidden="true"></div>
   <div class="context-menu" id="dueMenu" aria-hidden="true"></div>
   <div class="context-menu" id="projCtxMenu" role="menu" aria-hidden="true"></div>
-  <div class="context-menu emoji-menu" id="emojiMenu" role="menu" aria-hidden="true"></div>
+  <div id="emojiPickerHost" hidden></div>
   <div class="ctx-submenu" id="ctxSub" aria-hidden="true"></div>
 
   <div class="notes-overlay" id="notesOverlay" aria-hidden="true"></div>
