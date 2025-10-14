@@ -240,9 +240,10 @@ function openEmojiPicker(projectId,anchor){
   emojiPickerHost.setAttribute('aria-hidden','false');
   const rect=anchor.getBoundingClientRect();
   const hostRect=emojiPickerHost.getBoundingClientRect();
-  const width=hostRect.width||320;
-  const height=hostRect.height||360;
   const padding=8;
+  const availableWidth=Math.max(160,window.innerWidth-padding*2);
+  const width=hostRect.width||Math.min(availableWidth,360);
+  const height=hostRect.height||360;
   const maxLeft=Math.max(padding,window.innerWidth-width-padding);
   const preferredLeft=Math.max(padding,rect.left);
   const left=Math.min(preferredLeft,maxLeft);
