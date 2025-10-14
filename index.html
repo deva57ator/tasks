@@ -86,6 +86,20 @@
   <div class="context-menu" id="projCtxMenu" role="menu" aria-hidden="true"></div>
   <div class="ctx-submenu" id="ctxSub" aria-hidden="true"></div>
 
+  <div class="notes-overlay" id="notesOverlay" aria-hidden="true"></div>
+  <aside class="notes-sidebar" id="notesSidebar" aria-hidden="true">
+    <div class="notes-header">
+      <div class="notes-label">Заметки</div>
+      <button type="button" class="notes-close" id="notesClose" aria-label="Закрыть заметки">×</button>
+    </div>
+    <div class="notes-task" id="notesTaskTitle"></div>
+    <textarea
+      class="notes-input"
+      id="notesInput"
+      placeholder="Добавьте заметки для этой задачи..."
+    ></textarea>
+  </aside>
+
   <script src="main.js" defer></script>
 </body>
 </html>

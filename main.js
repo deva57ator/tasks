@@ -15,20 +15,21 @@ const $=s=>document.querySelector(s),$$=s=>Array.from(document.querySelectorAll(
 const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
 
 function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('show'),1400)}
-function migrate(list){for(const t of list){if(!Array.isArray(t.children)) t.children=[];if(typeof t.collapsed!=='boolean') t.collapsed=false;if(typeof t.done!=='boolean') t.done=false;if(!('due' in t)) t.due=null;if(!('project' in t)) t.project=null;if(t.children.length) migrate(t.children)}return list}
+function migrate(list){for(const t of list){if(!Array.isArray(t.children)) t.children=[];if(typeof t.collapsed!=='boolean') t.collapsed=false;if(typeof t.done!=='boolean') t.done=false;if(!('due' in t)) t.due=null;if(!('project' in t)) t.project=null;if(typeof t.notes!=='string') t.notes='';if(t.children.length) migrate(t.children)}return list}
 tasks=migrate(tasks);
 
 function findTask(id,list=tasks){for(const t of list){if(t.id===id) return t;const r=findTask(id,t.children||[]);if(r) return r}return null}
 function rowClass(t){return'task'+(t.collapsed?' is-collapsed':'')+(selectedTaskId===t.id?' is-selected':'')+(t.done?' done':'')}
 function getVisibleTaskIds(){return $$('#tasks .task[data-id]').map(el=>el.dataset.id)}
-function addTask(title){title=String(title||'').trim();if(!title) return;tasks.unshift({id:uid(),title,done:false,children:[],collapsed:false,due:null,project:null});Store.write(tasks);render()}
-function addSubtask(parentId){const p=findTask(parentId);if(!p) return;const child={id:uid(),title:'',done:false,children:[],collapsed:false,due:null,project:null};p.children.push(child);p.collapsed=false;Store.write(tasks);pendingEditId=child.id;render()}
+function addTask(title){title=String(title||'').trim();if(!title) return;tasks.unshift({id:uid(),title,done:false,children:[],collapsed:false,due:null,project:null,notes:''});Store.write(tasks);render()}
+function addSubtask(parentId){const p=findTask(parentId);if(!p) return;const child={id:uid(),title:'',done:false,children:[],collapsed:false,due:null,project:null,notes:''};p.children.push(child);p.collapsed=false;Store.write(tasks);pendingEditId=child.id;render()}
 function toggleTask(id){const t=findTask(id);if(!t) return;t.done=!t.done;Store.write(tasks);render();toast(t.done?'Отмечено как выполнено':'Снята отметка выполнения')}
 function deleteTask(id,list=tasks){for(let i=0;i<list.length;i++){if(list[i].id===id){list.splice(i,1);return true}if(deleteTask(id,list[i].children)) return true}return false}
 function handleDelete(id,{visibleOrder=null}={}){
   if(!Array.isArray(visibleOrder))visibleOrder=getVisibleTaskIds();
   const removed=deleteTask(id,tasks);
   if(!removed)return;
+  if(NotesPanel.taskId===id)closeNotesPanel();
   let nextId=null;
   if(visibleOrder){
     const idx=visibleOrder.indexOf(id);
@@ -41,10 +42,17 @@ function handleDelete(id,{visibleOrder=null}={}){
   Store.write(tasks);
   render()
 }
-function renameTask(id,title){const t=findTask(id);if(!t) return;const v=String(title||'').trim();if(v&&v!==t.title){t.title=v;Store.write(tasks)}render()}
+function renameTask(id,title){const t=findTask(id);if(!t) return;const v=String(title||'').trim();if(v&&v!==t.title){t.title=v;if(NotesPanel.taskId===id&&NotesPanel.title)NotesPanel.title.textContent=t.title;Store.write(tasks)}render()}
 function toggleCollapse(id){const t=findTask(id);if(!t) return;t.collapsed=!t.collapsed;Store.write(tasks);render()}
 
 const Ctx={el:$('#ctxMenu'),taskId:null,sub:document.getElementById('ctxSub')};
+const NotesPanel={panel:document.getElementById('notesSidebar'),overlay:document.getElementById('notesOverlay'),close:document.getElementById('notesClose'),title:document.getElementById('notesTaskTitle'),input:document.getElementById('notesInput'),taskId:null};
+
+function updateNoteIndicator(taskId){const btn=document.querySelector(`.task[data-id="${taskId}"] .note-btn`);if(btn){const t=findTask(taskId);btn.dataset.hasNotes=t&&t.notes&&t.notes.trim()? 'true':'false'}}
+
+function openNotesPanel(taskId){const t=findTask(taskId);if(!t||!NotesPanel.panel||!NotesPanel.overlay||!NotesPanel.input)return;closeContextMenu();NotesPanel.taskId=taskId;NotesPanel.title&&(NotesPanel.title.textContent=t.title||'');NotesPanel.input.value=t.notes||'';NotesPanel.overlay.classList.add('is-visible');NotesPanel.overlay.setAttribute('aria-hidden','false');NotesPanel.panel.classList.add('is-open');NotesPanel.panel.setAttribute('aria-hidden','false');document.body.classList.add('notes-open');setTimeout(()=>{try{NotesPanel.input.focus({preventScroll:true})}catch{NotesPanel.input.focus()}},60);updateNoteIndicator(taskId)}
+
+function closeNotesPanel(){if(!NotesPanel.panel||!NotesPanel.overlay)return;NotesPanel.taskId=null;NotesPanel.overlay.classList.remove('is-visible');NotesPanel.overlay.setAttribute('aria-hidden','true');NotesPanel.panel.classList.remove('is-open');NotesPanel.panel.setAttribute('aria-hidden','true');document.body.classList.remove('notes-open');NotesPanel.title&&(NotesPanel.title.textContent='');NotesPanel.input&&(NotesPanel.input.value='')}
 function openContextMenu(taskId,x,y){
   Ctx.taskId=taskId;const menu=Ctx.el;menu.innerHTML='';
   const btnEdit=document.createElement('div');btnEdit.className='context-item';btnEdit.textContent='Редактировать';
@@ -60,9 +68,13 @@ function openContextMenu(taskId,x,y){
 }
 function closeContextMenu(){Ctx.taskId=null;Ctx.el.style.display='none';Ctx.el.setAttribute('aria-hidden','true');closeAssignSubmenu()}
 window.addEventListener('click',e=>{if(!Ctx.el.contains(e.target)&&!Ctx.sub.contains(e.target))closeContextMenu()});
-window.addEventListener('keydown',e=>{if(e.key==='Escape')closeContextMenu()});
+window.addEventListener('keydown',e=>{if(e.key==='Escape'){closeContextMenu();closeNotesPanel()}});
 window.addEventListener('resize',closeContextMenu);
 window.addEventListener('scroll',closeContextMenu,true);
+
+NotesPanel.overlay&&NotesPanel.overlay.addEventListener('click',()=>closeNotesPanel());
+NotesPanel.close&&NotesPanel.close.addEventListener('click',()=>closeNotesPanel());
+NotesPanel.input&&NotesPanel.input.addEventListener('input',()=>{if(!NotesPanel.taskId)return;const task=findTask(NotesPanel.taskId);if(!task)return;task.notes=NotesPanel.input.value;Store.write(tasks);updateNoteIndicator(task.id)});
 
 function render(){
   $$('.nav-btn').forEach(b=>b.classList.toggle('is-active',b.dataset.view===currentView));
@@ -82,9 +94,10 @@ function renderTaskRow(t,depth,container){
   const toggle=document.createElement('div');toggle.className='toggle';toggle.style.visibility=(t.children&&t.children.length)?'visible':'hidden';toggle.onclick=e=>{e.stopPropagation();toggleCollapse(t.id)};
   const cb=document.createElement('div');cb.className='checkbox';cb.dataset.checked=t.done;cb.title=t.done?'Снять отметку выполнения':'Отметить как выполненную';cb.onclick=e=>{e.stopPropagation();toggleTask(t.id)};
   const title=document.createElement('div');title.className='task-title';title.textContent=t.title;
+  const noteBtn=document.createElement('button');noteBtn.className='note-btn';noteBtn.type='button';noteBtn.setAttribute('aria-label','Заметки задачи');noteBtn.title='Открыть заметки';noteBtn.textContent='📝';noteBtn.onclick=e=>{e.stopPropagation();openNotesPanel(t.id)};noteBtn.dataset.hasNotes=t.notes&&t.notes.trim()? 'true':'false';
   const dueBtn=document.createElement('button');dueBtn.className='due-btn';dueBtn.title='Установить дедлайн';dueBtn.textContent='📅';dueBtn.onclick=e=>{e.stopPropagation();openDuePicker(t.id,dueBtn)};
   const del=document.createElement('button');del.className='delete-btn';del.type='button';del.setAttribute('aria-label','Удалить задачу');del.title='Удалить задачу';del.textContent='×';del.onclick=e=>{e.stopPropagation();handleDelete(t.id)};
-  row.append(toggle,cb,title,dueBtn,del);
+  row.append(toggle,cb,title,noteBtn,dueBtn,del);
   if(t.due){const tag=document.createElement('span');tag.className='due-tag';tag.textContent=formatDue(t.due);title.appendChild(tag)}
   if(t.project){const ptag=document.createElement('span');ptag.className='proj-tag';ptag.textContent=getProjectTitle(t.project);title.appendChild(ptag)}
   row.addEventListener('click',()=>{
@@ -180,7 +193,7 @@ document.addEventListener('keydown',e=>{
   if((e.key==='Backspace'||e.key==='Delete')&&selectedTaskId){e.preventDefault();handleDelete(selectedTaskId,{visibleOrder:getVisibleTaskIds()})}
 });
 
-if(!tasks.length){tasks=[{id:uid(),title:'Добавь несколько задач',done:false,collapsed:false,due:null,project:null,children:[{id:uid(),title:'Пример подзадачи',done:false,collapsed:false,due:null,project:null,children:[]} ]},{id:uid(),title:'ПКМ по строке → «Редактировать»',done:false,collapsed:false,due:null,project:null,children:[]},{id:uid(),title:'Отметь как выполненную — увидишь зачёркивание',done:true,collapsed:false,due:null,project:null,children:[] }];Store.write(tasks)}
+if(!tasks.length){tasks=[{id:uid(),title:'Добавь несколько задач',done:false,collapsed:false,due:null,project:null,notes:'',children:[{id:uid(),title:'Пример подзадачи',done:false,collapsed:false,due:null,project:null,notes:'',children:[]} ]},{id:uid(),title:'ПКМ по строке → «Редактировать»',done:false,collapsed:false,due:null,project:null,notes:'',children:[]},{id:uid(),title:'Отметь как выполненную — увидишь зачёркивание',done:true,collapsed:false,due:null,project:null,notes:'',children:[] }];Store.write(tasks)}
 if(!projects.length){projects=[{id:uid(),title:'Личный'},{id:uid(),title:'Работа'}];ProjectsStore.write(projects)}
 
 function getProjectTitle(id){const p=projects.find(x=>x.id===id);return p?p.title:'Проект'}
