@@ -103,8 +103,12 @@ code, .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consol
 .sprint-task.is-done{opacity:.6}
 .sprint-task-title{font-size:13px;font-weight:500;color:var(--text)}
 .sprint-task.is-done .sprint-task-title{text-decoration:line-through}
-.sprint-chip{font-size:11px;line-height:1;padding:2px 6px;border-radius:999px;background:var(--pill-bg,rgba(0,0,0,0.08));color:var(--muted);display:inline-flex;align-items:center;gap:4px;letter-spacing:.02em}
-.theme-dark .sprint-chip{background:rgba(255,255,255,0.08);color:var(--muted)}
+.sprint-project-group{display:flex;flex-direction:column;gap:6px;border-left:1px solid var(--cal-grid);padding-left:10px;margin-left:2px;margin-bottom:10px}
+.sprint-project-group:last-child{margin-bottom:0}
+.sprint-project-tag{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--muted)}
+.sprint-project-emoji{font-size:16px;line-height:1}
+.sprint-project-name{font-size:12px;color:var(--muted)}
+.sprint-project-group .sprint-task{padding-left:0}
 .sprint-empty{color:var(--muted);font-size:12px}
 .projects{margin-top:8px}
 .proj-header{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:2px 0}
