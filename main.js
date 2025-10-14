@@ -52,6 +52,7 @@ function getVisibleTaskIds(){return $$('#tasks .task[data-id]').map(el=>el.datas
 function addTask(title){title=String(title||'').trim();if(!title) return;tasks.unshift({id:uid(),title,done:false,children:[],collapsed:false,due:null,project:null,notes:''});Store.write(tasks);render()}
 function addSubtask(parentId){const p=findTask(parentId);if(!p) return;const depth=getTaskDepth(parentId);if(depth===-1||depth>=MAX_TASK_DEPTH){toast('Максимальная вложенность — три уровня');return}const inheritedProject=typeof p.project==='undefined'?null:p.project;const child={id:uid(),title:'',done:false,children:[],collapsed:false,due:null,project:inheritedProject,notes:''};p.children.push(child);p.collapsed=false;Store.write(tasks);pendingEditId=child.id;render()}
 function toggleTask(id){const t=findTask(id);if(!t) return;t.done=!t.done;Store.write(tasks);render();toast(t.done?'Отмечено как выполнено':'Снята отметка выполнения')}
+function markTaskDone(id){const t=findTask(id);if(!t)return;if(t.done){toast('Задача уже выполнена');return}t.done=true;Store.write(tasks);render();toast('Отмечено как выполнено')}
 function deleteTask(id,list=tasks){for(let i=0;i<list.length;i++){if(list[i].id===id){list.splice(i,1);return true}if(deleteTask(id,list[i].children)) return true}return false}
 function handleDelete(id,{visibleOrder=null}={}){
   if(!Array.isArray(visibleOrder))visibleOrder=getVisibleTaskIds();
@@ -85,13 +86,15 @@ function openContextMenu(taskId,x,y){
   Ctx.taskId=taskId;const menu=Ctx.el;menu.innerHTML='';closeAssignSubmenu();closeDuePicker();
   const btnEdit=document.createElement('div');btnEdit.className='context-item';btnEdit.textContent='Редактировать';
   btnEdit.onclick=()=>{closeContextMenu();const row=document.querySelector(`.task[data-id="${taskId}"]`);const t=findTask(taskId);if(!t)return;if(row)startEdit(row,t);else{const next=prompt('Название задачи',t.title||'');if(next!==null)renameTask(taskId,next)}};
+  const btnComplete=document.createElement('div');btnComplete.className='context-item';btnComplete.textContent='Отметить выполненной';
+  btnComplete.onclick=()=>{closeContextMenu();markTaskDone(taskId)};
   const btnAssign=document.createElement('div');btnAssign.className='context-item';btnAssign.textContent='Проект ▸';
   btnAssign.addEventListener('mouseenter',()=>{openAssignSubmenu(taskId,menu);closeDuePicker()});
   btnAssign.addEventListener('mouseleave',()=>maybeCloseSubmenu());
   const btnDue=document.createElement('div');btnDue.className='context-item';btnDue.textContent='Дата ▸';btnDue.dataset.menuAnchor='true';
   btnDue.addEventListener('mouseenter',()=>{closeAssignSubmenu();openDuePicker(taskId,btnDue,{fromContext:true})});
   btnDue.addEventListener('mouseleave',()=>{setTimeout(()=>{if(Due.el.dataset.fromContext==='true'){const anchor=Due.anchor;if(anchor&&anchor.matches(':hover'))return;if(Due.el.matches(':hover'))return;closeDuePicker()}},80)});
-  menu.append(btnEdit,btnAssign,btnDue);
+  menu.append(btnEdit,btnComplete,btnAssign,btnDue);
   menu.style.display='block';
   const mw=menu.offsetWidth,mh=menu.offsetHeight;const px=Math.min(x,window.innerWidth-mw-8),py=Math.min(y,window.innerHeight-mh-8);
   menu.style.left=px+'px';menu.style.top=py+'px';
