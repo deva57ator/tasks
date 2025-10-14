@@ -53,7 +53,8 @@ code, .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consol
 .task:hover{background:var(--hover)}
 .task.is-selected{background:var(--sel-bg)}
 .task-title{white-space:pre-wrap;word-break:break-word}
-.task.has-children .task-title{font-weight:700}
+.task[data-depth="0"].has-children .task-title{font-weight:700}
+.task[data-depth="2"] .task-title{font-style:italic}
 .task.done .task-title{color:var(--muted);text-decoration:line-through}
 .due-tag{display:inline-block;padding:2px 6px;border-radius:8px;background:var(--hover);margin-left:8px;font-size:12px;color:var(--muted)}
 .proj-tag{display:inline-block;padding:2px 6px;border-radius:8px;background:var(--hover);margin-left:8px;font-size:12px;color:var(--muted)}
