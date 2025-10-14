@@ -282,8 +282,9 @@ document.addEventListener('keydown',e=>{
 if(!tasks.length){tasks=[{id:uid(),title:'Добавь несколько задач',done:false,collapsed:false,due:null,project:null,notes:'',children:[{id:uid(),title:'Пример подзадачи',done:false,collapsed:false,due:null,project:null,notes:'',children:[]} ]},{id:uid(),title:'ПКМ по строке → «Редактировать»',done:false,collapsed:false,due:null,project:null,notes:'',children:[]},{id:uid(),title:'Отметь как выполненную — увидишь зачёркивание',done:true,collapsed:false,due:null,project:null,notes:'',children:[] }];Store.write(tasks)}
 if(!projects.length){projects=[{id:uid(),title:'Личный',emoji:DEFAULT_PROJECT_EMOJI},{id:uid(),title:'Работа',emoji:'💼'}];ProjectsStore.write(projects)}
 
-function getProjectTitle(id){const p=projects.find(x=>x.id===id);return p?p.title:'Проект'}
+function getProjectTitle(id){if(!id)return'Без проекта';const p=projects.find(x=>x.id===id);return p?p.title:'Проект'}
 function getProjectEmoji(id){const p=projects.find(x=>x.id===id);if(!p)return DEFAULT_PROJECT_EMOJI;if(typeof p.emoji==='string'){const trimmed=p.emoji.trim();if(trimmed)return trimmed}return DEFAULT_PROJECT_EMOJI}
+function getProjectMeta(id){return{emoji:getProjectEmoji(id),title:getProjectTitle(id)}}
 function assignProject(taskId,projId){const t=findTask(taskId);if(!t)return;t.project=projId;Store.write(tasks);render();toast('Назначено в проект: '+getProjectTitle(projId))}
 function clearProject(taskId){const t=findTask(taskId);if(!t)return;t.project=null;Store.write(tasks);render()}
 function openAssignSubmenu(taskId,anchorMenu){
@@ -369,25 +370,41 @@ function renderSprint(container){
         empty.textContent='—';
         col.appendChild(empty)
       }
-      for(const t of items){
-        const it=document.createElement('div');
-        it.className='sprint-task';
-        if(t.done)it.classList.add('is-done');
-        it.addEventListener('click',()=>{
-          selectedTaskId=t.id;
-          currentView='all';
-          render();
-          const row=document.querySelector(`.task[data-id="${t.id}"]`);
-          row&&row.scrollIntoView({block:'center',behavior:'smooth'})
-        });
-        const taskTitle=document.createElement('div');
-        taskTitle.className='sprint-task-title';
-        taskTitle.textContent=t.title;
-        const chip=document.createElement('span');
-        chip.className='sprint-chip';
-        chip.textContent=getProjectEmoji(t.project);
-        it.append(taskTitle,chip);
-        col.appendChild(it)
+      if(items.length){
+        const groups=[];const map=new Map();
+        for(const t of items){const key=t.project||'__none__';if(!map.has(key)){const meta=getProjectMeta(t.project);const group={id:key,emoji:meta.emoji,title:meta.title,tasks:[]};map.set(key,group);groups.push(group)}map.get(key).tasks.push(t)}
+        for(const grp of groups){
+          const groupEl=document.createElement('div');
+          groupEl.className='sprint-project-group';
+          const tag=document.createElement('div');
+          tag.className='sprint-project-tag';
+          const emoji=document.createElement('span');
+          emoji.className='sprint-project-emoji';
+          emoji.textContent=grp.emoji;
+          const name=document.createElement('span');
+          name.className='sprint-project-name';
+          name.textContent=grp.title;
+          tag.append(emoji,name);
+          groupEl.appendChild(tag);
+          for(const t of grp.tasks){
+            const it=document.createElement('div');
+            it.className='sprint-task';
+            if(t.done)it.classList.add('is-done');
+            it.addEventListener('click',()=>{
+              selectedTaskId=t.id;
+              currentView='all';
+              render();
+              const row=document.querySelector(`.task[data-id="${t.id}"]`);
+              row&&row.scrollIntoView({block:'center',behavior:'smooth'})
+            });
+            const taskTitle=document.createElement('div');
+            taskTitle.className='sprint-task-title';
+            taskTitle.textContent=t.title;
+            it.append(taskTitle);
+            groupEl.appendChild(it)
+          }
+          col.appendChild(groupEl)
+        }
       }
       grid.appendChild(col)
     }
