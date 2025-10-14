@@ -94,6 +94,7 @@ body.view-sprint .composer{display:none}
 .icon-btn.theme-btn:hover{background:var(--hover)}
 .icon-btn.theme-btn:focus-visible{outline:2px solid var(--hint);outline-offset:2px}
 .context-menu{position:fixed;z-index:9999;background:var(--surface);border:1px solid var(--toast-border);box-shadow:var(--shadow);border-radius:10px;padding:4px;min-width:160px;display:none}
+.theme-dark .context-menu{background:#171b22}
 .context-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;user-select:none}
 .context-item:hover{background:var(--hover)}
 .toast{position:fixed;bottom:18px;right:18px;background:var(--toast-bg);border:1px solid var(--toast-border);padding:10px 14px;border-radius:14px;box-shadow:var(--shadow);opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s}
