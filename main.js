@@ -379,14 +379,13 @@ function renderSprint(container){
           const row=document.querySelector(`.task[data-id="${t.id}"]`);
           row&&row.scrollIntoView({block:'center',behavior:'smooth'})
         });
-        const chip=document.createElement('span');
-        chip.className='sprint-chip';
-        const dueLabel=formatDue(t.due)||'—';
-        chip.textContent=`${getProjectEmoji(t.project)} ${dueLabel}`;
         const taskTitle=document.createElement('div');
         taskTitle.className='sprint-task-title';
         taskTitle.textContent=t.title;
-        it.append(chip,taskTitle);
+        const chip=document.createElement('span');
+        chip.className='sprint-chip';
+        chip.textContent=getProjectEmoji(t.project);
+        it.append(taskTitle,chip);
         col.appendChild(it)
       }
       grid.appendChild(col)
