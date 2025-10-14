@@ -47,6 +47,9 @@ code, .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consol
 .add-btn:hover{background:var(--hover)}
 .tasks{display:flex;flex-direction:column;gap:6px;overflow:auto}
 .task{display:grid;grid-template-columns:auto auto 1fr auto auto auto;gap:8px;align-items:center;padding:6px 4px;border-radius:12px;transition:background .12s ease;position:relative}
+.task[draggable="true"]{cursor:grab}
+.task.is-dragging{opacity:.6;cursor:grabbing}
+.task.is-drop-target{background:var(--hover-strong);box-shadow:0 0 0 2px var(--hint) inset}
 .task:hover{background:var(--hover)}
 .task.is-selected{background:var(--sel-bg)}
 .task-title{white-space:pre-wrap;word-break:break-word}
