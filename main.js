@@ -51,7 +51,18 @@ function setDropTarget(id){if(dropTargetId===id||dropTargetId===null&&id===null)
 function clearDragIndicators(){if(draggingTaskId){const dragEl=document.querySelector(`.task[data-id="${draggingTaskId}"]`);dragEl&&dragEl.classList.remove('is-dragging')}setDropTarget(null);draggingTaskId=null}
 function rowClass(t){return'task'+(t.collapsed?' is-collapsed':'')+(selectedTaskId===t.id?' is-selected':'')+(t.done?' done':'')}
 function getVisibleTaskIds(){return $$('#tasks .task[data-id]').map(el=>el.dataset.id)}
-function addTask(title){title=String(title||'').trim();if(!title) return;tasks.unshift({id:uid(),title,done:false,children:[],collapsed:false,due:null,project:null,notes:''});Store.write(tasks);render()}
+function addTask(title){
+  title=String(title||'').trim();
+  if(!title) return;
+  let assignedProject=null;
+  if(currentView==='project'&&currentProjectId){
+    const exists=projects.some(p=>p&&p.id===currentProjectId);
+    if(exists)assignedProject=currentProjectId;
+  }
+  tasks.unshift({id:uid(),title,done:false,children:[],collapsed:false,due:null,project:assignedProject,notes:''});
+  Store.write(tasks);
+  render()
+}
 function addSubtask(parentId){const p=findTask(parentId);if(!p) return;const depth=getTaskDepth(parentId);if(depth===-1||depth>=MAX_TASK_DEPTH){toast('Максимальная вложенность — три уровня');return}const inheritedProject=typeof p.project==='undefined'?null:p.project;const child={id:uid(),title:'',done:false,children:[],collapsed:false,due:null,project:inheritedProject,notes:''};p.children.push(child);p.collapsed=false;Store.write(tasks);pendingEditId=child.id;render()}
 function toggleTask(id){const t=findTask(id);if(!t) return;t.done=!t.done;Store.write(tasks);render();toast(t.done?'Отмечено как выполнено':'Снята отметка выполнения')}
 function markTaskDone(id){const t=findTask(id);if(!t)return;if(t.done){toast('Задача уже выполнена');return}t.done=true;Store.write(tasks);render();toast('Отмечено как выполнено')}
