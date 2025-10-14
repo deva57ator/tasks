@@ -98,8 +98,13 @@ code, .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consol
 .sprint-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;border-top:1px solid var(--cal-grid);padding-top:8px}
 .sprint-col{background:transparent;border-radius:10px;padding:6px}
 .sprint-col .col-title{font-size:12px;color:var(--muted);margin-bottom:6px}
-.sprint-task{padding:4px 6px;border-radius:8px;cursor:default}
-.sprint-task:hover{background:var(--hover)}
+.sprint-task{padding:4px 6px;border-radius:8px;cursor:default;display:flex;flex-direction:column;gap:4px;align-items:flex-start;transition:background .15s ease,transform .15s ease}
+.sprint-task:hover{background:var(--hover);transform:translateY(-1px)}
+.sprint-task.is-done{opacity:.6}
+.sprint-task-title{font-size:13px;font-weight:500;color:var(--text)}
+.sprint-task.is-done .sprint-task-title{text-decoration:line-through}
+.sprint-chip{font-size:11px;line-height:1;padding:2px 6px;border-radius:999px;background:var(--pill-bg,rgba(0,0,0,0.08));color:var(--muted);display:inline-flex;align-items:center;gap:4px;letter-spacing:.02em}
+.theme-dark .sprint-chip{background:rgba(255,255,255,0.08);color:var(--muted)}
 .sprint-empty{color:var(--muted);font-size:12px}
 .projects{margin-top:8px}
 .proj-header{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:2px 0}
