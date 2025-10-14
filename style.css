@@ -46,18 +46,19 @@ code, .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consol
 .add-btn{border:none;background:transparent;color:var(--text);cursor:pointer;padding:8px 10px;border-radius:10px}
 .add-btn:hover{background:var(--hover)}
 .tasks{display:flex;flex-direction:column;gap:6px;overflow:auto}
-.task{display:grid;grid-template-columns:auto auto 1fr auto auto auto;gap:8px;align-items:center;padding:6px 4px;border-radius:12px;transition:background .12s ease;position:relative}
+.task{display:grid;grid-template-columns:auto auto 1fr auto;gap:8px;align-items:center;padding:6px 4px;border-radius:12px;transition:background .12s ease;position:relative}
 .task[draggable="true"]{cursor:grab}
 .task.is-dragging{opacity:.6;cursor:grabbing}
 .task.is-drop-target{background:var(--hover-strong);box-shadow:0 0 0 2px var(--hint) inset}
 .task:hover{background:var(--hover)}
 .task.is-selected{background:var(--sel-bg)}
-.task-title{white-space:pre-wrap;word-break:break-word}
+.task-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.task-title-text{flex:0 1 auto;max-width:100%;white-space:pre-wrap;word-break:break-word}
 .task[data-depth="0"].has-children .task-title{font-weight:700}
 .task[data-depth="2"] .task-title{font-style:italic}
 .task.done .task-title{color:var(--muted);text-decoration:line-through}
-.due-tag{display:inline-block;padding:2px 6px;border-radius:8px;background:var(--hover);margin-left:8px;font-size:12px;color:var(--muted)}
-.proj-tag{display:inline-block;padding:2px 6px;border-radius:8px;background:var(--hover);margin-left:8px;font-size:12px;color:var(--muted)}
+.due-tag{display:inline-block;padding:2px 6px;border-radius:8px;background:var(--hover);font-size:12px;color:var(--muted)}
+.proj-tag{display:inline-block;padding:2px 6px;border-radius:8px;background:var(--hover);font-size:12px;color:var(--muted)}
 .ctx-submenu{position:fixed;z-index:10000;background:var(--surface);border:1px solid var(--toast-border);box-shadow:var(--shadow);border-radius:10px;padding:4px;min-width:180px;display:none}
 .ctx-submenu-item{padding:8px 10px;border-radius:8px;cursor:pointer;user-select:none}
 .ctx-submenu-item:hover{background:var(--hover)}
