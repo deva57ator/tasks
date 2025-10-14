@@ -123,6 +123,8 @@ function render(){
   if(composer){
     const hide=currentView==='sprint';
     if(composer.hidden!==hide)composer.hidden=hide;
+    composer.setAttribute('aria-hidden',hide?'true':'false');
+    document.body.classList.toggle('view-sprint',hide);
   }
   const wrap=$('#tasks');wrap.innerHTML='';
   if(currentView==='sprint'){document.getElementById('viewTitle').textContent='Спринт';renderSprint(wrap);return}
