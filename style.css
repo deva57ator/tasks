@@ -104,6 +104,8 @@ code, .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consol
 .sprint-col{background:transparent;border-radius:10px;padding:6px}
 .sprint-col .col-title{font-size:12px;color:var(--muted);margin-bottom:6px}
 .sprint-task{padding:4px 6px;border-radius:8px;cursor:default;display:flex;flex-direction:column;gap:4px;align-items:flex-start;transition:background .15s ease,transform .15s ease}
+.sprint-task[draggable="true"]{cursor:grab}
+.sprint-task.is-dragging{opacity:.6;cursor:grabbing}
 .sprint-task:hover{background:var(--hover);transform:translateY(-1px)}
 .sprint-task.is-done{opacity:.6}
 .sprint-task-title{font-size:13px;font-weight:500;color:var(--text)}
@@ -114,7 +116,8 @@ code, .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consol
 .sprint-project-emoji{font-size:16px;line-height:1}
 .sprint-project-name{font-size:12px;color:var(--muted)}
 .sprint-project-group .sprint-task{padding-left:0}
-.sprint-empty{color:var(--muted);font-size:12px}
+.sprint-col.is-drop-target{background:var(--hover);box-shadow:0 0 0 2px var(--hint) inset}
+.sprint-empty{color:var(--muted);font-size:12px;pointer-events:none;text-align:center}
 .projects{margin-top:8px}
 .proj-header{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:2px 0}
 .proj-toggle{appearance:none;border:none;background:transparent;color:var(--text);padding:8px 10px;border-radius:10px;text-align:left;flex:1;cursor:pointer}
