@@ -101,7 +101,14 @@ function openContextMenu(taskId,x,y){
   menu.setAttribute('aria-hidden','false');
 }
 function closeContextMenu(){Ctx.taskId=null;Ctx.el.style.display='none';Ctx.el.setAttribute('aria-hidden','true');closeAssignSubmenu();if(Due.el&&Due.el.dataset.fromContext==='true')closeDuePicker()}
-window.addEventListener('click',e=>{if(!Ctx.el.contains(e.target)&&!Ctx.sub.contains(e.target))closeContextMenu()});
+window.addEventListener('click',e=>{
+  if(Due.el&&Due.el.style.display==='block'&&Due.el.dataset.fromContext==='true'){
+    if(Due.el.contains(e.target))return;
+    const anchor=Due.anchor;
+    if(anchor&&anchor.contains(e.target))return;
+  }
+  if(!Ctx.el.contains(e.target)&&!Ctx.sub.contains(e.target))closeContextMenu()
+});
 window.addEventListener('keydown',e=>{if(e.key==='Escape'){closeContextMenu();closeNotesPanel();closeDuePicker()}});
 window.addEventListener('resize',closeContextMenu);
 window.addEventListener('scroll',closeContextMenu,true);
