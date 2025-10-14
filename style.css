@@ -122,7 +122,7 @@ code, .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consol
 .emoji-btn:active{transform:translateY(1px)}
 .emoji-menu{position:fixed;z-index:10000;background:var(--surface);border:1px solid var(--toast-border);box-shadow:var(--shadow);border-radius:12px;padding:8px;display:none}
 .emoji-menu[aria-hidden="true"]{display:none}
-.emoji-menu emoji-picker{width:320px;max-height:380px;color:var(--text);font-family:inherit;--background-color:var(--surface);--border-color:var(--toast-border);--box-shadow:var(--shadow);--category-button-color:var(--muted);--category-button-active-color:var(--text);--category-button-background-color:var(--hover);--search-background-color:var(--surface);--search-border-color:var(--toast-border)}
+.emoji-menu emoji-picker{width:min(360px,calc(100vw - 24px));max-width:calc(100vw - 24px);max-height:380px;color:var(--text);font-family:inherit;--background-color:var(--surface);--border-color:var(--toast-border);--box-shadow:var(--shadow);--category-button-color:var(--muted);--category-button-active-color:var(--text);--category-button-background-color:var(--hover);--search-background-color:var(--surface);--search-border-color:var(--toast-border)}
 .emoji-menu emoji-picker::part(header){border-bottom:1px solid var(--toast-border)}
 .emoji-menu emoji-picker::part(search){border-radius:10px}
 .proj-input{width:100%;border:none;border-bottom:1px solid var(--hint);padding:6px 2px;background:transparent;color:var(--text);outline:none}
