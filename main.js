@@ -30,6 +30,7 @@ if(projectsPatched){ProjectsStore.write(projects)}
 const $=s=>document.querySelector(s),$$=s=>Array.from(document.querySelectorAll(s));
 const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
 const MAX_TASK_DEPTH=2;
+const MONTH_NAMES=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 
 function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('show'),1400)}
 function migrate(list,depth=0){const extras=[];for(const t of list){if(!Array.isArray(t.children)) t.children=[];if(typeof t.collapsed!=='boolean') t.collapsed=false;if(typeof t.done!=='boolean') t.done=false;if(!('due' in t)) t.due=null;if(!('project' in t)) t.project=null;if(typeof t.notes!=='string') t.notes='';if(t.children.length){migrate(t.children,depth+1);if(depth>=MAX_TASK_DEPTH){extras.push(...t.children);t.children=[]}}}if(extras.length) list.push(...extras);return list}
@@ -213,7 +214,7 @@ function sameDay(a,b){return!!(a&&b)&&a.getFullYear()===b.getFullYear()&&a.getMo
 function isoWeekNumber(d){const date=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));const dayNum=(date.getUTCDay()+6)%7;date.setUTCDate(date.getUTCDate()-dayNum+3);const firstThursday=new Date(Date.UTC(date.getUTCFullYear(),0,4));const diff=date-firstThursday;return 1+Math.round(diff/(7*24*3600*1000))}
 function buildMonthMatrix(y,m,{minVisibleDays=1,maxWeeks=6}={}){const first=new Date(y,m,1);const startDay=(first.getDay()+6)%7;const weeks=[];let day=1-startDay;const today=normalizeDate(new Date());while(true){const week={weekNum:null,days:[]};for(let i=0;i<7;i++){const d=new Date(y,m,day);const inMonth=d.getMonth()===m;const isToday=sameDay(d,today);week.days.push({d,inMonth,isToday});day++}const thursday=new Date(week.days[3].d);week.weekNum=isoWeekNumber(thursday);weeks.push(week);const lastDay=week.days[6].d;if(lastDay.getMonth()>m||(y<lastDay.getFullYear()&&lastDay.getMonth()===0))break;if(weeks.length>6)break}const countInMonth=week=>week.days.reduce((acc,cell)=>acc+(cell.inMonth?1:0),0);while(weeks.length&&countInMonth(weeks[0])<minVisibleDays)weeks.shift();while(weeks.length&&countInMonth(weeks[weeks.length-1])<minVisibleDays)weeks.pop();if(maxWeeks&&weeks.length>maxWeeks){while(weeks.length>maxWeeks){const firstCount=countInMonth(weeks[0]);const lastCount=countInMonth(weeks[weeks.length-1]);if(firstCount<=lastCount){weeks.shift()}else{weeks.pop()}}}return weeks}
 function renderMonthInto(container,y,m,options){const weeks=buildMonthMatrix(y,m,options);const wrap=document.createElement('div');wrap.className='cal-grid';weeks.forEach(week=>{const row=document.createElement('div');row.className='cal-week';const wn=document.createElement('div');wn.className='cal-weeknum';wn.textContent=String(week.weekNum).padStart(2,'0');row.appendChild(wn);for(const cell of week.days){const el=document.createElement('div');el.className='cal-day';if(!cell.inMonth)el.classList.add('is-out');if(cell.isToday)el.classList.add('is-today');el.textContent=cell.d.getDate();row.appendChild(el)}wrap.appendChild(row)});container.innerHTML='';container.appendChild(wrap);return weeks}
-function monthTitle(y,m){const names=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];return`${names[m]} ${y}`}
+function monthTitle(y,m){return`${MONTH_NAMES[m]} ${y}`}
 function weekTitle(date){const info=isoWeekInfo(date);return`Неделя ${String(info.week).padStart(2,'0')} · ${monthTitle(date.getFullYear(),date.getMonth())}`}
 function findWeekIndexForDate(weeks,date){if(!date)return-1;for(let i=0;i<weeks.length;i++){if(weeks[i].days.some(cell=>sameDay(cell.d,date)))return i}return-1}
 function ensureFocusDateVisible(weeks){if(!cal.focusDate)return;if(findWeekIndexForDate(weeks,cal.focusDate)!==-1)return;for(const week of weeks){const inMonthDay=week.days.find(cell=>cell.inMonth);if(inMonthDay){cal.focusDate=normalizeDate(inMonthDay.d);return}}}
@@ -553,8 +554,64 @@ function formatDue(iso){const d=new Date(iso);if(isNaN(d))return'';const dd=Stri
 
 const Due={el:document.getElementById('dueMenu'),taskId:null,y:null,m:null,anchor:null};
 if(Due.el){Due.el.dataset.fromContext='false';Due.el.addEventListener('mouseleave',()=>{if(Due.el.dataset.fromContext==='true'){setTimeout(()=>{const anchor=Due.anchor;if(anchor&&anchor.matches(':hover'))return;if(Due.el.matches(':hover'))return;closeDuePicker()},80)}})}
+let duePickerMinWidth=null;
+function ensureDuePickerWidth(container){if(!container)return;if(duePickerMinWidth!==null){container.style.width=`${duePickerMinWidth}px`;return;}const title=container.querySelector('.cal-title');if(!title)return;const original=title.textContent;const prevVisibility=container.style.visibility;container.style.visibility='hidden';const sampleYear='8888';let maxWidth=Math.ceil(container.offsetWidth);for(const monthName of MONTH_NAMES){title.textContent=`${monthName} ${sampleYear}`;const width=Math.ceil(container.offsetWidth);if(width>maxWidth)maxWidth=width}title.textContent=original;if(prevVisibility)container.style.visibility=prevVisibility;else container.style.removeProperty('visibility');duePickerMinWidth=maxWidth;container.style.width=`${duePickerMinWidth}px`}
 function buildDuePicker(y,m){const cont=document.createElement('div');cont.style.padding='6px';const header=document.createElement('div');header.className='cal-header';const todayBtn=document.createElement('button');todayBtn.className='cal-today';todayBtn.title='К текущему месяцу';const title=document.createElement('div');title.className='cal-title';title.textContent=monthTitle(y,m);const ctrls=document.createElement('div');ctrls.className='cal-ctrls';const prev=document.createElement('button');prev.className='cal-arrow';prev.textContent='‹';const next=document.createElement('button');next.className='cal-arrow';next.textContent='›';header.append(todayBtn,title,ctrls);ctrls.append(prev,next);const legend=document.createElement('div');legend.className='cal-legend';legend.innerHTML='<div>Wk</div><div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div>';const viewport=document.createElement('div');viewport.className='cal-viewport';const monthEl=document.createElement('div');monthEl.className='cal-month';const track=document.createElement('div');track.className='cal-track';track.appendChild(monthEl);viewport.appendChild(track);cont.append(header,legend,viewport);function renderLocal(){renderMonthInto(monthEl,Due.y,Due.m);title.textContent=monthTitle(Due.y,Due.m)}prev.onclick=()=>{let ny=Due.y,nm=Due.m-1;if(nm<0){nm=11;ny--}Due.y=ny;Due.m=nm;renderLocal()};next.onclick=()=>{let ny=Due.y,nm=Due.m+1;if(nm>11){nm=0;ny++}Due.y=ny;Due.m=nm;renderLocal()};todayBtn.onclick=()=>{const now=new Date();Due.y=now.getFullYear();Due.m=now.getMonth();renderLocal()};renderLocal();cont.addEventListener('click',e=>{const dayEl=e.target.closest('.cal-day');if(!dayEl)return;const day=Number(dayEl.textContent);const d=new Date(Due.y,Due.m,day);const t=findTask(Due.taskId);if(!t)return;t.due=d.toISOString();Store.write(tasks);if(Due.el&&Due.el.dataset.fromContext==='true')closeContextMenu();closeDuePicker();render()});return cont}
-function openDuePicker(taskId,anchor,options={}){Due.taskId=taskId;Due.anchor=anchor||null;const existing=findTask(taskId);if(existing&&existing.due){const dueDate=new Date(existing.due);if(!isNaN(dueDate)){Due.y=dueDate.getFullYear();Due.m=dueDate.getMonth()}else{const now=new Date();Due.y=now.getFullYear();Due.m=now.getMonth()}}else{const now=new Date();Due.y=now.getFullYear();Due.m=now.getMonth()}const menu=Due.el;if(!menu)return;menu.innerHTML='';menu.appendChild(buildDuePicker(Due.y,Due.m));menu.style.display='block';menu.setAttribute('aria-hidden','false');const fromContext=!!options.fromContext;menu.dataset.fromContext=fromContext?'true':'false';const r=anchor&&anchor.getBoundingClientRect?anchor.getBoundingClientRect():{left:0,right:0,top:0,bottom:0};menu.style.position='fixed';const mw=menu.offsetWidth||300;const mh=menu.offsetHeight||320;if(fromContext){let px=r.right+8;let py=r.top;if(px+mw>window.innerWidth-8)px=Math.max(8,window.innerWidth-mw-8);if(py+mh>window.innerHeight-8)py=Math.max(8,window.innerHeight-mh-8);menu.style.left=px+'px';menu.style.top=py+'px'}else{const px=Math.min(r.left,window.innerWidth-mw-8);let py=r.bottom+6;if(py+mh>window.innerHeight-8)py=Math.max(8,window.innerHeight-mh-8);menu.style.left=px+'px';menu.style.top=py+'px'}}
+function openDuePicker(taskId,anchor,options={}){
+  Due.taskId=taskId;
+  Due.anchor=anchor||null;
+  const existing=findTask(taskId);
+  if(existing&&existing.due){
+    const dueDate=new Date(existing.due);
+    if(!isNaN(dueDate)){
+      Due.y=dueDate.getFullYear();
+      Due.m=dueDate.getMonth();
+    }else{
+      const now=new Date();
+      Due.y=now.getFullYear();
+      Due.m=now.getMonth();
+    }
+  }else{
+    const now=new Date();
+    Due.y=now.getFullYear();
+    Due.m=now.getMonth();
+  }
+  const menu=Due.el;
+  if(!menu)return;
+  menu.innerHTML='';
+  const content=buildDuePicker(Due.y,Due.m);
+  menu.appendChild(content);
+  menu.style.display='block';
+  menu.setAttribute('aria-hidden','false');
+  ensureDuePickerWidth(content);
+  if(content.style.width){
+    menu.style.minWidth=content.style.width;
+    menu.style.width=content.style.width;
+  }else{
+    menu.style.removeProperty('min-width');
+    menu.style.removeProperty('width');
+  }
+  const fromContext=!!options.fromContext;
+  menu.dataset.fromContext=fromContext?'true':'false';
+  const r=anchor&&anchor.getBoundingClientRect?anchor.getBoundingClientRect():{left:0,right:0,top:0,bottom:0};
+  menu.style.position='fixed';
+  const mw=menu.offsetWidth||(duePickerMinWidth||300);
+  const mh=menu.offsetHeight||320;
+  if(fromContext){
+    let px=r.right+8;
+    let py=r.top;
+    if(px+mw>window.innerWidth-8)px=Math.max(8,window.innerWidth-mw-8);
+    if(py+mh>window.innerHeight-8)py=Math.max(8,window.innerHeight-mh-8);
+    menu.style.left=px+'px';
+    menu.style.top=py+'px';
+  }else{
+    const px=Math.min(r.left,window.innerWidth-mw-8);
+    let py=r.bottom+6;
+    if(py+mh>window.innerHeight-8)py=Math.max(8,window.innerHeight-mh-8);
+    menu.style.left=px+'px';
+    menu.style.top=py+'px';
+  }
+}
 function closeDuePicker(){Due.taskId=null;Due.anchor=null;if(Due.el){Due.el.style.display='none';Due.el.setAttribute('aria-hidden','true');Due.el.dataset.fromContext='false'}}
 window.addEventListener('click',e=>{if(Due.el.style.display==='block'&&!Due.el.contains(e.target)&&!(Due.anchor&&Due.anchor.contains(e.target))&&!e.target.closest('.due-btn'))closeDuePicker()},true);
 
