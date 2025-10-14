@@ -20,11 +20,27 @@ tasks=migrate(tasks);
 
 function findTask(id,list=tasks){for(const t of list){if(t.id===id) return t;const r=findTask(id,t.children||[]);if(r) return r}return null}
 function rowClass(t){return'task'+(t.collapsed?' is-collapsed':'')+(selectedTaskId===t.id?' is-selected':'')+(t.done?' done':'')}
+function getVisibleTaskIds(){return $$('#tasks .task[data-id]').map(el=>el.dataset.id)}
 function addTask(title){title=String(title||'').trim();if(!title) return;tasks.unshift({id:uid(),title,done:false,children:[],collapsed:false,due:null,project:null});Store.write(tasks);render()}
 function addSubtask(parentId){const p=findTask(parentId);if(!p) return;const child={id:uid(),title:'',done:false,children:[],collapsed:false,due:null,project:null};p.children.push(child);p.collapsed=false;Store.write(tasks);pendingEditId=child.id;render()}
 function toggleTask(id){const t=findTask(id);if(!t) return;t.done=!t.done;Store.write(tasks);render();toast(t.done?'Отмечено как выполнено':'Снята отметка выполнения')}
 function deleteTask(id,list=tasks){for(let i=0;i<list.length;i++){if(list[i].id===id){list.splice(i,1);return true}if(deleteTask(id,list[i].children)) return true}return false}
-function handleDelete(id){deleteTask(id,tasks);if(selectedTaskId===id)selectedTaskId=null;Store.write(tasks);render()}
+function handleDelete(id,{visibleOrder=null}={}){
+  if(!Array.isArray(visibleOrder))visibleOrder=getVisibleTaskIds();
+  const removed=deleteTask(id,tasks);
+  if(!removed)return;
+  let nextId=null;
+  if(visibleOrder){
+    const idx=visibleOrder.indexOf(id);
+    if(idx!==-1){
+      for(let i=idx+1;i<visibleOrder.length;i++){const cand=visibleOrder[i];if(cand&&cand!==id&&findTask(cand)){nextId=cand;break}}
+      if(!nextId){for(let i=idx-1;i>=0;i--){const cand=visibleOrder[i];if(cand&&cand!==id&&findTask(cand)){nextId=cand;break}}}
+    }
+  }
+  if(nextId){selectedTaskId=nextId}else if(selectedTaskId===id){selectedTaskId=null}
+  Store.write(tasks);
+  render()
+}
 function renameTask(id,title){const t=findTask(id);if(!t) return;const v=String(title||'').trim();if(v&&v!==t.title){t.title=v;Store.write(tasks)}render()}
 function toggleCollapse(id){const t=findTask(id);if(!t) return;t.collapsed=!t.collapsed;Store.write(tasks);render()}
 
@@ -158,7 +174,11 @@ function startProjectRename(id,row){const p=projects.find(pr=>pr.id===id);if(!p)
 function deleteProject(id){const idx=projects.findIndex(p=>p.id===id);if(idx===-1)return;projects.splice(idx,1);ProjectsStore.write(projects);renderProjects();toast('Проект удалён')}
 projAdd.addEventListener('click',()=>{setProjectsOpen(true);const row=document.createElement('div');row.className='proj-item';const input=document.createElement('input');input.className='proj-input';input.placeholder='Название проекта…';row.appendChild(input);projList.prepend(row);input.focus();let saved=false;const finish=save=>{if(saved)return;saved=true;const v=(input.value||'').trim();if(save){if(!v){toast('Назови проект');input.focus();saved=false;return}projects.unshift({id:uid(),title:v});ProjectsStore.write(projects)}renderProjects()};input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();finish(true)}else if(e.key==='Escape'){e.preventDefault();finish(false)}});input.addEventListener('blur',()=>{if(!saved)finish(true)})});
 
-document.addEventListener('keydown',e=>{if(e.target&&(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.isContentEditable))return;if(e.key==='Tab'&&selectedTaskId){e.preventDefault();addSubtask(selectedTaskId)}});
+document.addEventListener('keydown',e=>{
+  if(e.target&&(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.isContentEditable))return;
+  if(e.key==='Tab'&&selectedTaskId){e.preventDefault();addSubtask(selectedTaskId);return}
+  if((e.key==='Backspace'||e.key==='Delete')&&selectedTaskId){e.preventDefault();handleDelete(selectedTaskId,{visibleOrder:getVisibleTaskIds()})}
+});
 
 if(!tasks.length){tasks=[{id:uid(),title:'Добавь несколько задач',done:false,collapsed:false,due:null,project:null,children:[{id:uid(),title:'Пример подзадачи',done:false,collapsed:false,due:null,project:null,children:[]} ]},{id:uid(),title:'ПКМ по строке → «Редактировать»',done:false,collapsed:false,due:null,project:null,children:[]},{id:uid(),title:'Отметь как выполненную — увидишь зачёркивание',done:true,collapsed:false,due:null,project:null,children:[] }];Store.write(tasks)}
 if(!projects.length){projects=[{id:uid(),title:'Личный'},{id:uid(),title:'Работа'}];ProjectsStore.write(projects)}
