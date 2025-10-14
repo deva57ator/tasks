@@ -327,7 +327,8 @@ try{console.assert(monthTitle(2025,0)==='Январь 2025');const weeks=buildMo
 function isDueToday(iso){if(!iso)return false;const d=new Date(iso);if(isNaN(d))return false;const now=new Date();return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth()&&d.getDate()===now.getDate()}
 function filterTree(list,pred){const out=[];for(const t of list){const kids=t.children||[];const fk=filterTree(kids,pred);if(pred(t)||fk.length){out.push({...t,children:fk})}}return out}
 function isoWeekInfo(d){const date=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));const dayNum=(date.getUTCDay()+6)%7;date.setUTCDate(date.getUTCDate()-dayNum+3);const weekYear=date.getUTCFullYear();const firstThursday=new Date(Date.UTC(weekYear,0,4));const diff=date-firstThursday;const week=1+Math.round(diff/(7*24*3600*1000));return{week,year:weekYear}}
-function buildSprintData(list){const map=new Map();function visit(t){if(t.due){const d=new Date(t.due);if(!isNaN(d)){const wd=d.getDay();if(wd>=1&&wd<=5){const{week,year}=isoWeekInfo(d);const key=year+':'+week;if(!map.has(key))map.set(key,{week,year,days:{1:[],2:[],3:[],4:[],5:[]}});map.get(key).days[wd].push(t)}}}for(const c of t.children||[])visit(c)}for(const t of list)visit(t);return Array.from(map.values()).sort((a,b)=>a.year===b.year?a.week-b.week:a.year-b.year)}
+function isoWeekStartDate(year,week){const simple=new Date(year,0,4);const day=(simple.getDay()+6)%7;const monday=new Date(simple);monday.setDate(simple.getDate()-day+(week-1)*7);return normalizeDate(monday)}
+function buildSprintData(list){const map=new Map();function visit(t){if(t.due){const d=new Date(t.due);if(!isNaN(d)){const wd=d.getDay();if(wd>=1&&wd<=5){const{week,year}=isoWeekInfo(d);const key=year+':'+week;if(!map.has(key))map.set(key,{week,year,startDate:isoWeekStartDate(year,week),days:{1:[],2:[],3:[],4:[],5:[]}});map.get(key).days[wd].push(t)}}}for(const c of t.children||[])visit(c)}for(const t of list)visit(t);return Array.from(map.values()).sort((a,b)=>a.year===b.year?a.week-b.week:a.year-b.year)}
 function renderSprint(container){
   const sprints=buildSprintData(tasks);
   if(!sprints.length){
@@ -348,12 +349,17 @@ function renderSprint(container){
     label.textContent='Неделя '+String(sp.week).padStart(2,'0');
     const grid=document.createElement('div');
     grid.className='sprint-grid';
+    const startDate=sp.startDate?new Date(sp.startDate):isoWeekStartDate(sp.year,sp.week);
     for(let i=1;i<=5;i++){
       const col=document.createElement('div');
       col.className='sprint-col';
       const title=document.createElement('div');
       title.className='col-title';
-      title.textContent=dayNames[i-1];
+      const dayDate=new Date(startDate);
+      dayDate.setDate(dayDate.getDate()+i-1);
+      const dd=String(dayDate.getDate()).padStart(2,'0');
+      const mm=String(dayDate.getMonth()+1).padStart(2,'0');
+      title.textContent=`${dayNames[i-1]} ${dd}.${mm}`;
       col.appendChild(title);
       const items=sp.days[i]||[];
       if(items.length===0){
