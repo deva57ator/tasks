@@ -13,6 +13,8 @@ let projects=ProjectsStore.read();
 if(!Array.isArray(projects))projects=[];
 const DEFAULT_PROJECT_EMOJI='📁';
 let projectsPatched=false;
+const SPRINT_UNASSIGNED_KEY='__none__';
+let sprintVisibleProjects=new Map();
 for(const proj of projects){
   if(!proj||typeof proj!=='object')continue;
   if(!('emoji' in proj)||proj.emoji===undefined){proj.emoji=null;projectsPatched=true;continue}
@@ -119,6 +121,10 @@ NotesPanel.input&&NotesPanel.input.addEventListener('input',()=>{if(!NotesPanel.
 
 function render(){
   $$('.nav-btn').forEach(b=>b.classList.toggle('is-active',b.dataset.view===currentView));
+  if(currentView!=='sprint'){
+    if(sprintVisibleProjects.size)sprintVisibleProjects.clear();
+    clearSprintFiltersUI();
+  }
   const composer=$('.composer');
   if(composer){
     const hide=currentView==='sprint';
@@ -331,6 +337,45 @@ if(!projects.length){projects=[{id:uid(),title:'Личный',emoji:DEFAULT_PROJ
 function getProjectTitle(id){if(!id)return'Без проекта';const p=projects.find(x=>x.id===id);return p?p.title:'Проект'}
 function getProjectEmoji(id){const p=projects.find(x=>x.id===id);if(!p)return DEFAULT_PROJECT_EMOJI;if(typeof p.emoji==='string'){const trimmed=p.emoji.trim();if(trimmed)return trimmed}return DEFAULT_PROJECT_EMOJI}
 function getProjectMeta(id){return{emoji:getProjectEmoji(id),title:getProjectTitle(id)}}
+function sprintProjectKey(id){return id==null?SPRINT_UNASSIGNED_KEY:id}
+function isSprintProjectVisible(projectId){const key=sprintProjectKey(projectId);return!sprintVisibleProjects.has(key)||sprintVisibleProjects.get(key)!==false}
+function syncSprintFilterState(keys){const set=new Set(keys);for(const key of keys){if(!sprintVisibleProjects.has(key))sprintVisibleProjects.set(key,true)}for(const key of Array.from(sprintVisibleProjects.keys())){if(!set.has(key))sprintVisibleProjects.delete(key)}}
+function clearSprintFiltersUI(){const bar=document.getElementById('sprintFilters');if(!bar)return;bar.innerHTML='';bar.classList.remove('is-active');bar.setAttribute('aria-hidden','true')}
+function renderSprintFiltersBar(entries){
+  const bar=document.getElementById('sprintFilters');
+  if(!bar)return;
+  bar.innerHTML='';
+  if(!entries.length){
+    bar.classList.remove('is-active');
+    bar.setAttribute('aria-hidden','true');
+    return
+  }
+  bar.classList.add('is-active');
+  bar.setAttribute('aria-hidden','false');
+  for(const entry of entries){
+    const active=isSprintProjectVisible(entry.projectId);
+    const btn=document.createElement('button');
+    btn.type='button';
+    btn.className='sprint-filter-btn'+(active?' is-active':'');
+    btn.setAttribute('aria-pressed',active?'true':'false');
+    btn.dataset.projectKey=entry.key;
+    btn.title=active?'Скрыть задачи проекта в спринте':'Показать задачи проекта в спринте';
+    const emoji=document.createElement('span');
+    emoji.className='sprint-filter-emoji';
+    emoji.textContent=entry.emoji;
+    const title=document.createElement('span');
+    title.className='sprint-filter-title';
+    title.textContent=entry.title;
+    btn.append(emoji,title);
+    btn.onclick=()=>{
+      const key=entry.key;
+      const next=!isSprintProjectVisible(entry.projectId);
+      sprintVisibleProjects.set(key,next);
+      render()
+    };
+    bar.appendChild(btn)
+  }
+}
 function assignProject(taskId,projId){const t=findTask(taskId);if(!t)return;t.project=projId;Store.write(tasks);render();toast('Назначено в проект: '+getProjectTitle(projId))}
 function clearProject(taskId){const t=findTask(taskId);if(!t)return;t.project=null;Store.write(tasks);render()}
 function openAssignSubmenu(taskId,anchorMenu){
@@ -381,16 +426,37 @@ function buildSprintData(list){const map=new Map();function visit(t){if(t.due){c
 function renderSprint(container){
   const sprints=buildSprintData(tasks);
   if(!sprints.length){
+    renderSprintFiltersBar([]);
+    sprintVisibleProjects.clear();
     const hint=document.createElement('div');
     hint.className='sprint-empty';
     hint.textContent='Нет задач с дедлайном — спринты появятся автоматически.';
     container.appendChild(hint);
     return
   }
+  const projectMap=new Map();
+  for(const sp of sprints){
+    for(let i=1;i<=5;i++){
+      for(const task of sp.days[i]||[]){
+        const key=sprintProjectKey(task.project);
+        if(!projectMap.has(key)){
+          const meta=getProjectMeta(task.project);
+          projectMap.set(key,{key,projectId:task.project??null,emoji:meta.emoji,title:meta.title})
+        }
+      }
+    }
+  }
+  const projectEntries=Array.from(projectMap.values());
+  syncSprintFilterState(projectEntries.map(entry=>entry.key));
+  renderSprintFiltersBar(projectEntries);
   const wrap=document.createElement('div');
   wrap.className='sprint';
   const dayNames=['Пн','Вт','Ср','Чт','Пт'];
+  let renderedWeeks=0;
   for(const sp of sprints){
+    const hasVisibleTasks=[1,2,3,4,5].some(idx=>(sp.days[idx]||[]).some(task=>isSprintProjectVisible(task.project)));
+    if(!hasVisibleTasks)continue;
+    renderedWeeks++;
     const row=document.createElement('div');
     row.className='sprint-row';
     const label=document.createElement('div');
@@ -417,49 +483,57 @@ function renderSprint(container){
       col.addEventListener('dragleave',e=>{if(!sprintDraggingId)return;const rel=e.relatedTarget;if(rel&&col.contains(rel))return;setSprintDropColumn(null)});
       col.addEventListener('drop',e=>{if(!sprintDraggingId)return;e.preventDefault();const targetDate=col.dataset.date;if(targetDate)applySprintDrop(targetDate);else clearSprintDragState()});
       const items=sp.days[i]||[];
-      if(items.length===0){
+      const visibleItems=items.filter(task=>isSprintProjectVisible(task.project));
+      if(!visibleItems.length){
         const empty=document.createElement('div');
         empty.className='sprint-empty';
         empty.textContent='—';
-        col.appendChild(empty)
+        col.appendChild(empty);
+        grid.appendChild(col);
+        continue
       }
-      if(items.length){
-        const groups=[];const map=new Map();
-        for(const t of items){const key=t.project||'__none__';if(!map.has(key)){const meta=getProjectMeta(t.project);const group={id:key,emoji:meta.emoji,title:meta.title,tasks:[]};map.set(key,group);groups.push(group)}map.get(key).tasks.push(t)}
-        for(const grp of groups){
-          const groupEl=document.createElement('div');
-          groupEl.className='sprint-project-group';
-          const tag=document.createElement('div');
-          tag.className='sprint-project-tag';
-          const emoji=document.createElement('span');
-          emoji.className='sprint-project-emoji';
-          emoji.textContent=grp.emoji;
-          const name=document.createElement('span');
-          name.className='sprint-project-name';
-          name.textContent=grp.title;
-          tag.append(emoji,name);
-          groupEl.appendChild(tag);
-          for(const t of grp.tasks){
-            const it=document.createElement('div');
-            it.className='sprint-task';
-            it.setAttribute('draggable','true');
-            if(t.done)it.classList.add('is-done');
-            it.addEventListener('dragstart',e=>{sprintDraggingId=t.id;it.classList.add('is-dragging');setSprintDropColumn(null);try{e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',t.id)}catch{}closeContextMenu();closeDuePicker()});
-            it.addEventListener('dragend',()=>{clearSprintDragState()});
-            it.addEventListener('contextmenu',e=>{e.preventDefault();openContextMenu(t.id,e.clientX,e.clientY)});
-            const taskTitle=document.createElement('div');
-            taskTitle.className='sprint-task-title';
-            taskTitle.textContent=t.title;
-            it.append(taskTitle);
-            groupEl.appendChild(it)
-          }
-          col.appendChild(groupEl)
+      const groups=[];const map=new Map();
+      for(const t of visibleItems){const key=sprintProjectKey(t.project);if(!map.has(key)){const meta=getProjectMeta(t.project);const group={id:key,emoji:meta.emoji,title:meta.title,tasks:[]};map.set(key,group);groups.push(group)}map.get(key).tasks.push(t)}
+      for(const grp of groups){
+        const groupEl=document.createElement('div');
+        groupEl.className='sprint-project-group';
+        const tag=document.createElement('div');
+        tag.className='sprint-project-tag';
+        const emoji=document.createElement('span');
+        emoji.className='sprint-project-emoji';
+        emoji.textContent=grp.emoji;
+        const name=document.createElement('span');
+        name.className='sprint-project-name';
+        name.textContent=grp.title;
+        tag.append(emoji,name);
+        groupEl.appendChild(tag);
+        for(const t of grp.tasks){
+          const it=document.createElement('div');
+          it.className='sprint-task';
+          it.setAttribute('draggable','true');
+          if(t.done)it.classList.add('is-done');
+          it.addEventListener('dragstart',e=>{sprintDraggingId=t.id;it.classList.add('is-dragging');setSprintDropColumn(null);try{e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',t.id)}catch{}closeContextMenu();closeDuePicker()});
+          it.addEventListener('dragend',()=>{clearSprintDragState()});
+          it.addEventListener('contextmenu',e=>{e.preventDefault();openContextMenu(t.id,e.clientX,e.clientY)});
+          const taskTitle=document.createElement('div');
+          taskTitle.className='sprint-task-title';
+          taskTitle.textContent=t.title;
+          it.append(taskTitle);
+          groupEl.appendChild(it)
         }
+        col.appendChild(groupEl)
       }
       grid.appendChild(col)
     }
     row.append(label,grid);
     wrap.appendChild(row)
+  }
+  if(renderedWeeks===0){
+    const empty=document.createElement('div');
+    empty.className='sprint-empty';
+    empty.textContent='Нет задач для выбранных проектов.';
+    container.appendChild(empty);
+    return
   }
   container.appendChild(wrap)
 }
