@@ -40,6 +40,11 @@ function containsTask(root,targetId){if(!root||!targetId)return false;if(root.id
 function detachTaskFromTree(id,list=tasks){if(!Array.isArray(list))return null;for(let i=0;i<list.length;i++){const item=list[i];if(item.id===id){return list.splice(i,1)[0]}const pulled=detachTaskFromTree(id,item.children||[]);if(pulled){if(item.children&&item.children.length===0)item.collapsed=false;return pulled}}return null}
 let draggingTaskId=null;
 let dropTargetId=null;
+let sprintDraggingId=null;
+let sprintDropColumn=null;
+function setSprintDropColumn(col){if(sprintDropColumn===col)return;if(sprintDropColumn){sprintDropColumn.classList.remove('is-drop-target')}sprintDropColumn=col||null;if(sprintDropColumn){sprintDropColumn.classList.add('is-drop-target')}}
+function clearSprintDragState(){const prev=document.querySelector('.sprint-task.is-dragging');if(prev)prev.classList.remove('is-dragging');setSprintDropColumn(null);sprintDraggingId=null}
+function applySprintDrop(targetDate){if(!sprintDraggingId)return;const task=findTask(sprintDraggingId);if(!task)return;const d=new Date(targetDate);if(isNaN(d))return;d.setHours(0,0,0,0);const iso=d.toISOString();if(task.due!==iso){task.due=iso;Store.write(tasks)}clearSprintDragState();render()}
 function setDropTarget(id){if(dropTargetId===id||dropTargetId===null&&id===null)return;if(dropTargetId){const prev=document.querySelector(`.task[data-id="${dropTargetId}"]`);prev&&prev.classList.remove('is-drop-target')}dropTargetId=id||null;if(dropTargetId){const el=document.querySelector(`.task[data-id="${dropTargetId}"]`);el&&el.classList.add('is-drop-target')}}
 function clearDragIndicators(){if(draggingTaskId){const dragEl=document.querySelector(`.task[data-id="${draggingTaskId}"]`);dragEl&&dragEl.classList.remove('is-dragging')}setDropTarget(null);draggingTaskId=null}
 function rowClass(t){return'task'+(t.collapsed?' is-collapsed':'')+(selectedTaskId===t.id?' is-selected':'')+(t.done?' done':'')}
@@ -77,21 +82,24 @@ function openNotesPanel(taskId){const t=findTask(taskId);if(!t||!NotesPanel.pane
 
 function closeNotesPanel(){if(!NotesPanel.panel||!NotesPanel.overlay)return;NotesPanel.taskId=null;NotesPanel.overlay.classList.remove('is-visible');NotesPanel.overlay.setAttribute('aria-hidden','true');NotesPanel.panel.classList.remove('is-open');NotesPanel.panel.setAttribute('aria-hidden','true');document.body.classList.remove('notes-open');NotesPanel.title&&(NotesPanel.title.textContent='');NotesPanel.input&&(NotesPanel.input.value='')}
 function openContextMenu(taskId,x,y){
-  Ctx.taskId=taskId;const menu=Ctx.el;menu.innerHTML='';
+  Ctx.taskId=taskId;const menu=Ctx.el;menu.innerHTML='';closeAssignSubmenu();closeDuePicker();
   const btnEdit=document.createElement('div');btnEdit.className='context-item';btnEdit.textContent='Редактировать';
-  btnEdit.onclick=()=>{closeContextMenu();const row=document.querySelector(`.task[data-id="${taskId}"]`);const t=findTask(taskId);if(row&&t)startEdit(row,t)};
+  btnEdit.onclick=()=>{closeContextMenu();const row=document.querySelector(`.task[data-id="${taskId}"]`);const t=findTask(taskId);if(!t)return;if(row)startEdit(row,t);else{const next=prompt('Название задачи',t.title||'');if(next!==null)renameTask(taskId,next)}};
   const btnAssign=document.createElement('div');btnAssign.className='context-item';btnAssign.textContent='Проект ▸';
-  btnAssign.addEventListener('mouseenter',()=>openAssignSubmenu(taskId,menu));
+  btnAssign.addEventListener('mouseenter',()=>{openAssignSubmenu(taskId,menu);closeDuePicker()});
   btnAssign.addEventListener('mouseleave',()=>maybeCloseSubmenu());
-  menu.append(btnEdit,btnAssign);
+  const btnDue=document.createElement('div');btnDue.className='context-item';btnDue.textContent='Дата ▸';btnDue.dataset.menuAnchor='true';
+  btnDue.addEventListener('mouseenter',()=>{closeAssignSubmenu();openDuePicker(taskId,btnDue,{fromContext:true})});
+  btnDue.addEventListener('mouseleave',()=>{setTimeout(()=>{if(Due.el.dataset.fromContext==='true'){const anchor=Due.anchor;if(anchor&&anchor.matches(':hover'))return;if(Due.el.matches(':hover'))return;closeDuePicker()}},80)});
+  menu.append(btnEdit,btnAssign,btnDue);
   menu.style.display='block';
   const mw=menu.offsetWidth,mh=menu.offsetHeight;const px=Math.min(x,window.innerWidth-mw-8),py=Math.min(y,window.innerHeight-mh-8);
   menu.style.left=px+'px';menu.style.top=py+'px';
   menu.setAttribute('aria-hidden','false');
 }
-function closeContextMenu(){Ctx.taskId=null;Ctx.el.style.display='none';Ctx.el.setAttribute('aria-hidden','true');closeAssignSubmenu()}
+function closeContextMenu(){Ctx.taskId=null;Ctx.el.style.display='none';Ctx.el.setAttribute('aria-hidden','true');closeAssignSubmenu();if(Due.el&&Due.el.dataset.fromContext==='true')closeDuePicker()}
 window.addEventListener('click',e=>{if(!Ctx.el.contains(e.target)&&!Ctx.sub.contains(e.target))closeContextMenu()});
-window.addEventListener('keydown',e=>{if(e.key==='Escape'){closeContextMenu();closeNotesPanel()}});
+window.addEventListener('keydown',e=>{if(e.key==='Escape'){closeContextMenu();closeNotesPanel();closeDuePicker()}});
 window.addEventListener('resize',closeContextMenu);
 window.addEventListener('scroll',closeContextMenu,true);
 
@@ -309,6 +317,7 @@ function getProjectMeta(id){return{emoji:getProjectEmoji(id),title:getProjectTit
 function assignProject(taskId,projId){const t=findTask(taskId);if(!t)return;t.project=projId;Store.write(tasks);render();toast('Назначено в проект: '+getProjectTitle(projId))}
 function clearProject(taskId){const t=findTask(taskId);if(!t)return;t.project=null;Store.write(tasks);render()}
 function openAssignSubmenu(taskId,anchorMenu){
+  closeDuePicker();
   const sub=Ctx.sub;
   sub.innerHTML='';
   if(!projects.length){
@@ -380,10 +389,16 @@ function renderSprint(container){
       title.className='col-title';
       const dayDate=new Date(startDate);
       dayDate.setDate(dayDate.getDate()+i-1);
+      dayDate.setHours(0,0,0,0);
       const dd=String(dayDate.getDate()).padStart(2,'0');
       const mm=String(dayDate.getMonth()+1).padStart(2,'0');
       title.textContent=`${dayNames[i-1]} ${dd}.${mm}`;
+      col.dataset.date=dayDate.toISOString();
       col.appendChild(title);
+      col.addEventListener('dragenter',e=>{if(!sprintDraggingId)return;const rel=e.relatedTarget;if(rel&&col.contains(rel))return;setSprintDropColumn(col)});
+      col.addEventListener('dragover',e=>{if(!sprintDraggingId)return;e.preventDefault();if(e.dataTransfer)e.dataTransfer.dropEffect='move';setSprintDropColumn(col)});
+      col.addEventListener('dragleave',e=>{if(!sprintDraggingId)return;const rel=e.relatedTarget;if(rel&&col.contains(rel))return;setSprintDropColumn(null)});
+      col.addEventListener('drop',e=>{if(!sprintDraggingId)return;e.preventDefault();const targetDate=col.dataset.date;if(targetDate)applySprintDrop(targetDate);else clearSprintDragState()});
       const items=sp.days[i]||[];
       if(items.length===0){
         const empty=document.createElement('div');
@@ -410,14 +425,11 @@ function renderSprint(container){
           for(const t of grp.tasks){
             const it=document.createElement('div');
             it.className='sprint-task';
+            it.setAttribute('draggable','true');
             if(t.done)it.classList.add('is-done');
-            it.addEventListener('click',()=>{
-              selectedTaskId=t.id;
-              currentView='all';
-              render();
-              const row=document.querySelector(`.task[data-id="${t.id}"]`);
-              row&&row.scrollIntoView({block:'center',behavior:'smooth'})
-            });
+            it.addEventListener('dragstart',e=>{sprintDraggingId=t.id;it.classList.add('is-dragging');setSprintDropColumn(null);try{e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',t.id)}catch{}closeContextMenu();closeDuePicker()});
+            it.addEventListener('dragend',()=>{clearSprintDragState()});
+            it.addEventListener('contextmenu',e=>{e.preventDefault();openContextMenu(t.id,e.clientX,e.clientY)});
             const taskTitle=document.createElement('div');
             taskTitle.className='sprint-task-title';
             taskTitle.textContent=t.title;
@@ -437,10 +449,11 @@ function renderSprint(container){
 
 function formatDue(iso){const d=new Date(iso);if(isNaN(d))return'';const dd=String(d.getDate()).padStart(2,'0');const mm=String(d.getMonth()+1).padStart(2,'0');return`${dd}.${mm}`}
 
-const Due={el:document.getElementById('dueMenu'),taskId:null,y:null,m:null};
-function buildDuePicker(y,m){const cont=document.createElement('div');cont.style.padding='6px';const header=document.createElement('div');header.className='cal-header';const todayBtn=document.createElement('button');todayBtn.className='cal-today';todayBtn.title='К текущему месяцу';const title=document.createElement('div');title.className='cal-title';title.textContent=monthTitle(y,m);const ctrls=document.createElement('div');ctrls.className='cal-ctrls';const prev=document.createElement('button');prev.className='cal-arrow';prev.textContent='‹';const next=document.createElement('button');next.className='cal-arrow';next.textContent='›';header.append(todayBtn,title,ctrls);ctrls.append(prev,next);const legend=document.createElement('div');legend.className='cal-legend';legend.innerHTML='<div>Wk</div><div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div>';const viewport=document.createElement('div');viewport.className='cal-viewport';const monthEl=document.createElement('div');monthEl.className='cal-month';const track=document.createElement('div');track.className='cal-track';track.appendChild(monthEl);viewport.appendChild(track);cont.append(header,legend,viewport);function renderLocal(){renderMonthInto(monthEl,Due.y,Due.m);title.textContent=monthTitle(Due.y,Due.m)}prev.onclick=()=>{let ny=Due.y,nm=Due.m-1;if(nm<0){nm=11;ny--}Due.y=ny;Due.m=nm;renderLocal()};next.onclick=()=>{let ny=Due.y,nm=Due.m+1;if(nm>11){nm=0;ny++}Due.y=ny;Due.m=nm;renderLocal()};todayBtn.onclick=()=>{const now=new Date();Due.y=now.getFullYear();Due.m=now.getMonth();renderLocal()};renderLocal();cont.addEventListener('click',e=>{const dayEl=e.target.closest('.cal-day');if(!dayEl)return;const day=Number(dayEl.textContent);const d=new Date(Due.y,Due.m,day);const t=findTask(Due.taskId);if(!t)return;t.due=d.toISOString();Store.write(tasks);closeDuePicker();render()});return cont}
-function openDuePicker(taskId,anchor){Due.taskId=taskId;const now=new Date();Due.y=now.getFullYear();Due.m=now.getMonth();const menu=Due.el;menu.innerHTML='';menu.appendChild(buildDuePicker(Due.y,Due.m));menu.style.display='block';menu.setAttribute('aria-hidden','false');const r=anchor.getBoundingClientRect();const mw=300;const x=Math.min(r.left,window.innerWidth-mw-8);const y=r.bottom+6;menu.style.left=x+'px';menu.style.top=y+'px';menu.style.position='fixed'}
-function closeDuePicker(){Due.taskId=null;Due.el.style.display='none';Due.el.setAttribute('aria-hidden','true')}
-window.addEventListener('click',e=>{if(Due.el.style.display==='block'&&!Due.el.contains(e.target)&&!e.target.closest('.due-btn'))closeDuePicker()},true);
+const Due={el:document.getElementById('dueMenu'),taskId:null,y:null,m:null,anchor:null};
+if(Due.el){Due.el.dataset.fromContext='false';Due.el.addEventListener('mouseleave',()=>{if(Due.el.dataset.fromContext==='true'){setTimeout(()=>{const anchor=Due.anchor;if(anchor&&anchor.matches(':hover'))return;if(Due.el.matches(':hover'))return;closeDuePicker()},80)}})}
+function buildDuePicker(y,m){const cont=document.createElement('div');cont.style.padding='6px';const header=document.createElement('div');header.className='cal-header';const todayBtn=document.createElement('button');todayBtn.className='cal-today';todayBtn.title='К текущему месяцу';const title=document.createElement('div');title.className='cal-title';title.textContent=monthTitle(y,m);const ctrls=document.createElement('div');ctrls.className='cal-ctrls';const prev=document.createElement('button');prev.className='cal-arrow';prev.textContent='‹';const next=document.createElement('button');next.className='cal-arrow';next.textContent='›';header.append(todayBtn,title,ctrls);ctrls.append(prev,next);const legend=document.createElement('div');legend.className='cal-legend';legend.innerHTML='<div>Wk</div><div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div>';const viewport=document.createElement('div');viewport.className='cal-viewport';const monthEl=document.createElement('div');monthEl.className='cal-month';const track=document.createElement('div');track.className='cal-track';track.appendChild(monthEl);viewport.appendChild(track);cont.append(header,legend,viewport);function renderLocal(){renderMonthInto(monthEl,Due.y,Due.m);title.textContent=monthTitle(Due.y,Due.m)}prev.onclick=()=>{let ny=Due.y,nm=Due.m-1;if(nm<0){nm=11;ny--}Due.y=ny;Due.m=nm;renderLocal()};next.onclick=()=>{let ny=Due.y,nm=Due.m+1;if(nm>11){nm=0;ny++}Due.y=ny;Due.m=nm;renderLocal()};todayBtn.onclick=()=>{const now=new Date();Due.y=now.getFullYear();Due.m=now.getMonth();renderLocal()};renderLocal();cont.addEventListener('click',e=>{const dayEl=e.target.closest('.cal-day');if(!dayEl)return;const day=Number(dayEl.textContent);const d=new Date(Due.y,Due.m,day);const t=findTask(Due.taskId);if(!t)return;t.due=d.toISOString();Store.write(tasks);if(Due.el&&Due.el.dataset.fromContext==='true')closeContextMenu();closeDuePicker();render()});return cont}
+function openDuePicker(taskId,anchor,options={}){Due.taskId=taskId;Due.anchor=anchor||null;const existing=findTask(taskId);if(existing&&existing.due){const dueDate=new Date(existing.due);if(!isNaN(dueDate)){Due.y=dueDate.getFullYear();Due.m=dueDate.getMonth()}else{const now=new Date();Due.y=now.getFullYear();Due.m=now.getMonth()}}else{const now=new Date();Due.y=now.getFullYear();Due.m=now.getMonth()}const menu=Due.el;if(!menu)return;menu.innerHTML='';menu.appendChild(buildDuePicker(Due.y,Due.m));menu.style.display='block';menu.setAttribute('aria-hidden','false');const fromContext=!!options.fromContext;menu.dataset.fromContext=fromContext?'true':'false';const r=anchor&&anchor.getBoundingClientRect?anchor.getBoundingClientRect():{left:0,right:0,top:0,bottom:0};menu.style.position='fixed';const mw=menu.offsetWidth||300;const mh=menu.offsetHeight||320;if(fromContext){let px=r.right+8;let py=r.top;if(px+mw>window.innerWidth-8)px=Math.max(8,window.innerWidth-mw-8);if(py+mh>window.innerHeight-8)py=Math.max(8,window.innerHeight-mh-8);menu.style.left=px+'px';menu.style.top=py+'px'}else{const px=Math.min(r.left,window.innerWidth-mw-8);let py=r.bottom+6;if(py+mh>window.innerHeight-8)py=Math.max(8,window.innerHeight-mh-8);menu.style.left=px+'px';menu.style.top=py+'px'}}
+function closeDuePicker(){Due.taskId=null;Due.anchor=null;if(Due.el){Due.el.style.display='none';Due.el.setAttribute('aria-hidden','true');Due.el.dataset.fromContext='false'}}
+window.addEventListener('click',e=>{if(Due.el.style.display==='block'&&!Due.el.contains(e.target)&&!(Due.anchor&&Due.anchor.contains(e.target))&&!e.target.closest('.due-btn'))closeDuePicker()},true);
 
 (function(){applyTheme(ThemeStore.read());render();initCalendar()})();
