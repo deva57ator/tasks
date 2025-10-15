@@ -190,19 +190,22 @@ function renderTaskRow(t,depth,container){
   row.addEventListener('contextmenu',e=>{e.preventDefault();openContextMenu(t.id,e.clientX,e.clientY)});
   const toggle=document.createElement('div');toggle.className='toggle';toggle.style.visibility=hasChildren?'visible':'hidden';toggle.onclick=e=>{e.stopPropagation();toggleCollapse(t.id)};
   const cb=document.createElement('div');cb.className='checkbox';cb.dataset.checked=t.done;cb.title=t.done?'Снять отметку выполнения':'Отметить как выполненную';cb.onclick=e=>{e.stopPropagation();toggleTask(t.id)};
+  const content=document.createElement('div');content.className='task-main';
   const title=document.createElement('div');title.className='task-title';
   const titleText=document.createElement('span');titleText.className='task-title-text';titleText.textContent=t.title;
   title.appendChild(titleText);
+  content.appendChild(title);
+  const tagsWrap=document.createElement('div');tagsWrap.className='task-tags';
   const timeBadge=document.createElement('span');timeBadge.className='time-spent';timeBadge.textContent=formatDuration(totalTimeMs(t));
-  title.appendChild(timeBadge);
   const timerBtn=document.createElement('button');timerBtn.className='timer-btn';timerBtn.type='button';timerBtn.textContent='⏱️';timerBtn.dataset.active=t.timerActive?'true':'false';timerBtn.title=t.timerActive?'Остановить таймер':'Запустить таймер';timerBtn.setAttribute('aria-label','Таймер задачи');timerBtn.setAttribute('aria-pressed',t.timerActive?'true':'false');timerBtn.onclick=e=>{e.stopPropagation();toggleTaskTimer(t.id)};
   const noteBtn=document.createElement('button');noteBtn.className='note-btn';noteBtn.type='button';noteBtn.setAttribute('aria-label','Заметки задачи');noteBtn.title='Открыть заметки';noteBtn.textContent='📝';noteBtn.onclick=e=>{e.stopPropagation();openNotesPanel(t.id)};noteBtn.dataset.hasNotes=t.notes&&t.notes.trim()? 'true':'false';
   const dueBtn=document.createElement('button');dueBtn.className='due-btn';dueBtn.title='Установить дедлайн';dueBtn.textContent='📅';dueBtn.onclick=e=>{e.stopPropagation();openDuePicker(t.id,dueBtn)};
   const del=document.createElement('button');del.className='delete-btn';del.type='button';del.setAttribute('aria-label','Удалить задачу');del.title='Удалить задачу';del.textContent='×';del.onclick=e=>{e.stopPropagation();handleDelete(t.id)};
-  if(t.due){const tag=document.createElement('span');tag.className='due-tag';if(isDueToday(t.due))tag.classList.add('is-today');tag.textContent=formatDue(t.due);title.appendChild(tag)}
-  if(t.project){const ptag=document.createElement('span');ptag.className='proj-tag';ptag.textContent=getProjectEmoji(t.project);title.appendChild(ptag)}
-  title.append(timerBtn,noteBtn,dueBtn);
-  row.append(toggle,cb,title,del);
+  if(t.due){const tag=document.createElement('span');tag.className='due-tag';if(isDueToday(t.due))tag.classList.add('is-today');tag.textContent=formatDue(t.due);tagsWrap.appendChild(tag)}
+  if(t.project){const ptag=document.createElement('span');ptag.className='proj-tag';ptag.textContent=getProjectEmoji(t.project);tagsWrap.appendChild(ptag)}
+  if(tagsWrap.childElementCount)content.appendChild(tagsWrap);
+  const actions=document.createElement('div');actions.className='task-actions';actions.append(timeBadge,timerBtn,noteBtn,dueBtn);
+  row.append(toggle,cb,content,actions,del);
   row.addEventListener('click',()=>{
     if(activeEditId&&activeEditId!==t.id){const v=(activeInputEl?.value||'').trim();if(!v){toast('Напиши, что нужно сделать');activeInputEl&&activeInputEl.focus();return}const id=activeEditId;activeEditId=null;activeInputEl=null;selectedTaskId=t.id;renameTask(id,v);return}
     selectedTaskId=t.id;render()
