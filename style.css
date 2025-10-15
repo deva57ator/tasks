@@ -15,7 +15,7 @@ code, .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consol
 .cal-arrow,.cal-today,.cal-collapse{width:28px;height:28px;border-radius:999px;border:1px solid var(--hint);background:transparent;display:grid;place-items:center;cursor:pointer;color:var(--icon)}
 .cal-arrow:hover,.cal-today:hover,.cal-collapse:hover{background:var(--hover)}
 .cal-today::before{content:"○";font-size:14px;line-height:1}
-.cal-legend{display:grid;grid-template-columns:38px repeat(7,1fr);gap:2px;padding:4px 0;color:var(--muted);font-size:11px}
+.cal-legend{display:grid;grid-template-columns:38px repeat(7,1fr);gap:2px;padding:4px 2px;color:var(--muted);font-size:11px}
 .cal-legend div{padding:2px 0;text-align:center}
 .cal-viewport{overflow:hidden;position:relative;height:calc(5*32px + 16px)}
 .calendar .cal-viewport{display:flex;flex-direction:column;justify-content:flex-end}
@@ -23,7 +23,7 @@ code, .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consol
 .cal-track{display:flex;transition:transform .24s ease;will-change:transform}
 .calendar .cal-track{align-items:flex-end}
 .cal-month{min-width:100%;display:flex;flex-direction:column;justify-content:flex-end}
-.cal-grid{display:flex;flex-direction:column;gap:2px}
+.cal-grid{display:flex;flex-direction:column;gap:2px;padding:0 2px 2px}
 .cal-week{display:grid;grid-template-columns:38px repeat(7,1fr);gap:2px}
 .cal-weeknum{background:var(--cal-week-bg);color:var(--muted);font-size:11px;user-select:none;border-radius:6px;display:flex;align-items:center;justify-content:center;height:32px}
 .cal-day{position:relative;display:flex;align-items:center;justify-content:center;height:32px;border-radius:8px;user-select:none}
