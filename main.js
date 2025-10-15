@@ -106,7 +106,7 @@ function handleDelete(id,{visibleOrder=null}={}){
 function renameTask(id,title){const t=findTask(id);if(!t) return;const v=String(title||'').trim();if(v&&v!==t.title){t.title=v;if(NotesPanel.taskId===id&&NotesPanel.title)NotesPanel.title.textContent=t.title;Store.write(tasks)}render()}
 function toggleCollapse(id){const t=findTask(id);if(!t) return;t.collapsed=!t.collapsed;Store.write(tasks);render()}
 
-const Ctx={el:$('#ctxMenu'),taskId:null,sub:document.getElementById('ctxSub')};
+const Ctx={el:$('#ctxMenu'),taskId:null,sub:document.getElementById('ctxSub'),submenuAnchor:null};
 const NotesPanel={panel:document.getElementById('notesSidebar'),overlay:document.getElementById('notesOverlay'),close:document.getElementById('notesClose'),title:document.getElementById('notesTaskTitle'),input:document.getElementById('notesInput'),taskId:null};
 
 function updateNoteIndicator(taskId){const btn=document.querySelector(`.task[data-id="${taskId}"] .note-btn`);if(btn){const t=findTask(taskId);btn.dataset.hasNotes=t&&t.notes&&t.notes.trim()? 'true':'false'}}
@@ -122,7 +122,7 @@ function openContextMenu(taskId,x,y){
   const btnComplete=document.createElement('div');btnComplete.className='context-item';btnComplete.textContent='Отметить выполненной';
   btnComplete.onclick=()=>{closeContextMenu();markTaskDone(taskId)};
   const btnAssign=document.createElement('div');btnAssign.className='context-item';btnAssign.textContent='Проект ▸';
-  btnAssign.addEventListener('mouseenter',()=>{openAssignSubmenu(taskId,menu);closeDuePicker()});
+  btnAssign.addEventListener('mouseenter',()=>{openAssignSubmenu(taskId,btnAssign);closeDuePicker()});
   btnAssign.addEventListener('mouseleave',()=>maybeCloseSubmenu());
   const btnTime=document.createElement('div');btnTime.className='context-item';btnTime.textContent='Время…';
   btnTime.onclick=()=>{closeContextMenu();openTimeEditDialog(taskId)};
@@ -417,9 +417,11 @@ function renderSprintFiltersBar(entries){
 }
 function assignProject(taskId,projId){const t=findTask(taskId);if(!t)return;t.project=projId;Store.write(tasks);render();toast('Назначено в проект: '+getProjectTitle(projId))}
 function clearProject(taskId){const t=findTask(taskId);if(!t)return;t.project=null;Store.write(tasks);render()}
-function openAssignSubmenu(taskId,anchorMenu){
+function openAssignSubmenu(taskId,anchorItem){
   closeDuePicker();
+  if(!anchorItem)return;
   const sub=Ctx.sub;
+  if(!sub)return;
   sub.innerHTML='';
   if(!projects.length){
     const it=document.createElement('div');
@@ -446,14 +448,33 @@ function openAssignSubmenu(taskId,anchorMenu){
     clr.onclick=e=>{e.stopPropagation();clearProject(taskId);closeContextMenu()};
     sub.appendChild(clr);
   }
-  const r=anchorMenu.getBoundingClientRect();
+  if(Ctx.submenuAnchor&&Ctx.submenuAnchor!==anchorItem){
+    Ctx.submenuAnchor.classList.remove('is-submenu-open');
+  }
+  Ctx.submenuAnchor=anchorItem;
+  anchorItem.classList.add('is-submenu-open');
+  const r=anchorItem.getBoundingClientRect();
   sub.style.display='block';
-  sub.style.left=(r.right+6)+'px';
-  sub.style.top=r.top+'px';
+  const sw=sub.offsetWidth||0;
+  const sh=sub.offsetHeight||0;
+  let left=r.right+6;
+  let top=r.top;
+  if(left+sw>window.innerWidth-8)left=Math.max(8,window.innerWidth-sw-8);
+  if(top+sh>window.innerHeight-8)top=Math.max(8,window.innerHeight-sh-8);
+  sub.style.left=left+'px';
+  sub.style.top=top+'px';
   sub.setAttribute('aria-hidden','false');
 }
-function closeAssignSubmenu(){Ctx.sub.style.display='none';Ctx.sub.setAttribute('aria-hidden','true')}
-function maybeCloseSubmenu(){setTimeout(()=>{if(!Ctx.sub.matches(':hover'))closeAssignSubmenu()},120)}
+function closeAssignSubmenu(){
+  if(Ctx.submenuAnchor){
+    Ctx.submenuAnchor.classList.remove('is-submenu-open');
+    Ctx.submenuAnchor=null;
+  }
+  if(!Ctx.sub)return;
+  Ctx.sub.style.display='none';
+  Ctx.sub.setAttribute('aria-hidden','true');
+}
+function maybeCloseSubmenu(){setTimeout(()=>{const anchor=Ctx.submenuAnchor;if(anchor&&anchor.matches(':hover'))return;if(Ctx.sub&&Ctx.sub.matches(':hover'))return;closeAssignSubmenu()},120)}
 
 try{console.assert(monthTitle(2025,0)==='Январь 2025');const weeks=buildMonthMatrix(2025,0,{minVisibleDays:2,maxWeeks:5});console.assert(weeks.length>=4&&weeks.length<=5);console.assert(rowClass({collapsed:false,done:false,id:'x'})==='task');const sprintSample=buildSprintData([{id:'a',title:'t',due:new Date().toISOString(),children:[]}]);console.assert(Array.isArray(sprintSample));}catch(e){console.warn('Self-tests failed:',e)}
 
@@ -588,6 +609,7 @@ function ensureDuePickerWidth(container){if(!container)return;if(duePickerMinWid
 function buildDuePicker(y,m){const cont=document.createElement('div');cont.className='due-picker';const header=document.createElement('div');header.className='cal-header';const todayBtn=document.createElement('button');todayBtn.className='cal-today';todayBtn.title='К текущему месяцу';const title=document.createElement('div');title.className='cal-title';title.textContent=monthTitle(y,m);const ctrls=document.createElement('div');ctrls.className='cal-ctrls';const prev=document.createElement('button');prev.className='cal-arrow';prev.textContent='‹';const next=document.createElement('button');next.className='cal-arrow';next.textContent='›';header.append(todayBtn,title,ctrls);ctrls.append(prev,next);const legend=document.createElement('div');legend.className='cal-legend';legend.innerHTML='<div>Wk</div><div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div>';const viewport=document.createElement('div');viewport.className='cal-viewport';const monthEl=document.createElement('div');monthEl.className='cal-month';const track=document.createElement('div');track.className='cal-track';track.appendChild(monthEl);viewport.appendChild(track);cont.append(header,legend,viewport);function renderLocal(){renderMonthInto(monthEl,Due.y,Due.m);title.textContent=monthTitle(Due.y,Due.m)}prev.onclick=()=>{let ny=Due.y,nm=Due.m-1;if(nm<0){nm=11;ny--}Due.y=ny;Due.m=nm;renderLocal()};next.onclick=()=>{let ny=Due.y,nm=Due.m+1;if(nm>11){nm=0;ny++}Due.y=ny;Due.m=nm;renderLocal()};todayBtn.onclick=()=>{const now=new Date();Due.y=now.getFullYear();Due.m=now.getMonth();renderLocal()};renderLocal();cont.addEventListener('click',e=>{const dayEl=e.target.closest('.cal-day');if(!dayEl)return;const day=Number(dayEl.textContent);const d=new Date(Due.y,Due.m,day);const t=findTask(Due.taskId);if(!t)return;t.due=d.toISOString();Store.write(tasks);if(Due.el&&Due.el.dataset.fromContext==='true')closeContextMenu();closeDuePicker();render()});return cont}
 function openDuePicker(taskId,anchor,options={}){
   Due.taskId=taskId;
+  if(Due.anchor&&Due.anchor!==anchor&&Due.anchor.classList){Due.anchor.classList.remove('is-submenu-open')}
   Due.anchor=anchor||null;
   const existing=findTask(taskId);
   if(existing&&existing.due){
@@ -622,6 +644,7 @@ function openDuePicker(taskId,anchor,options={}){
   }
   const fromContext=!!options.fromContext;
   menu.dataset.fromContext=fromContext?'true':'false';
+  if(fromContext&&anchor&&anchor.classList){anchor.classList.add('is-submenu-open')}
   const r=anchor&&anchor.getBoundingClientRect?anchor.getBoundingClientRect():{left:0,right:0,top:0,bottom:0};
   menu.style.position='fixed';
   const mw=menu.offsetWidth||(duePickerMinWidth||300);
@@ -641,7 +664,12 @@ function openDuePicker(taskId,anchor,options={}){
     menu.style.top=py+'px';
   }
 }
-function closeDuePicker(){Due.taskId=null;Due.anchor=null;if(Due.el){Due.el.style.display='none';Due.el.setAttribute('aria-hidden','true');Due.el.dataset.fromContext='false'}}
+function closeDuePicker(){
+  if(Due.anchor&&Due.anchor.classList){Due.anchor.classList.remove('is-submenu-open')}
+  Due.taskId=null;
+  Due.anchor=null;
+  if(Due.el){Due.el.style.display='none';Due.el.setAttribute('aria-hidden','true');Due.el.dataset.fromContext='false'}
+}
 window.addEventListener('click',e=>{if(Due.el.style.display==='block'&&!Due.el.contains(e.target)&&!(Due.anchor&&Due.anchor.contains(e.target))&&!e.target.closest('.due-btn'))closeDuePicker()},true);
 
 (function(){applyTheme(ThemeStore.read());render();initCalendar()})();
