@@ -175,7 +175,7 @@ function renderTaskRow(t,depth,container){
   const noteBtn=document.createElement('button');noteBtn.className='note-btn';noteBtn.type='button';noteBtn.setAttribute('aria-label','Заметки задачи');noteBtn.title='Открыть заметки';noteBtn.textContent='📝';noteBtn.onclick=e=>{e.stopPropagation();openNotesPanel(t.id)};noteBtn.dataset.hasNotes=t.notes&&t.notes.trim()? 'true':'false';
   const dueBtn=document.createElement('button');dueBtn.className='due-btn';dueBtn.title='Установить дедлайн';dueBtn.textContent='📅';dueBtn.onclick=e=>{e.stopPropagation();openDuePicker(t.id,dueBtn)};
   const del=document.createElement('button');del.className='delete-btn';del.type='button';del.setAttribute('aria-label','Удалить задачу');del.title='Удалить задачу';del.textContent='×';del.onclick=e=>{e.stopPropagation();handleDelete(t.id)};
-  if(t.due){const tag=document.createElement('span');tag.className='due-tag';tag.textContent=formatDue(t.due);title.appendChild(tag)}
+  if(t.due){const tag=document.createElement('span');tag.className='due-tag';if(isDueToday(t.due))tag.classList.add('is-today');tag.textContent=formatDue(t.due);title.appendChild(tag)}
   if(t.project){const ptag=document.createElement('span');ptag.className='proj-tag';ptag.textContent=getProjectEmoji(t.project);title.appendChild(ptag)}
   title.append(noteBtn,dueBtn);
   row.append(toggle,cb,title,del);
@@ -461,6 +461,7 @@ function renderSprint(container){
   const projectEntries=Array.from(projectMap.values());
   syncSprintFilterState(projectEntries.map(entry=>entry.key));
   renderSprintFiltersBar(projectEntries);
+  const todayDate=normalizeDate(new Date());
   const wrap=document.createElement('div');
   wrap.className='sprint';
   const dayNames=['Пн','Вт','Ср','Чт','Пт'];
@@ -489,6 +490,7 @@ function renderSprint(container){
       const mm=String(dayDate.getMonth()+1).padStart(2,'0');
       title.textContent=`${dayNames[i-1]} ${dd}.${mm}`;
       col.dataset.date=dayDate.toISOString();
+      if(sameDay(dayDate,todayDate))col.classList.add('is-today');
       col.appendChild(title);
       col.addEventListener('dragenter',e=>{if(!sprintDraggingId)return;const rel=e.relatedTarget;if(rel&&col.contains(rel))return;setSprintDropColumn(col)});
       col.addEventListener('dragover',e=>{if(!sprintDraggingId)return;e.preventDefault();if(e.dataTransfer)e.dataTransfer.dropEffect='move';setSprintDropColumn(col)});
