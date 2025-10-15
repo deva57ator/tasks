@@ -233,7 +233,6 @@ $('#addBtn').onclick=()=>{addTask($('#taskInput').value);$('#taskInput').value='
 $('#taskInput').onkeydown=e=>{if(e.key==='Enter'){addTask(e.target.value);e.target.value=''}};
 $$('.nav-btn').forEach(btn=>btn.onclick=()=>{const view=btn.dataset.view;if(view==='today'){currentView='today';render();return}if(view==='sprint'){currentView='sprint';render();return}if(view==='eisenhower'){toast('Эта кнопка — заглушка');return}currentView='all';render()});
 
-const projToggle=$('#projToggle');
 const projList=$('#projList');
 const projAdd=$('#projAdd');
 const ProjCtx={el:document.getElementById('projCtxMenu'),id:null,anchor:null};
@@ -257,8 +256,9 @@ function ensureEmojiPicker(){
 }
 
 function renderProjects(){
+  if(!projList)return;
   projList.innerHTML='';
-  if(!projects.length){const hint=document.createElement('div');hint.className='proj-item';hint.style.color='var(--muted)';hint.textContent='Проектов пока нет';projList.appendChild(hint);return}
+  if(!projects.length){const hint=document.createElement('div');hint.className='proj-item is-empty';hint.textContent='Проектов пока нет';projList.appendChild(hint);return}
   for(const p of projects){
     const row=document.createElement('div');row.className='proj-item';row.dataset.id=p.id;
     const emojiBtn=document.createElement('button');emojiBtn.type='button';emojiBtn.className='emoji-btn';emojiBtn.textContent=getProjectEmoji(p.id);emojiBtn.title='Выбрать эмодзи';emojiBtn.onclick=e=>{e.stopPropagation();openEmojiPicker(p.id,emojiBtn)};row.appendChild(emojiBtn);
@@ -318,9 +318,6 @@ function openEmojiPicker(projectId,anchor){
   emojiPickerHost.style.top=top+'px';
   emojiPickerHost.style.visibility='visible';
 }
-let projectsOpen=false;
-function setProjectsOpen(open){projectsOpen=!!open;if(projectsOpen){projList.style.display='flex';projList.removeAttribute('hidden');projToggle.setAttribute('aria-expanded','true');projToggle.querySelector('.chev').textContent='▾';renderProjects()}else{projList.style.display='none';projList.setAttribute('hidden','');projToggle.setAttribute('aria-expanded','false');projToggle.querySelector('.chev').textContent='▸';closeProjMenu();closeEmojiPicker()}}
-projToggle.addEventListener('click',()=>setProjectsOpen(!projectsOpen));
 
 function openProjMenu(id,x,y,anchor){ProjCtx.id=id;ProjCtx.anchor=anchor;const menu=ProjCtx.el;menu.innerHTML='';const edit=document.createElement('div');edit.className='context-item';edit.textContent='Редактировать';edit.onclick=()=>{closeProjMenu();startProjectRename(id,anchor)};const del=document.createElement('div');del.className='context-item';del.textContent='Удалить';del.onclick=()=>{closeProjMenu();deleteProject(id)};menu.append(edit,del);menu.style.display='block';const mw=menu.offsetWidth,mh=menu.offsetHeight;const px=Math.min(x,window.innerWidth-mw-8),py=Math.min(y,window.innerHeight-mh-8);menu.style.left=px+'px';menu.style.top=py+'px';menu.setAttribute('aria-hidden','false')}
 function closeProjMenu(){ProjCtx.id=null;ProjCtx.anchor=null;ProjCtx.el.style.display='none';ProjCtx.el.setAttribute('aria-hidden','true')}
@@ -333,9 +330,9 @@ window.addEventListener('keydown',e=>{if(e.key==='Escape')closeEmojiPicker()});
 window.addEventListener('resize',closeEmojiPicker);
 window.addEventListener('scroll',closeEmojiPicker,true);
 
-function startProjectRename(id,row){closeEmojiPicker();const p=projects.find(pr=>pr.id===id);if(!p)return;const target=row?.querySelector('.name')||[...projList.children].find(n=>n.dataset.id===id)?.querySelector('.name');if(!target)return;const input=document.createElement('input');input.className='proj-input';input.value=p.title;target.replaceWith(input);input.focus();input.select();let finished=false;const save=()=>{if(finished)return;finished=true;const v=(input.value||'').trim();if(!v){toast('Назови проект');input.focus();finished=false;return}p.title=v;ProjectsStore.write(projects);renderProjects()};const cancel=()=>{if(finished)return;finished=true;renderProjects()};input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();save()}else if(e.key==='Escape'){e.preventDefault();cancel()}});input.addEventListener('blur',()=>{if(!finished)save()})}
+function startProjectRename(id,row){closeEmojiPicker();if(!projList)return;const p=projects.find(pr=>pr.id===id);if(!p)return;const target=row?.querySelector('.name')||[...projList.children].find(n=>n.dataset.id===id)?.querySelector('.name');if(!target)return;const input=document.createElement('input');input.className='proj-input';input.value=p.title;target.replaceWith(input);input.focus();input.select();let finished=false;const save=()=>{if(finished)return;finished=true;const v=(input.value||'').trim();if(!v){toast('Назови проект');input.focus();finished=false;return}p.title=v;ProjectsStore.write(projects);renderProjects()};const cancel=()=>{if(finished)return;finished=true;renderProjects()};input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();save()}else if(e.key==='Escape'){e.preventDefault();cancel()}});input.addEventListener('blur',()=>{if(!finished)save()})}
 function deleteProject(id){closeEmojiPicker();const idx=projects.findIndex(p=>p.id===id);if(idx===-1)return;projects.splice(idx,1);ProjectsStore.write(projects);renderProjects();toast('Проект удалён')}
-projAdd.addEventListener('click',()=>{setProjectsOpen(true);closeEmojiPicker();const row=document.createElement('div');row.className='proj-item';const input=document.createElement('input');input.className='proj-input';input.placeholder='Название проекта…';row.appendChild(input);projList.prepend(row);input.focus();let saved=false;const finish=save=>{if(saved)return;saved=true;const v=(input.value||'').trim();if(save){if(!v){toast('Назови проект');input.focus();saved=false;return}projects.unshift({id:uid(),title:v,emoji:null});ProjectsStore.write(projects)}renderProjects()};input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();finish(true)}else if(e.key==='Escape'){e.preventDefault();finish(false)}});input.addEventListener('blur',()=>{if(!saved)finish(true)})});
+if(projAdd&&projList){projAdd.addEventListener('click',()=>{closeEmojiPicker();const placeholder=projList.firstElementChild;if(placeholder&&placeholder.classList.contains('is-empty')){placeholder.remove()}const row=document.createElement('div');row.className='proj-item';const input=document.createElement('input');input.className='proj-input';input.placeholder='Название проекта…';row.appendChild(input);if(projList.firstChild){projList.prepend(row)}else{projList.appendChild(row)}input.focus();let saved=false;const finish=save=>{if(saved)return;saved=true;const v=(input.value||'').trim();if(save){if(!v){toast('Назови проект');input.focus();saved=false;return}projects.unshift({id:uid(),title:v,emoji:null});ProjectsStore.write(projects)}renderProjects()};input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();finish(true)}else if(e.key==='Escape'){e.preventDefault();finish(false)}});input.addEventListener('blur',()=>{if(!saved)finish(true)})})}
 
 document.addEventListener('keydown',e=>{
   if(e.target&&(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.isContentEditable))return;
@@ -345,6 +342,8 @@ document.addEventListener('keydown',e=>{
 
 if(!tasks.length){tasks=[{id:uid(),title:'Добавь несколько задач',done:false,collapsed:false,due:null,project:null,notes:'',children:[{id:uid(),title:'Пример подзадачи',done:false,collapsed:false,due:null,project:null,notes:'',children:[]} ]},{id:uid(),title:'ПКМ по строке → «Редактировать»',done:false,collapsed:false,due:null,project:null,notes:'',children:[]},{id:uid(),title:'Отметь как выполненную — увидишь зачёркивание',done:true,collapsed:false,due:null,project:null,notes:'',children:[] }];Store.write(tasks)}
 if(!projects.length){projects=[{id:uid(),title:'Личный',emoji:DEFAULT_PROJECT_EMOJI},{id:uid(),title:'Работа',emoji:'💼'}];ProjectsStore.write(projects)}
+
+renderProjects();
 
 function getProjectTitle(id){if(!id)return'Без проекта';const p=projects.find(x=>x.id===id);return p?p.title:'Проект'}
 function getProjectEmoji(id){const p=projects.find(x=>x.id===id);if(!p)return DEFAULT_PROJECT_EMOJI;if(typeof p.emoji==='string'){const trimmed=p.emoji.trim();if(trimmed)return trimmed}return DEFAULT_PROJECT_EMOJI}
