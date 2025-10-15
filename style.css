@@ -108,6 +108,10 @@ body.view-sprint .composer{display:none}
 .context-menu,.ctx-submenu{background:var(--context-menu-bg);border:1px solid var(--context-menu-border);box-shadow:var(--context-menu-shadow);border-radius:var(--context-menu-radius);padding:var(--context-menu-padding)}
 .context-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;user-select:none}
 .context-item:hover{background:var(--hover)}
+.due-picker{padding:8px;box-sizing:border-box}
+.due-picker .cal-header{padding-left:8px;padding-right:8px}
+.due-picker .cal-legend{padding-left:8px;padding-right:8px}
+.due-picker .cal-grid{padding-left:8px;padding-right:8px}
 .toast{position:fixed;bottom:18px;right:18px;background:var(--toast-bg);border:1px solid var(--toast-border);padding:10px 14px;border-radius:14px;box-shadow:var(--shadow);opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s}
 .toast.show{opacity:1;transform:translateY(0)}
 .sprint{display:flex;flex-direction:column;gap:12px}
