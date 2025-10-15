@@ -31,9 +31,10 @@ const $=s=>document.querySelector(s),$$=s=>Array.from(document.querySelectorAll(
 const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
 const MAX_TASK_DEPTH=2;
 const MONTH_NAMES=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+const TIME_UPDATE_INTERVAL=1000;
 
 function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('show'),1400)}
-function migrate(list,depth=0){const extras=[];for(const t of list){if(!Array.isArray(t.children)) t.children=[];if(typeof t.collapsed!=='boolean') t.collapsed=false;if(typeof t.done!=='boolean') t.done=false;if(!('due' in t)) t.due=null;if(!('project' in t)) t.project=null;if(typeof t.notes!=='string') t.notes='';if(t.children.length){migrate(t.children,depth+1);if(depth>=MAX_TASK_DEPTH){extras.push(...t.children);t.children=[]}}}if(extras.length) list.push(...extras);return list}
+function migrate(list,depth=0){const extras=[];for(const t of list){if(!Array.isArray(t.children)) t.children=[];if(typeof t.collapsed!=='boolean') t.collapsed=false;if(typeof t.done!=='boolean') t.done=false;if(!('due' in t)) t.due=null;if(!('project' in t)) t.project=null;if(typeof t.notes!=='string') t.notes='';if(typeof t.timeSpent!=='number'||!isFinite(t.timeSpent)||t.timeSpent<0)t.timeSpent=0;if(typeof t.timerActive!=='boolean')t.timerActive=false;if(typeof t.timerStart!=='number'||!isFinite(t.timerStart))t.timerStart=null;if(t.children.length){migrate(t.children,depth+1);if(depth>=MAX_TASK_DEPTH){extras.push(...t.children);t.children=[]}}}if(extras.length) list.push(...extras);return list}
 tasks=migrate(tasks);
 
 function findTask(id,list=tasks){for(const t of list){if(t.id===id) return t;const r=findTask(id,t.children||[]);if(r) return r}return null}
@@ -45,6 +46,19 @@ let draggingTaskId=null;
 let dropTargetId=null;
 let sprintDraggingId=null;
 let sprintDropColumn=null;
+let timerInterval=null;
+
+function totalTimeMs(task,now=Date.now()){if(!task)return 0;const base=typeof task.timeSpent==='number'&&isFinite(task.timeSpent)?Math.max(0,task.timeSpent):0;if(task.timerActive&&typeof task.timerStart==='number'&&isFinite(task.timerStart)){const diff=Math.max(0,now-task.timerStart);return base+diff}return base}
+function formatDuration(ms){if(!ms)return'0 мин';const totalMinutes=Math.floor(ms/60000);if(totalMinutes<=0)return'0 мин';const hours=Math.floor(totalMinutes/60);const minutes=totalMinutes%60;const parts=[];if(hours>0)parts.push(`${hours} ч`);if(minutes>0||!parts.length)parts.push(`${minutes} мин`);return parts.join(' ')}
+function hasActiveTimer(list=tasks){if(!Array.isArray(list))return false;for(const item of list){if(item&&item.timerActive)return true;if(item&&Array.isArray(item.children)&&item.children.length&&hasActiveTimer(item.children))return true}return false}
+function ensureTimerLoop(){if(timerInterval)return;timerInterval=setInterval(()=>updateTimerDisplays(),TIME_UPDATE_INTERVAL)}
+function stopTimerLoop(){if(timerInterval){clearInterval(timerInterval);timerInterval=null}}
+function syncTimerLoop(){if(hasActiveTimer())ensureTimerLoop();else stopTimerLoop();updateTimerDisplays()}
+function updateTimerDisplays(){const rows=$$('#tasks .task[data-id]');const now=Date.now();for(const row of rows){const id=row.dataset.id;const task=findTask(id);if(!task)continue;const timeEl=row.querySelector('.time-spent');if(timeEl)timeEl.textContent=formatDuration(totalTimeMs(task,now));const timerBtn=row.querySelector('.timer-btn');if(timerBtn){timerBtn.dataset.active=task.timerActive?'true':'false';timerBtn.title=task.timerActive?'Остановить таймер':'Запустить таймер';timerBtn.setAttribute('aria-pressed',task.timerActive?'true':'false')}}}
+function stopTaskTimer(task,{silent=false}={}){if(!task||!task.timerActive)return;const now=Date.now();if(typeof task.timerStart==='number'&&isFinite(task.timerStart)){task.timeSpent=totalTimeMs(task,now)}if(typeof task.timeSpent!=='number'||!isFinite(task.timeSpent))task.timeSpent=0;task.timerActive=false;task.timerStart=null;if(!silent)Store.write(tasks)}
+function startTaskTimer(task){if(!task)return;if(task.timerActive)return;task.timerActive=true;task.timerStart=Date.now();Store.write(tasks);syncTimerLoop()}
+function toggleTaskTimer(id){const task=findTask(id);if(!task)return;if(task.timerActive){stopTaskTimer(task,{silent:true});Store.write(tasks);syncTimerLoop()}else{startTaskTimer(task)}}
+function formatMinutesForPrompt(minutes){const ms=Math.max(0,minutes)*60000;return formatDuration(ms)}
 function setSprintDropColumn(col){if(sprintDropColumn===col)return;if(sprintDropColumn){sprintDropColumn.classList.remove('is-drop-target')}sprintDropColumn=col||null;if(sprintDropColumn){sprintDropColumn.classList.add('is-drop-target')}}
 function clearSprintDragState(){const prev=document.querySelector('.sprint-task.is-dragging');if(prev)prev.classList.remove('is-dragging');setSprintDropColumn(null);sprintDraggingId=null}
 function applySprintDrop(targetDate){if(!sprintDraggingId)return;const task=findTask(sprintDraggingId);if(!task)return;const d=new Date(targetDate);if(isNaN(d))return;d.setHours(0,0,0,0);const iso=d.toISOString();if(task.due!==iso){task.due=iso;Store.write(tasks)}clearSprintDragState();render()}
@@ -60,16 +74,18 @@ function addTask(title){
     const exists=projects.some(p=>p&&p.id===currentProjectId);
     if(exists)assignedProject=currentProjectId;
   }
-  tasks.unshift({id:uid(),title,done:false,children:[],collapsed:false,due:null,project:assignedProject,notes:''});
+  tasks.unshift({id:uid(),title,done:false,children:[],collapsed:false,due:null,project:assignedProject,notes:'',timeSpent:0,timerActive:false,timerStart:null});
   Store.write(tasks);
   render()
 }
-function addSubtask(parentId){const p=findTask(parentId);if(!p) return;const depth=getTaskDepth(parentId);if(depth===-1||depth>=MAX_TASK_DEPTH){toast('Максимальная вложенность — три уровня');return}const inheritedProject=typeof p.project==='undefined'?null:p.project;const child={id:uid(),title:'',done:false,children:[],collapsed:false,due:null,project:inheritedProject,notes:''};p.children.push(child);p.collapsed=false;Store.write(tasks);pendingEditId=child.id;render()}
-function toggleTask(id){const t=findTask(id);if(!t) return;t.done=!t.done;Store.write(tasks);render();toast(t.done?'Отмечено как выполнено':'Снята отметка выполнения')}
-function markTaskDone(id){const t=findTask(id);if(!t)return;if(t.done){toast('Задача уже выполнена');return}t.done=true;Store.write(tasks);render();toast('Отмечено как выполнено')}
+function addSubtask(parentId){const p=findTask(parentId);if(!p) return;const depth=getTaskDepth(parentId);if(depth===-1||depth>=MAX_TASK_DEPTH){toast('Максимальная вложенность — три уровня');return}const inheritedProject=typeof p.project==='undefined'?null:p.project;const child={id:uid(),title:'',done:false,children:[],collapsed:false,due:null,project:inheritedProject,notes:'',timeSpent:0,timerActive:false,timerStart:null};p.children.push(child);p.collapsed=false;Store.write(tasks);pendingEditId=child.id;render()}
+function toggleTask(id){const t=findTask(id);if(!t) return;t.done=!t.done;if(t.done)stopTaskTimer(t,{silent:true});Store.write(tasks);syncTimerLoop();render();toast(t.done?'Отмечено как выполнено':'Снята отметка выполнения')}
+function markTaskDone(id){const t=findTask(id);if(!t)return;if(t.done){toast('Задача уже выполнена');return}t.done=true;stopTaskTimer(t,{silent:true});Store.write(tasks);syncTimerLoop();render();toast('Отмечено как выполнено')}
 function deleteTask(id,list=tasks){for(let i=0;i<list.length;i++){if(list[i].id===id){list.splice(i,1);return true}if(deleteTask(id,list[i].children)) return true}return false}
 function handleDelete(id,{visibleOrder=null}={}){
   if(!Array.isArray(visibleOrder))visibleOrder=getVisibleTaskIds();
+  const target=findTask(id);
+  if(target)stopTaskTimer(target,{silent:true});
   const removed=deleteTask(id,tasks);
   if(!removed)return;
   if(NotesPanel.taskId===id)closeNotesPanel();
@@ -83,6 +99,7 @@ function handleDelete(id,{visibleOrder=null}={}){
   }
   if(nextId){selectedTaskId=nextId}else if(selectedTaskId===id){selectedTaskId=null}
   Store.write(tasks);
+  syncTimerLoop();
   render()
 }
 function renameTask(id,title){const t=findTask(id);if(!t) return;const v=String(title||'').trim();if(v&&v!==t.title){t.title=v;if(NotesPanel.taskId===id&&NotesPanel.title)NotesPanel.title.textContent=t.title;Store.write(tasks)}render()}
@@ -96,6 +113,7 @@ function updateNoteIndicator(taskId){const btn=document.querySelector(`.task[dat
 function openNotesPanel(taskId){const t=findTask(taskId);if(!t||!NotesPanel.panel||!NotesPanel.overlay||!NotesPanel.input)return;closeContextMenu();NotesPanel.taskId=taskId;NotesPanel.title&&(NotesPanel.title.textContent=t.title||'');NotesPanel.input.value=t.notes||'';NotesPanel.overlay.classList.add('is-visible');NotesPanel.overlay.setAttribute('aria-hidden','false');NotesPanel.panel.classList.add('is-open');NotesPanel.panel.setAttribute('aria-hidden','false');document.body.classList.add('notes-open');setTimeout(()=>{try{NotesPanel.input.focus({preventScroll:true})}catch{NotesPanel.input.focus()}},60);updateNoteIndicator(taskId)}
 
 function closeNotesPanel(){if(!NotesPanel.panel||!NotesPanel.overlay)return;NotesPanel.taskId=null;NotesPanel.overlay.classList.remove('is-visible');NotesPanel.overlay.setAttribute('aria-hidden','true');NotesPanel.panel.classList.remove('is-open');NotesPanel.panel.setAttribute('aria-hidden','true');document.body.classList.remove('notes-open');NotesPanel.title&&(NotesPanel.title.textContent='');NotesPanel.input&&(NotesPanel.input.value='')}
+function openTimeEditDialog(taskId){const task=findTask(taskId);if(!task)return;const currentMinutes=Math.max(0,Math.round(totalTimeMs(task)/60000));const currentFormatted=formatMinutesForPrompt(currentMinutes);const input=prompt(`Затраченное время в минутах (текущее: ${currentMinutes} мин ≈ ${currentFormatted})`,String(currentMinutes));if(input===null)return;const normalized=Number(String(input).replace(',','.'));if(!Number.isFinite(normalized)||normalized<0){toast('Введите корректное количество минут');return}const minutes=Math.round(normalized);task.timeSpent=Math.max(0,minutes)*60000;task.timerActive=false;task.timerStart=null;Store.write(tasks);syncTimerLoop();render();toast(`Время обновлено: ${formatDuration(task.timeSpent)}`)}
 function openContextMenu(taskId,x,y){
   Ctx.taskId=taskId;const menu=Ctx.el;menu.innerHTML='';closeAssignSubmenu();closeDuePicker();
   const btnEdit=document.createElement('div');btnEdit.className='context-item';btnEdit.textContent='Редактировать';
@@ -105,10 +123,12 @@ function openContextMenu(taskId,x,y){
   const btnAssign=document.createElement('div');btnAssign.className='context-item';btnAssign.textContent='Проект ▸';
   btnAssign.addEventListener('mouseenter',()=>{openAssignSubmenu(taskId,menu);closeDuePicker()});
   btnAssign.addEventListener('mouseleave',()=>maybeCloseSubmenu());
+  const btnTime=document.createElement('div');btnTime.className='context-item';btnTime.textContent='Время…';
+  btnTime.onclick=()=>{closeContextMenu();openTimeEditDialog(taskId)};
   const btnDue=document.createElement('div');btnDue.className='context-item';btnDue.textContent='Дата ▸';btnDue.dataset.menuAnchor='true';
   btnDue.addEventListener('mouseenter',()=>{closeAssignSubmenu();openDuePicker(taskId,btnDue,{fromContext:true})});
   btnDue.addEventListener('mouseleave',()=>{setTimeout(()=>{if(Due.el.dataset.fromContext==='true'){const anchor=Due.anchor;if(anchor&&anchor.matches(':hover'))return;if(Due.el.matches(':hover'))return;closeDuePicker()}},80)});
-  menu.append(btnEdit,btnComplete,btnAssign,btnDue);
+  menu.append(btnEdit,btnComplete,btnAssign,btnTime,btnDue);
   menu.style.display='block';
   const mw=menu.offsetWidth,mh=menu.offsetHeight;const px=Math.min(x,window.innerWidth-mw-8),py=Math.min(y,window.innerHeight-mh-8);
   menu.style.left=px+'px';menu.style.top=py+'px';
@@ -145,13 +165,14 @@ function render(){
     document.body.classList.toggle('view-sprint',hide);
   }
   const wrap=$('#tasks');wrap.innerHTML='';
-  if(currentView==='sprint'){document.getElementById('viewTitle').textContent='Спринт';renderSprint(wrap);return}
-  if(currentView==='project'){const proj=projects.find(p=>p.id===currentProjectId);document.getElementById('viewTitle').textContent=proj?proj.title:'Проект';const dataList=filterTree(tasks,t=>t.project===currentProjectId);if(!dataList.length){const empty=document.createElement('div');empty.className='task';empty.innerHTML='<div></div><div class="task-title">Нет задач этого проекта.</div><div></div>';wrap.appendChild(empty);return}for(const t of dataList){renderTaskRow(t,0,wrap)}if(pendingEditId){const rowEl=document.querySelector(`[data-id="${pendingEditId}"]`);const taskObj=findTask(pendingEditId);if(rowEl&&taskObj)startEdit(rowEl,taskObj);pendingEditId=null}return}
+  if(currentView==='sprint'){document.getElementById('viewTitle').textContent='Спринт';renderSprint(wrap);syncTimerLoop();return}
+  if(currentView==='project'){const proj=projects.find(p=>p.id===currentProjectId);document.getElementById('viewTitle').textContent=proj?proj.title:'Проект';const dataList=filterTree(tasks,t=>t.project===currentProjectId);if(!dataList.length){const empty=document.createElement('div');empty.className='task';empty.innerHTML='<div></div><div class="task-title">Нет задач этого проекта.</div><div></div>';wrap.appendChild(empty);syncTimerLoop();return}for(const t of dataList){renderTaskRow(t,0,wrap)}if(pendingEditId){const rowEl=document.querySelector(`[data-id="${pendingEditId}"]`);const taskObj=findTask(pendingEditId);if(rowEl&&taskObj)startEdit(rowEl,taskObj);pendingEditId=null}syncTimerLoop();return}
   document.getElementById('viewTitle').textContent=currentView==='today'?'Сегодня':'Все задачи';
   const dataList=currentView==='today'?filterTree(tasks,t=>isDueToday(t.due)):tasks;
-  if(!dataList.length){const empty=document.createElement('div');empty.className='task';empty.innerHTML='<div></div><div class="task-title">Здесь пусто.</div><div></div>';wrap.appendChild(empty);return}
+  if(!dataList.length){const empty=document.createElement('div');empty.className='task';empty.innerHTML='<div></div><div class="task-title">Здесь пусто.</div><div></div>';wrap.appendChild(empty);syncTimerLoop();return}
   for(const t of dataList){renderTaskRow(t,0,wrap)}
   if(pendingEditId){const rowEl=document.querySelector(`[data-id="${pendingEditId}"]`);const taskObj=findTask(pendingEditId);if(rowEl&&taskObj)startEdit(rowEl,taskObj);pendingEditId=null}
+  syncTimerLoop()
 }
 
 function renderTaskRow(t,depth,container){
@@ -172,12 +193,15 @@ function renderTaskRow(t,depth,container){
   const title=document.createElement('div');title.className='task-title';
   const titleText=document.createElement('span');titleText.className='task-title-text';titleText.textContent=t.title;
   title.appendChild(titleText);
+  const timeBadge=document.createElement('span');timeBadge.className='time-spent';timeBadge.textContent=formatDuration(totalTimeMs(t));
+  title.appendChild(timeBadge);
+  const timerBtn=document.createElement('button');timerBtn.className='timer-btn';timerBtn.type='button';timerBtn.textContent='⏱️';timerBtn.dataset.active=t.timerActive?'true':'false';timerBtn.title=t.timerActive?'Остановить таймер':'Запустить таймер';timerBtn.setAttribute('aria-label','Таймер задачи');timerBtn.setAttribute('aria-pressed',t.timerActive?'true':'false');timerBtn.onclick=e=>{e.stopPropagation();toggleTaskTimer(t.id)};
   const noteBtn=document.createElement('button');noteBtn.className='note-btn';noteBtn.type='button';noteBtn.setAttribute('aria-label','Заметки задачи');noteBtn.title='Открыть заметки';noteBtn.textContent='📝';noteBtn.onclick=e=>{e.stopPropagation();openNotesPanel(t.id)};noteBtn.dataset.hasNotes=t.notes&&t.notes.trim()? 'true':'false';
   const dueBtn=document.createElement('button');dueBtn.className='due-btn';dueBtn.title='Установить дедлайн';dueBtn.textContent='📅';dueBtn.onclick=e=>{e.stopPropagation();openDuePicker(t.id,dueBtn)};
   const del=document.createElement('button');del.className='delete-btn';del.type='button';del.setAttribute('aria-label','Удалить задачу');del.title='Удалить задачу';del.textContent='×';del.onclick=e=>{e.stopPropagation();handleDelete(t.id)};
   if(t.due){const tag=document.createElement('span');tag.className='due-tag';if(isDueToday(t.due))tag.classList.add('is-today');tag.textContent=formatDue(t.due);title.appendChild(tag)}
   if(t.project){const ptag=document.createElement('span');ptag.className='proj-tag';ptag.textContent=getProjectEmoji(t.project);title.appendChild(ptag)}
-  title.append(noteBtn,dueBtn);
+  title.append(timerBtn,noteBtn,dueBtn);
   row.append(toggle,cb,title,del);
   row.addEventListener('click',()=>{
     if(activeEditId&&activeEditId!==t.id){const v=(activeInputEl?.value||'').trim();if(!v){toast('Напиши, что нужно сделать');activeInputEl&&activeInputEl.focus();return}const id=activeEditId;activeEditId=null;activeInputEl=null;selectedTaskId=t.id;renameTask(id,v);return}
@@ -340,7 +364,7 @@ document.addEventListener('keydown',e=>{
   if((e.key==='Backspace'||e.key==='Delete')&&selectedTaskId){e.preventDefault();handleDelete(selectedTaskId,{visibleOrder:getVisibleTaskIds()})}
 });
 
-if(!tasks.length){tasks=[{id:uid(),title:'Добавь несколько задач',done:false,collapsed:false,due:null,project:null,notes:'',children:[{id:uid(),title:'Пример подзадачи',done:false,collapsed:false,due:null,project:null,notes:'',children:[]} ]},{id:uid(),title:'ПКМ по строке → «Редактировать»',done:false,collapsed:false,due:null,project:null,notes:'',children:[]},{id:uid(),title:'Отметь как выполненную — увидишь зачёркивание',done:true,collapsed:false,due:null,project:null,notes:'',children:[] }];Store.write(tasks)}
+if(!tasks.length){tasks=[{id:uid(),title:'Добавь несколько задач',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,children:[{id:uid(),title:'Пример подзадачи',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,children:[]} ]},{id:uid(),title:'ПКМ по строке → «Редактировать»',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,children:[]},{id:uid(),title:'Отметь как выполненную — увидишь зачёркивание',done:true,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,children:[] }];Store.write(tasks)}
 if(!projects.length){projects=[{id:uid(),title:'Личный',emoji:DEFAULT_PROJECT_EMOJI},{id:uid(),title:'Работа',emoji:'💼'}];ProjectsStore.write(projects)}
 
 renderProjects();
