@@ -134,6 +134,11 @@
           <div class="workday-summary-value" id="workdaySummaryDone">0</div>
         </div>
       </div>
+      <div class="workday-dialog-section" id="workdayCompletedSection">
+        <div class="workday-dialog-subtitle">Закрытые задачи на сегодня</div>
+        <div class="workday-dialog-empty" id="workdayDialogCompletedEmpty">Сегодня ещё нет закрытых задач.</div>
+        <ul class="workday-dialog-list" id="workdayCompletedList" aria-live="polite"></ul>
+      </div>
       <div class="workday-dialog-section">
         <div class="workday-dialog-subtitle">Незакрытые задачи на сегодня</div>
         <div class="workday-dialog-empty" id="workdayDialogEmpty">Все задачи закрыты — отличный результат!</div>
@@ -141,7 +146,7 @@
       </div>
       <div class="workday-dialog-actions">
         <button type="button" class="workday-dialog-action" id="workdayPostponeBtn">Перенести на следующий день</button>
-        <button type="button" class="workday-dialog-secondary" id="workdayDialogDone">Готово</button>
+        <button type="button" class="workday-dialog-secondary" id="workdayDialogDone">На сегодня всё!</button>
       </div>
     </div>
   </div>
