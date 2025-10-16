@@ -59,6 +59,35 @@ const MAX_TASK_DEPTH=2;
 const MONTH_NAMES=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 const TIME_UPDATE_INTERVAL=1000;
 
+const EffectsStore={key:'mini-task-tracker:effects',read(){try{return JSON.parse(localStorage.getItem(this.key))||{}}catch{return{}}},write(d){try{localStorage.setItem(this.key,JSON.stringify(d))}catch{}}};
+const DEFAULT_EFFECTS_SETTINGS={sound:true,confetti:true};
+let effectsSettings={...DEFAULT_EFFECTS_SETTINGS,...EffectsStore.read()};
+function updateEffectsSetting(key,value){if(!(key in DEFAULT_EFFECTS_SETTINGS))return;const next={...effectsSettings,[key]:!!value};effectsSettings=next;EffectsStore.write(next)}
+function isSoundEnabled(){return effectsSettings.sound!==false}
+function isConfettiEnabled(){return effectsSettings.confetti!==false}
+if(typeof window!=='undefined'){window.TaskEffectsSettings={get:()=>({...effectsSettings}),set:(key,value)=>updateEffectsSetting(key,value)}}
+
+const prefersReducedMotionQuery=typeof window!=='undefined'&&'matchMedia'in window?window.matchMedia('(prefers-reduced-motion: reduce)'):null;
+function isMotionReduced(){return!!(prefersReducedMotionQuery&&prefersReducedMotionQuery.matches)}
+
+let sessionCompletedCount=0;
+let audioCtx=null;
+function ensureAudioContext(){if(typeof window==='undefined'||typeof window.AudioContext==='undefined')return null;if(!audioCtx){audioCtx=new AudioContext()}if(audioCtx.state==='suspended'){try{audioCtx.resume()}catch{}}return audioCtx}
+function playTaskCompleteBell(baseFreq){const ctx=ensureAudioContext();if(!ctx)return;const now=ctx.currentTime;const masterGain=ctx.createGain();masterGain.gain.setValueAtTime(0.0001,now);masterGain.connect(ctx.destination);masterGain.gain.exponentialRampToValueAtTime(0.9,now+0.01);masterGain.gain.exponentialRampToValueAtTime(0.0001,now+1.1);const hits=[{offset:0,freq:baseFreq*0.92},{offset:0.14,freq:baseFreq*1.12}];for(const hit of hits){const osc=ctx.createOscillator();const mod=ctx.createOscillator();const modGain=ctx.createGain();const env=ctx.createGain();osc.type='sine';mod.type='sine';osc.frequency.setValueAtTime(hit.freq,now+hit.offset);mod.frequency.setValueAtTime(14,now+hit.offset);modGain.gain.setValueAtTime(18,now+hit.offset);mod.connect(modGain);modGain.connect(osc.frequency);env.gain.setValueAtTime(0.0001,now+hit.offset);env.gain.exponentialRampToValueAtTime(0.45,now+hit.offset+0.02);env.gain.exponentialRampToValueAtTime(0.0001,now+hit.offset+0.42);osc.connect(env);env.connect(masterGain);osc.start(now+hit.offset);mod.start(now+hit.offset);osc.stop(now+hit.offset+0.6);mod.stop(now+hit.offset+0.6)}setTimeout(()=>masterGain.disconnect(),1200)}
+
+const confettiState=new WeakMap();
+function ensureTaskCanvas(row){let canvas=row.querySelector('.task-confetti');if(!canvas){canvas=document.createElement('canvas');canvas.className='task-confetti';row.appendChild(canvas)}return canvas}
+function spawnTaskConfetti(rowEl,checkboxEl){if(!rowEl||!checkboxEl)return;if(!isConfettiEnabled()||isMotionReduced())return;const rect=rowEl.getBoundingClientRect();if(!rect.width||!rect.height)return;const canvas=ensureTaskCanvas(rowEl);const ctx=canvas.getContext('2d');if(!ctx)return;const dpr=window.devicePixelRatio||1;const width=Math.round(rect.width*dpr);const height=Math.round(rect.height*dpr);if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;canvas.style.width=rect.width+'px';canvas.style.height=rect.height+'px'}const checkboxRect=checkboxEl.getBoundingClientRect();const originX=(checkboxRect.left-rect.left+checkboxRect.width/2)*dpr;const originY=(checkboxRect.top-rect.top+checkboxRect.height/2)*dpr;const style=getComputedStyle(rowEl);const palette=[style.getPropertyValue('--accent')||'#3a82f6',style.getPropertyValue('--text')||'#171717',style.getPropertyValue('--hover')||'#ededed',style.getPropertyValue('--accent-soft')||'rgba(58,130,246,.12)'];const duration=0.85;const gravity=900*dpr;const particleCount=26;const particles=[];for(let i=0;i<particleCount;i++){const angle=(Math.random()*Math.PI/1.2)-(Math.PI/2.4);const speed=(260+Math.random()*160)*dpr;particles.push({x:originX,y:originY,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,life:0,ttl:duration,color:palette[i%palette.length],size:(6+Math.random()*6)*dpr,shape:Math.random()>0.5?'square':'circle',rotation:Math.random()*Math.PI*2,vr:(Math.random()*4-2)})}
+const state=confettiState.get(rowEl);if(state&&state.cancel){state.cancel()}let rafId=0;const start=performance.now();let prev=start;ctx.clearRect(0,0,canvas.width,canvas.height);const draw=now=>{const dt=(now-prev)/1000;prev=now;const elapsed=(now-start)/1000;ctx.clearRect(0,0,canvas.width,canvas.height);let active=false;for(const p of particles){p.life=elapsed;const t=Math.min(1,elapsed/p.ttl);if(t>=1)continue;active=true;p.vy+=gravity*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;const alpha=1-t;ctx.save();ctx.globalAlpha=Math.max(0,alpha);ctx.translate(p.x,p.y);p.rotation+=p.vr*dt;ctx.rotate(p.rotation);ctx.fillStyle=p.color.trim()||'#fff';if(p.shape==='circle'){ctx.beginPath();ctx.arc(0,0,p.size/2,0,Math.PI*2);ctx.fill()}else{ctx.fillRect(-p.size/2,-p.size/2,p.size,p.size)}ctx.restore()}if(active){rafId=requestAnimationFrame(draw)}else{ctx.clearRect(0,0,canvas.width,canvas.height);confettiState.delete(rowEl)}};rafId=requestAnimationFrame(draw);confettiState.set(rowEl,{cancel(){if(rafId)cancelAnimationFrame(rafId);ctx.clearRect(0,0,canvas.width,canvas.height);confettiState.delete(rowEl)}})}
+function animateCheckboxBounce(el){if(!el||isMotionReduced())return;el.classList.remove('is-bouncing');void el.offsetWidth;el.classList.add('is-bouncing')}
+
+function handleTaskCompletionEffects(taskId,{completed=false,undone=false}={}){if(undone){sessionCompletedCount=Math.max(0,sessionCompletedCount-1);return}if(!completed)return;const base=600+sessionCompletedCount*250;sessionCompletedCount=Math.min(sessionCompletedCount+1,Number.MAX_SAFE_INTEGER);if(isSoundEnabled()){try{playTaskCompleteBell(base)}catch{}}
+  const rowEl=document.querySelector(`.task[data-id="${taskId}"]`);
+  const checkboxEl=rowEl?.querySelector('.task-checkbox');
+  if(checkboxEl){requestAnimationFrame(()=>animateCheckboxBounce(checkboxEl));}
+  if(rowEl&&checkboxEl){requestAnimationFrame(()=>spawnTaskConfetti(rowEl,checkboxEl));}
+}
+
 function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('show'),1400)}
 function migrate(list,depth=0){const extras=[];for(const t of list){if(!Array.isArray(t.children)) t.children=[];if(typeof t.collapsed!=='boolean') t.collapsed=false;if(typeof t.done!=='boolean') t.done=false;if(!('due' in t)) t.due=null;if(!('project' in t)) t.project=null;if(typeof t.notes!=='string') t.notes='';if(typeof t.timeSpent!=='number'||!isFinite(t.timeSpent)||t.timeSpent<0)t.timeSpent=0;if(typeof t.timerActive!=='boolean')t.timerActive=false;if(typeof t.timerStart!=='number'||!isFinite(t.timerStart))t.timerStart=null;if(t.children.length){migrate(t.children,depth+1);if(depth>=MAX_TASK_DEPTH){extras.push(...t.children);t.children=[]}}}if(extras.length) list.push(...extras);return list}
 tasks=migrate(tasks);
@@ -179,8 +208,8 @@ function addTask(title){
   render()
 }
 function addSubtask(parentId){const p=findTask(parentId);if(!p) return;const depth=getTaskDepth(parentId);if(depth===-1||depth>=MAX_TASK_DEPTH){toast('Максимальная вложенность — три уровня');return}const inheritedProject=typeof p.project==='undefined'?null:p.project;const child={id:uid(),title:'',done:false,children:[],collapsed:false,due:null,project:inheritedProject,notes:'',timeSpent:0,timerActive:false,timerStart:null};p.children.push(child);p.collapsed=false;Store.write(tasks);pendingEditId=child.id;render()}
-function toggleTask(id){const t=findTask(id);if(!t) return;const now=Date.now();t.done=!t.done;updateWorkdayCompletionState(t,t.done,now);if(t.done)stopTaskTimer(t,{silent:true});Store.write(tasks);syncTimerLoop();render();toast(t.done?'Отмечено как выполнено':'Снята отметка выполнения')}
-function markTaskDone(id){const t=findTask(id);if(!t)return;if(t.done){toast('Задача уже выполнена');return}const now=Date.now();t.done=true;updateWorkdayCompletionState(t,true,now);stopTaskTimer(t,{silent:true});Store.write(tasks);syncTimerLoop();render();toast('Отмечено как выполнено')}
+function toggleTask(id){const t=findTask(id);if(!t) return;const now=Date.now();const wasDone=t.done;const nextDone=!wasDone;t.done=nextDone;updateWorkdayCompletionState(t,nextDone,now);if(nextDone)stopTaskTimer(t,{silent:true});Store.write(tasks);syncTimerLoop();render();handleTaskCompletionEffects(id,{completed:!wasDone&&nextDone,undone:wasDone&&!nextDone});toast(nextDone?'Отмечено как выполнено':'Снята отметка выполнения')}
+function markTaskDone(id){const t=findTask(id);if(!t)return;if(t.done){toast('Задача уже выполнена');return}const now=Date.now();t.done=true;updateWorkdayCompletionState(t,true,now);stopTaskTimer(t,{silent:true});Store.write(tasks);syncTimerLoop();render();handleTaskCompletionEffects(id,{completed:true});toast('Отмечено как выполнено')}
 function deleteTask(id,list=tasks){for(let i=0;i<list.length;i++){if(list[i].id===id){list.splice(i,1);return true}if(deleteTask(id,list[i].children)) return true}return false}
 function handleDelete(id,{visibleOrder=null}={}){
   if(!Array.isArray(visibleOrder))visibleOrder=getVisibleTaskIds();
@@ -293,7 +322,7 @@ function renderTaskRow(t,depth,container){
   const canAcceptChildren=depth<MAX_TASK_DEPTH;
   const childList=Array.isArray(t.children)?t.children:[];
   const hasChildren=canAcceptChildren&&childList.length>0;
-  const row=document.createElement('div');row.className=rowClass(t);row.dataset.id=t.id;row.dataset.depth=depth;
+  const row=document.createElement('div');row.className=rowClass(t);row.dataset.id=t.id;row.dataset.depth=depth;row.classList.add('task-row');
   row.setAttribute('draggable','true');
   row.addEventListener('dragstart',e=>{draggingTaskId=t.id;row.classList.add('is-dragging');try{e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',t.id)}catch{}closeContextMenu()});
   row.addEventListener('dragend',()=>{clearDragIndicators()});
@@ -303,7 +332,7 @@ function renderTaskRow(t,depth,container){
   row.addEventListener('drop',e=>{if(!draggingTaskId)return;e.preventDefault();const sourceId=draggingTaskId;clearDragIndicators();if(sourceId===t.id)return;const draggedTask=findTask(sourceId);const targetTask=findTask(t.id);if(!draggedTask||!targetTask)return;if(!canAcceptChildren){toast('Максимальная вложенность — три уровня');return}if(containsTask(draggedTask,t.id))return;const subtreeDepth=getSubtreeDepth(draggedTask);if(depth+1+subtreeDepth>MAX_TASK_DEPTH){toast('Максимальная вложенность — три уровня');return}const moved=detachTaskFromTree(sourceId);if(!moved)return;if(!Array.isArray(targetTask.children))targetTask.children=[];const inheritedProject=typeof targetTask.project==='undefined'?null:targetTask.project;targetTask.children.push(moved);moved.project=inheritedProject;targetTask.collapsed=false;Store.write(tasks);selectedTaskId=moved.id;render()});
   row.addEventListener('contextmenu',e=>{e.preventDefault();openContextMenu(t.id,e.clientX,e.clientY)});
   const toggle=document.createElement('div');toggle.className='toggle';toggle.style.visibility=hasChildren?'visible':'hidden';toggle.onclick=e=>{e.stopPropagation();toggleCollapse(t.id)};
-  const cb=document.createElement('div');cb.className='checkbox';cb.dataset.checked=t.done;cb.title=t.done?'Снять отметку выполнения':'Отметить как выполненную';cb.onclick=e=>{e.stopPropagation();toggleTask(t.id)};
+  const cb=document.createElement('div');cb.className='task-checkbox';cb.dataset.checked=t.done?'true':'false';cb.title=t.done?'Снять отметку выполнения':'Отметить как выполненную';cb.setAttribute('role','button');cb.setAttribute('aria-label',cb.title);cb.setAttribute('aria-pressed',t.done?'true':'false');cb.setAttribute('tabindex','0');cb.onclick=e=>{e.stopPropagation();toggleTask(t.id)};cb.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '||e.key==='Spacebar'){e.preventDefault();toggleTask(t.id)}});
   const content=document.createElement('div');content.className='task-main';
   const title=document.createElement('div');title.className='task-title';
   const titleText=document.createElement('span');titleText.className='task-title-text';titleText.textContent=t.title;
