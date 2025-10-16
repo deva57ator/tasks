@@ -40,21 +40,18 @@ code, .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consol
 .header-leading{display:flex;flex-direction:column;gap:6px;min-width:180px;flex:0 1 auto}
 .header .title{font-weight:800}
 .header-actions{display:flex;align-items:center;gap:10px;margin-left:auto;flex:0 0 auto;flex-wrap:wrap;justify-content:flex-end}
-.workday-bar{display:flex;align-items:center;gap:14px;padding:10px 16px;border-radius:16px;background:var(--surface);border:1px solid var(--toast-border);box-shadow:var(--shadow);transition:box-shadow .18s ease,background .18s ease;flex:1 1 320px;min-width:240px;flex-wrap:wrap}
-.workday-bar:hover{box-shadow:0 12px 26px rgba(15,17,21,.12)}
-.workday-status{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.28px;flex:0 0 auto}
-.workday-stats{display:flex;flex-wrap:wrap;gap:12px;align-items:center;flex:0 1 auto}
-.workday-stat{display:flex;align-items:baseline;gap:6px;font-size:14px;font-weight:600;color:var(--text)}
-.workday-stat-label{color:var(--muted);font-weight:500;font-size:13px;text-transform:none}
+.workday-bar{display:flex;align-items:center;gap:12px;padding:4px 0;border-radius:0;background:transparent;border:none;box-shadow:none;transition:none;flex:1 1 320px;min-width:240px;flex-wrap:wrap}
+.workday-bar:hover{box-shadow:none}
+.workday-stats{display:flex;flex-wrap:wrap;gap:10px;align-items:center;flex:0 1 auto}
+.workday-stat{display:flex;align-items:baseline;gap:6px;font-size:13px;font-weight:600;color:var(--text)}
+.workday-stat-label{color:var(--muted);font-weight:500;font-size:12px;text-transform:none}
 .workday-stat-value{font-variant-numeric:tabular-nums}
-.workday-finish{appearance:none;border:1px solid var(--accent);border-radius:12px;padding:9px 18px;background:transparent;color:var(--accent);font-weight:700;font-size:14px;cursor:pointer;box-shadow:none;transition:transform .15s ease,box-shadow .15s ease,background-color .15s ease,color .15s ease,border-color .15s ease;white-space:nowrap;flex:0 0 auto;margin-left:auto}
+.workday-finish{appearance:none;border:1px solid var(--accent);border-radius:10px;padding:0 16px;min-width:0;height:34px;display:inline-flex;align-items:center;justify-content:center;background:transparent;color:var(--accent);font-weight:700;font-size:13px;cursor:pointer;box-shadow:none;transition:transform .15s ease,box-shadow .15s ease,background-color .15s ease,color .15s ease,border-color .15s ease;white-space:nowrap;flex:0 0 auto;margin-left:auto}
 .workday-finish:hover{transform:translateY(-1px);box-shadow:0 10px 26px var(--accent-shadow);background-color:var(--accent-soft)}
 .workday-finish:active{transform:translateY(0);box-shadow:0 6px 16px var(--accent-shadow);background-color:rgba(58,130,246,.18)}
 .workday-finish[disabled]{cursor:not-allowed;opacity:.6;box-shadow:none;transform:none;background:transparent;color:var(--muted);border-color:var(--hint)}
 .workday-finish[disabled]:hover,.workday-finish[disabled]:active{transform:none;box-shadow:none;background:transparent}
-.workday-bar[data-state="waiting"] .workday-status{color:var(--muted)}
 .workday-bar[data-state="inactive"]{opacity:.82}
-.workday-bar[data-state="inactive"] .workday-status{color:var(--hint)}
 .workday-bar[data-state="inactive"] .workday-stat-value{color:var(--muted)}
 .workday-bar[data-state="inactive"] .workday-stat-label{color:var(--hint)}
 .workday-overlay{position:fixed;inset:0;background:rgba(15,17,21,.52);backdrop-filter:blur(6px);opacity:0;pointer-events:none;transition:opacity .22s ease;z-index:13000;display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px;box-sizing:border-box}
