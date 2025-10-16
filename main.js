@@ -132,7 +132,9 @@ function updateWorkdayDialogContent(){if(!WorkdayUI.overlay)return;const now=Dat
   if(WorkdayUI.emptyState)WorkdayUI.emptyState.style.display=pending.length?'none':'block';
   WorkdayUI.pendingList.style.display=pending.length?'flex':'none';
 }
-}if(WorkdayUI.postponeBtn)WorkdayUI.postponeBtn.disabled=!pending.length;return pending}
+  if(WorkdayUI.postponeBtn)WorkdayUI.postponeBtn.disabled=!pending.length;
+  return pending
+}
 
 function openWorkdayDialog(){if(!WorkdayUI.overlay)return;const pending=updateWorkdayDialogContent();WorkdayUI.overlay.classList.add('is-open');WorkdayUI.overlay.setAttribute('aria-hidden','false');document.body.classList.add('workday-dialog-open');if(WorkdayUI.postponeBtn)WorkdayUI.postponeBtn.disabled=!pending.length;setTimeout(()=>{if(WorkdayUI.postponeBtn&&!WorkdayUI.postponeBtn.disabled){try{WorkdayUI.postponeBtn.focus({preventScroll:true})}catch{WorkdayUI.postponeBtn.focus()}}},80)}
 
