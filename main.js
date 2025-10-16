@@ -33,9 +33,8 @@ if(workdayState&&(!workdayState.id||typeof workdayState.start!=='number'||typeof
 
 const WorkdayUI={
   bar:document.getElementById('workdayBar'),
-  status:document.getElementById('workdayStatus'),
-  time:document.getElementById('workdayTime'),
   done:document.getElementById('workdayDone'),
+  time:document.getElementById('workdayTime'),
   button:document.getElementById('workdayFinishBtn'),
   overlay:document.getElementById('workdayOverlay'),
   range:document.getElementById('workdayDialogRange'),
@@ -137,7 +136,7 @@ function postponePendingTasks(){if(!workdayState)return;const pending=collectWor
 
 let workdayRefreshTimer=null;
 
-function updateWorkdayUI(){if(!WorkdayUI.bar)return;const now=Date.now();const info=ensureWorkdayState(now);let datasetState='inactive';let statusText='Рабочий день ещё не начался';let stats={timeMs:0,doneCount:0};const hasState=!!workdayState;const isCurrent=hasState&&info.state==='active'&&workdayState.id===info.id;const isLocked=hasState&&workdayState.locked;if(isCurrent){stats=computeWorkdayProgress(now,{persist:true,allowBaselineUpdate:true});statusText=`Рабочий день: ${formatWorkdayRangeShort(workdayState.start,workdayState.end)}`;datasetState='active'}else if(hasState){if(!isLocked&&now<workdayState.end){stats=computeWorkdayProgress(now,{persist:true,allowBaselineUpdate:true})}else{stats={timeMs:workdayState.finalTimeMs||0,doneCount:workdayState.finalDoneCount||0}}if(info.state==='waiting'){const nextTime=formatTimeHM(info.nextStart);statusText=`День завершён. Новый день начнётся в ${nextTime}`;datasetState='waiting'}else{statusText=`День завершён (${formatWorkdayRangeShort(workdayState.start,workdayState.end)})`;datasetState='inactive'}}if(WorkdayUI.time)WorkdayUI.time.textContent=formatDuration(stats.timeMs);if(WorkdayUI.done)WorkdayUI.done.textContent=String(stats.doneCount);if(WorkdayUI.status)WorkdayUI.status.textContent=statusText;WorkdayUI.bar.dataset.state=datasetState;if(WorkdayUI.button){const canInteract=!!workdayState;WorkdayUI.button.disabled=!canInteract;WorkdayUI.button.setAttribute('aria-disabled',canInteract?'false':'true')}}
+function updateWorkdayUI(){if(!WorkdayUI.bar)return;const now=Date.now();const info=ensureWorkdayState(now);let datasetState='inactive';let stats={timeMs:0,doneCount:0};const hasState=!!workdayState;const isCurrent=hasState&&info.state==='active'&&workdayState.id===info.id;const isLocked=hasState&&workdayState.locked;if(isCurrent){stats=computeWorkdayProgress(now,{persist:true,allowBaselineUpdate:true});datasetState='active'}else if(hasState){if(!isLocked&&now<workdayState.end){stats=computeWorkdayProgress(now,{persist:true,allowBaselineUpdate:true})}else{stats={timeMs:workdayState.finalTimeMs||0,doneCount:workdayState.finalDoneCount||0}}if(info.state==='waiting'){datasetState='waiting'}else{datasetState='inactive'}}if(WorkdayUI.done)WorkdayUI.done.textContent=String(stats.doneCount);if(WorkdayUI.time)WorkdayUI.time.textContent=formatDuration(stats.timeMs);WorkdayUI.bar.dataset.state=datasetState;if(WorkdayUI.button){const canInteract=!!workdayState;WorkdayUI.button.disabled=!canInteract;WorkdayUI.button.setAttribute('aria-disabled',canInteract?'false':'true')}}
 
 function ensureWorkdayRefreshLoop(){if(workdayRefreshTimer)return;workdayRefreshTimer=setInterval(()=>updateWorkdayUI(),WORKDAY_REFRESH_INTERVAL)}
 
