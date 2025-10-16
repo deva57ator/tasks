@@ -117,6 +117,34 @@
     ></textarea>
   </aside>
 
+  <div class="time-overlay" id="timeOverlay" aria-hidden="true">
+    <div class="time-dialog" role="dialog" aria-modal="true" aria-labelledby="timeDialogTitle">
+      <button type="button" class="time-dialog-close" id="timeDialogClose" aria-label="Закрыть окно">×</button>
+      <div class="time-dialog-header">
+        <div class="time-dialog-title" id="timeDialogTitle">Затраченное время</div>
+        <div class="time-dialog-subtitle" id="timeDialogSubtitle"></div>
+      </div>
+      <form class="time-dialog-form" id="timeDialogForm">
+        <div class="time-dialog-fields">
+          <label class="time-field">
+            <span class="time-field-label">Часы</span>
+            <input type="number" min="0" inputmode="numeric" class="time-input" id="timeInputHours" />
+          </label>
+          <label class="time-field">
+            <span class="time-field-label">Минуты</span>
+            <input type="number" min="0" inputmode="numeric" class="time-input" id="timeInputMinutes" />
+          </label>
+        </div>
+        <div class="time-dialog-summary">Итого: <span id="timeDialogSummary">0 мин</span></div>
+        <div class="time-dialog-error" id="timeDialogError" role="alert" aria-live="polite"></div>
+        <div class="time-dialog-actions">
+          <button type="button" class="time-dialog-secondary" id="timeDialogCancel">Отмена</button>
+          <button type="submit" class="time-dialog-primary" id="timeDialogSave">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div class="workday-overlay" id="workdayOverlay" aria-hidden="true">
     <div class="workday-dialog" role="dialog" aria-modal="true" aria-labelledby="workdayDialogTitle">
       <button type="button" class="workday-dialog-close" id="workdayDialogClose" aria-label="Закрыть окно">×</button>

@@ -159,7 +159,6 @@ function stopTaskTimer(task,{silent=false}={}){if(!task||!task.timerActive)retur
 function stopAllTimersExcept(activeId,list=tasks){if(!Array.isArray(list))return;for(const item of list){if(!item)continue;if(item.timerActive&&item.id!==activeId){stopTaskTimer(item,{silent:true})}if(Array.isArray(item.children)&&item.children.length){stopAllTimersExcept(activeId,item.children)}}}
 function startTaskTimer(task){if(!task)return;if(task.timerActive)return;stopAllTimersExcept(task.id);task.timerActive=true;task.timerStart=Date.now();Store.write(tasks);syncTimerLoop()}
 function toggleTaskTimer(id){const task=findTask(id);if(!task)return;if(task.timerActive){stopTaskTimer(task,{silent:true});Store.write(tasks);syncTimerLoop()}else{startTaskTimer(task)}}
-function formatMinutesForPrompt(minutes){const ms=Math.max(0,minutes)*60000;return formatDuration(ms)}
 function setSprintDropColumn(col){if(sprintDropColumn===col)return;if(sprintDropColumn){sprintDropColumn.classList.remove('is-drop-target')}sprintDropColumn=col||null;if(sprintDropColumn){sprintDropColumn.classList.add('is-drop-target')}}
 function clearSprintDragState(){const prev=document.querySelector('.sprint-task.is-dragging');if(prev)prev.classList.remove('is-dragging');setSprintDropColumn(null);sprintDraggingId=null}
 function applySprintDrop(targetDate){if(!sprintDraggingId)return;const task=findTask(sprintDraggingId);if(!task)return;const d=new Date(targetDate);if(isNaN(d))return;d.setHours(0,0,0,0);const iso=d.toISOString();if(task.due!==iso){task.due=iso;Store.write(tasks)}clearSprintDragState();render()}
@@ -208,13 +207,20 @@ function toggleCollapse(id){const t=findTask(id);if(!t) return;t.collapsed=!t.co
 
 const Ctx={el:$('#ctxMenu'),taskId:null,sub:document.getElementById('ctxSub'),submenuAnchor:null};
 const NotesPanel={panel:document.getElementById('notesSidebar'),overlay:document.getElementById('notesOverlay'),close:document.getElementById('notesClose'),title:document.getElementById('notesTaskTitle'),input:document.getElementById('notesInput'),taskId:null};
+const TimeDialog={overlay:document.getElementById('timeOverlay'),close:document.getElementById('timeDialogClose'),cancel:document.getElementById('timeDialogCancel'),form:document.getElementById('timeDialogForm'),hours:document.getElementById('timeInputHours'),minutes:document.getElementById('timeInputMinutes'),summary:document.getElementById('timeDialogSummary'),subtitle:document.getElementById('timeDialogSubtitle'),error:document.getElementById('timeDialogError'),save:document.getElementById('timeDialogSave')};
+let timeDialogTaskId=null;
 
 function updateNoteIndicator(taskId){const btn=document.querySelector(`.task[data-id="${taskId}"] .note-btn`);if(btn){const t=findTask(taskId);btn.dataset.hasNotes=t&&t.notes&&t.notes.trim()? 'true':'false'}}
 
 function openNotesPanel(taskId){const t=findTask(taskId);if(!t||!NotesPanel.panel||!NotesPanel.overlay||!NotesPanel.input)return;closeContextMenu();NotesPanel.taskId=taskId;NotesPanel.title&&(NotesPanel.title.textContent=t.title||'');NotesPanel.input.value=t.notes||'';NotesPanel.overlay.classList.add('is-visible');NotesPanel.overlay.setAttribute('aria-hidden','false');NotesPanel.panel.classList.add('is-open');NotesPanel.panel.setAttribute('aria-hidden','false');document.body.classList.add('notes-open');setTimeout(()=>{try{NotesPanel.input.focus({preventScroll:true})}catch{NotesPanel.input.focus()}},60);updateNoteIndicator(taskId)}
 
 function closeNotesPanel(){if(!NotesPanel.panel||!NotesPanel.overlay)return;NotesPanel.taskId=null;NotesPanel.overlay.classList.remove('is-visible');NotesPanel.overlay.setAttribute('aria-hidden','true');NotesPanel.panel.classList.remove('is-open');NotesPanel.panel.setAttribute('aria-hidden','true');document.body.classList.remove('notes-open');NotesPanel.title&&(NotesPanel.title.textContent='');NotesPanel.input&&(NotesPanel.input.value='')}
-function openTimeEditDialog(taskId){const task=findTask(taskId);if(!task)return;const currentMinutes=Math.max(0,Math.round(totalTimeMs(task)/60000));const currentFormatted=formatMinutesForPrompt(currentMinutes);const input=prompt(`Затраченное время в минутах (текущее: ${currentMinutes} мин ≈ ${currentFormatted})`,String(currentMinutes));if(input===null)return;const normalized=Number(String(input).replace(',','.'));if(!Number.isFinite(normalized)||normalized<0){toast('Введите корректное количество минут');return}const minutes=Math.round(normalized);task.timeSpent=Math.max(0,minutes)*60000;task.timerActive=false;task.timerStart=null;Store.write(tasks);syncTimerLoop();render();toast(`Время обновлено: ${formatDuration(task.timeSpent)}`)}
+function parseTimeDialogInput({normalize=false}={}){if(!TimeDialog.hours||!TimeDialog.minutes)return{valid:false,totalMinutes:0,hours:0,minutes:0};let hours=Number.parseInt(TimeDialog.hours.value,10);let minutes=Number.parseInt(TimeDialog.minutes.value,10);if(!Number.isFinite(hours))hours=0;if(!Number.isFinite(minutes))minutes=0;if(hours<0||minutes<0)return{valid:false,totalMinutes:0,hours,minutes};if(normalize){hours=Math.max(0,Math.floor(hours));minutes=Math.max(0,Math.floor(minutes));if(minutes>=60){hours+=Math.floor(minutes/60);minutes%=60}TimeDialog.hours.value=String(hours);TimeDialog.minutes.value=String(minutes)}const totalMinutes=Math.max(0,hours*60+minutes);return{valid:true,totalMinutes,hours,minutes}}
+function setTimeDialogError(msg){if(!TimeDialog.error)return;TimeDialog.error.textContent=msg||''}
+function updateTimeDialogSummary(){const{valid,totalMinutes}=parseTimeDialogInput({normalize:false});if(TimeDialog.summary)TimeDialog.summary.textContent=formatDuration(Math.max(0,totalMinutes)*60000);if(TimeDialog.save)TimeDialog.save.disabled=!valid;if(valid)setTimeDialogError('')}
+function openTimeEditDialog(taskId){const task=findTask(taskId);if(!task||!TimeDialog.overlay)return;timeDialogTaskId=taskId;const currentMinutes=Math.max(0,Math.round(totalTimeMs(task)/60000));const hours=Math.floor(currentMinutes/60);const minutes=currentMinutes%60;if(TimeDialog.hours)TimeDialog.hours.value=String(hours);if(TimeDialog.minutes)TimeDialog.minutes.value=String(minutes);if(TimeDialog.subtitle)TimeDialog.subtitle.textContent=currentMinutes?`Текущее значение: ${formatDuration(currentMinutes*60000)}`:'Текущее значение: 0 мин';setTimeDialogError('');updateTimeDialogSummary();TimeDialog.overlay.classList.add('is-open');TimeDialog.overlay.setAttribute('aria-hidden','false');document.body.classList.add('time-dialog-open');const focusTarget=TimeDialog.minutes||TimeDialog.hours;setTimeout(()=>{if(!focusTarget)return;try{focusTarget.focus({preventScroll:true})}catch{focusTarget.focus()}},60)}
+function closeTimeDialog(){if(!TimeDialog.overlay)return;timeDialogTaskId=null;TimeDialog.overlay.classList.remove('is-open');TimeDialog.overlay.setAttribute('aria-hidden','true');document.body.classList.remove('time-dialog-open');setTimeDialogError('');if(TimeDialog.save)TimeDialog.save.disabled=false}
+function submitTimeDialog(){if(!timeDialogTaskId)return;const task=findTask(timeDialogTaskId);if(!task){closeTimeDialog();return}const{valid,totalMinutes}=parseTimeDialogInput({normalize:true});if(!valid){setTimeDialogError('Введите неотрицательные значения');return}const minutes=Math.round(totalMinutes);task.timeSpent=Math.max(0,minutes)*60000;task.timerActive=false;task.timerStart=null;Store.write(tasks);syncTimerLoop();render();toast(`Время обновлено: ${formatDuration(task.timeSpent)}`);closeTimeDialog()}
 function openContextMenu(taskId,x,y){
   Ctx.taskId=taskId;const menu=Ctx.el;menu.innerHTML='';closeAssignSubmenu();closeDuePicker();
   const btnEdit=document.createElement('div');btnEdit.className='context-item';btnEdit.textContent='Редактировать';
@@ -244,13 +250,19 @@ window.addEventListener('click',e=>{
   }
   if(!Ctx.el.contains(e.target)&&!Ctx.sub.contains(e.target))closeContextMenu()
 });
-window.addEventListener('keydown',e=>{if(e.key==='Escape'){closeContextMenu();closeNotesPanel();closeDuePicker();closeWorkdayDialog()}});
+window.addEventListener('keydown',e=>{if(e.key==='Escape'){closeContextMenu();closeNotesPanel();closeDuePicker();closeWorkdayDialog();closeTimeDialog()}});
 window.addEventListener('resize',closeContextMenu);
 window.addEventListener('scroll',closeContextMenu,true);
 
 NotesPanel.overlay&&NotesPanel.overlay.addEventListener('click',()=>closeNotesPanel());
 NotesPanel.close&&NotesPanel.close.addEventListener('click',()=>closeNotesPanel());
 NotesPanel.input&&NotesPanel.input.addEventListener('input',()=>{if(!NotesPanel.taskId)return;const task=findTask(NotesPanel.taskId);if(!task)return;task.notes=NotesPanel.input.value;Store.write(tasks);updateNoteIndicator(task.id)});
+
+TimeDialog.overlay&&TimeDialog.overlay.addEventListener('click',e=>{if(e.target===TimeDialog.overlay)closeTimeDialog()});
+TimeDialog.close&&TimeDialog.close.addEventListener('click',()=>closeTimeDialog());
+TimeDialog.cancel&&TimeDialog.cancel.addEventListener('click',()=>closeTimeDialog());
+TimeDialog.form&&TimeDialog.form.addEventListener('submit',e=>{e.preventDefault();submitTimeDialog()});
+for(const input of[TimeDialog.hours,TimeDialog.minutes]){if(!input)continue;input.addEventListener('input',()=>updateTimeDialogSummary());input.addEventListener('blur',()=>{const state=parseTimeDialogInput({normalize:true});updateTimeDialogSummary();if(!state.valid)setTimeDialogError('Введите неотрицательные значения')})}
 
 function render(){
   $$('.nav-btn').forEach(b=>b.classList.toggle('is-active',b.dataset.view===currentView));
