@@ -1,6 +1,7 @@
-const Store={key:'mini-task-tracker:text:min:v14',read(){try{return JSON.parse(localStorage.getItem(this.key))||[]}catch{return[]}},write(d){localStorage.setItem(this.key,JSON.stringify(d))}};
+const Store={key:'mini-task-tracker:text:min:v14',read(){try{return JSON.parse(localStorage.getItem(this.key))||[]}catch{return[]}},write(d){localStorage.setItem(this.key,JSON.stringify(d));afterTasksPersisted()}};
 const ThemeStore={key:'mini-task-tracker:theme',read(){return localStorage.getItem(this.key)||'light'},write(v){localStorage.setItem(this.key,v)}};
 const ProjectsStore={key:'mini-task-tracker:projects',read(){try{return JSON.parse(localStorage.getItem(this.key))||[]}catch{return[]}},write(d){localStorage.setItem(this.key,JSON.stringify(d))}};
+const WorkdayStore={key:'mini-task-tracker:workday',read(){try{const raw=JSON.parse(localStorage.getItem(this.key));if(!raw||typeof raw!=='object'||!raw.id)return null;const normalized={...raw};if(typeof normalized.start!=='number')normalized.start=null;if(typeof normalized.end!=='number')normalized.end=null;if(typeof normalized.closedAt!=='number')normalized.closedAt=null;if(typeof normalized.finalTimeMs!=='number')normalized.finalTimeMs=0;if(typeof normalized.finalDoneCount!=='number')normalized.finalDoneCount=0;if(!normalized.baseline||typeof normalized.baseline!=='object')normalized.baseline={};if(!normalized.completed||typeof normalized.completed!=='object')normalized.completed={};return normalized}catch{return null}},write(d){if(!d)localStorage.removeItem(this.key);else localStorage.setItem(this.key,JSON.stringify(d))}};
 
 let tasks=Store.read();
 let selectedTaskId=null;
@@ -27,6 +28,29 @@ for(const proj of projects){
 }
 if(projectsPatched){ProjectsStore.write(projects)}
 
+let workdayState=WorkdayStore.read();
+if(workdayState&&(!workdayState.id||typeof workdayState.start!=='number'||typeof workdayState.end!=='number'))workdayState=null;
+
+const WorkdayUI={
+  bar:document.getElementById('workdayBar'),
+  status:document.getElementById('workdayStatus'),
+  time:document.getElementById('workdayTime'),
+  done:document.getElementById('workdayDone'),
+  button:document.getElementById('workdayFinishBtn'),
+  overlay:document.getElementById('workdayOverlay'),
+  range:document.getElementById('workdayDialogRange'),
+  summaryTime:document.getElementById('workdaySummaryTime'),
+  summaryDone:document.getElementById('workdaySummaryDone'),
+  pendingList:document.getElementById('workdayPendingList'),
+  emptyState:document.getElementById('workdayDialogEmpty'),
+  postponeBtn:document.getElementById('workdayPostponeBtn'),
+  closeBtn:document.getElementById('workdayDialogClose'),
+  closeAction:document.getElementById('workdayDialogDone'),
+  title:document.getElementById('workdayDialogTitle')
+};
+
+const WORKDAY_REFRESH_INTERVAL=60000;
+
 const $=s=>document.querySelector(s),$$=s=>Array.from(document.querySelectorAll(s));
 const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
 const MAX_TASK_DEPTH=2;
@@ -48,13 +72,82 @@ let sprintDraggingId=null;
 let sprintDropColumn=null;
 let timerInterval=null;
 
+const WORKDAY_START_HOUR=6;
+const WORKDAY_END_HOUR=3;
+
+function afterTasksPersisted(){syncWorkdayTaskSnapshot();updateWorkdayUI()}
+
+function walkTasks(list,cb){if(!Array.isArray(list))return;for(const item of list){if(!item)continue;cb(item);if(Array.isArray(item.children)&&item.children.length)walkTasks(item.children,cb)}}
+
+function workdayDateKey(value){const d=value instanceof Date?value:new Date(value);if(isNaN(d))return null;return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
+
+function getWorkdayInfo(now=Date.now()){const current=new Date(now);const hour=current.getHours();if(hour<WORKDAY_END_HOUR){const start=new Date(current);start.setDate(start.getDate()-1);start.setHours(WORKDAY_START_HOUR,0,0,0);const end=new Date(start);end.setDate(end.getDate()+1);end.setHours(WORKDAY_END_HOUR,0,0,0);return{state:'active',start:start.getTime(),end:end.getTime(),id:workdayDateKey(start)}}if(hour>=WORKDAY_START_HOUR){const start=new Date(current);start.setHours(WORKDAY_START_HOUR,0,0,0);const end=new Date(start);end.setDate(end.getDate()+1);end.setHours(WORKDAY_END_HOUR,0,0,0);return{state:'active',start:start.getTime(),end:end.getTime(),id:workdayDateKey(start)}}const prevStart=new Date(current);prevStart.setDate(prevStart.getDate()-1);prevStart.setHours(WORKDAY_START_HOUR,0,0,0);const prevEnd=new Date(prevStart);prevEnd.setDate(prevEnd.getDate()+1);prevEnd.setHours(WORKDAY_END_HOUR,0,0,0);const nextStart=new Date(current);nextStart.setHours(WORKDAY_START_HOUR,0,0,0);return{state:'waiting',start:prevStart.getTime(),end:prevEnd.getTime(),id:workdayDateKey(prevStart),nextStart:nextStart.getTime()}}
+
+function createWorkdaySnapshot(info){const baseline={};walkTasks(tasks,item=>{baseline[item.id]=totalTimeMs(item,info.start)});return{id:info.id,start:info.start,end:info.end,baseline,completed:{},closedAt:null,finalTimeMs:0,finalDoneCount:0,locked:false}}
+
+function syncWorkdayTaskSnapshot(){if(!workdayState||workdayState.locked)return;let changed=false;const baseline=workdayState.baseline||(workdayState.baseline={});const seen=new Set();walkTasks(tasks,item=>{seen.add(item.id);if(!(item.id in baseline)){baseline[item.id]=totalTimeMs(item,workdayState.start);changed=true}else{const current=totalTimeMs(item);if(current<baseline[item.id]){baseline[item.id]=current;changed=true}}});for(const id of Object.keys(baseline)){if(!seen.has(id)){delete baseline[id];changed=true}}const completed=workdayState.completed||(workdayState.completed={});for(const id of Object.keys(completed)){const task=findTask(id);if(!task||!task.done){delete completed[id];changed=true}}if(changed)WorkdayStore.write(workdayState)}
+
+function computeWorkdayProgress(now=Date.now(),{persist=true,allowBaselineUpdate=true}={}){if(!workdayState)return{timeMs:0,doneCount:0};const baseline=workdayState.baseline||(workdayState.baseline={});const seen=new Set();let total=0;let changed=false;walkTasks(tasks,item=>{const id=item.id;seen.add(id);let baseValue=baseline[id];if(baseValue===undefined){if(!allowBaselineUpdate)return;baseValue=totalTimeMs(item,workdayState.start);baseline[id]=baseValue;changed=true}let current=totalTimeMs(item,now);if(allowBaselineUpdate&&current<baseValue){baseline[id]=current;baseValue=current;changed=true}const diff=current-baseValue;if(diff>0)total+=diff});if(allowBaselineUpdate){for(const id of Object.keys(baseline)){if(!seen.has(id)){delete baseline[id];changed=true}}}const completed=workdayState.completed||(workdayState.completed={});let doneCount=0;for(const id of Object.keys(completed)){const task=findTask(id);if(task&&task.done){doneCount++}else if(allowBaselineUpdate){delete completed[id];changed=true}}if(persist&&changed)WorkdayStore.write(workdayState);return{timeMs:total,doneCount}}
+
+function updateWorkdayCompletionState(task,done,now=Date.now()){if(!task)return;const info=ensureWorkdayState(now);if(!workdayState)return;const completed=workdayState.completed||(workdayState.completed={});let changed=false;if(done){if(info.state==='active'&&workdayState.id===info.id&&!completed[task.id]){completed[task.id]=now;changed=true}}else if(completed[task.id]){delete completed[task.id];changed=true}if(changed)WorkdayStore.write(workdayState)}
+
+function ensureWorkdayState(now=Date.now()){const info=getWorkdayInfo(now);if(info.state==='active'){if(!workdayState||workdayState.id!==info.id){workdayState=createWorkdaySnapshot(info);WorkdayStore.write(workdayState)}else{if(workdayState.start!==info.start||workdayState.end!==info.end){workdayState.start=info.start;workdayState.end=info.end;workdayState.locked=false;WorkdayStore.write(workdayState)}if(workdayState.closedAt&&now<workdayState.end){workdayState.closedAt=null;workdayState.finalTimeMs=0;workdayState.finalDoneCount=0;workdayState.locked=false;WorkdayStore.write(workdayState)}}}else if(workdayState&&now>=workdayState.end&&!workdayState.locked){const summary=computeWorkdayProgress(workdayState.end,{persist:true,allowBaselineUpdate:true});workdayState.finalTimeMs=summary.timeMs;workdayState.finalDoneCount=summary.doneCount;workdayState.locked=true;workdayState.closedAt=now;WorkdayStore.write(workdayState);if(hasActiveTimer()){stopAllTimersExcept(null);Store.write(tasks);syncTimerLoop()}}return info}
+
+function formatTimeHM(ms){const d=new Date(ms);if(isNaN(d))return'';return`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`}
+
+function formatDateDMY(ms){const d=new Date(ms);if(isNaN(d))return'';return`${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()}`}
+
+function formatWorkdayRangeShort(start,end){if(typeof start!=='number'||typeof end!=='number')return'';const startTime=formatTimeHM(start);const endTime=formatTimeHM(end);return`${startTime} — ${endTime}`}
+
+function formatWorkdayRangeLong(start,end){if(typeof start!=='number'||typeof end!=='number')return'';const startDate=formatDateDMY(start);const endDate=formatDateDMY(end);const startTime=formatTimeHM(start);const endTime=formatTimeHM(end);if(startDate===endDate)return`${startDate} ${startTime} — ${endTime}`;return`${startDate} ${startTime} — ${endDate} ${endTime}`}
+
+function collectWorkdayPendingTasks(state){if(!state)return[];const key=workdayDateKey(state.start);const result=[];walkTasks(tasks,item=>{if(!item||item.done||!item.due)return;const dueDate=new Date(item.due);if(isNaN(dueDate))return;const dueKey=workdayDateKey(dueDate);if(dueKey&&dueKey===key){const projectMeta=item.project?getProjectMeta(item.project):null;result.push({id:item.id,title:item.title||'Без названия',due:dueDate,project:projectMeta})}});result.sort((a,b)=>a.due-b.due||a.title.localeCompare(b.title,'ru',{sensitivity:'base'}));return result}
+
+function updateWorkdayDialogContent(){if(!WorkdayUI.overlay)return;const now=Date.now();const info=ensureWorkdayState(now);const hasState=!!workdayState;const stats=hasState?(info.state==='active'&&workdayState.id===info.id?computeWorkdayProgress(now,{persist:true,allowBaselineUpdate:true}):{timeMs:workdayState.finalTimeMs||0,doneCount:workdayState.finalDoneCount||0}):{timeMs:0,doneCount:0};if(WorkdayUI.summaryTime)WorkdayUI.summaryTime.textContent=formatDuration(stats.timeMs);if(WorkdayUI.summaryDone)WorkdayUI.summaryDone.textContent=String(stats.doneCount);if(WorkdayUI.range)WorkdayUI.range.textContent=hasState?formatWorkdayRangeLong(workdayState.start,workdayState.end):'';const pending=hasState?collectWorkdayPendingTasks(workdayState):[];if(WorkdayUI.title){const activeNow=hasState&&info.state==='active'&&workdayState.id===info.id;WorkdayUI.title.textContent=activeNow?'Промежуточные итоги':'Итоги рабочего дня'}if(WorkdayUI.pendingList){
+  WorkdayUI.pendingList.innerHTML='';
+  if(pending.length){
+    for(const item of pending){
+      const li=document.createElement('li');
+      const title=document.createElement('div');
+      title.className='workday-dialog-task-title';
+      title.textContent=item.title;
+      li.appendChild(title);
+      const meta=document.createElement('div');
+      meta.className='workday-dialog-task-meta';
+      const parts=[];
+      parts.push(`Дедлайн: ${formatDateDMY(item.due)}`);
+      if(item.project&&item.project.title){
+        const emoji=item.project.emoji?`${item.project.emoji} `:'';
+        parts.push(`Проект: ${emoji}${item.project.title}`.trim());
+      }
+      meta.textContent=parts.join(' • ');
+      li.appendChild(meta);
+      WorkdayUI.pendingList.appendChild(li);
+    }
+  }
+  if(WorkdayUI.emptyState)WorkdayUI.emptyState.style.display=pending.length?'none':'block';
+  WorkdayUI.pendingList.style.display=pending.length?'flex':'none';
+}if(WorkdayUI.postponeBtn)WorkdayUI.postponeBtn.disabled=!pending.length;return pending}
+
+function openWorkdayDialog(){if(!WorkdayUI.overlay)return;const pending=updateWorkdayDialogContent();WorkdayUI.overlay.classList.add('is-open');WorkdayUI.overlay.setAttribute('aria-hidden','false');document.body.classList.add('workday-dialog-open');if(WorkdayUI.postponeBtn)WorkdayUI.postponeBtn.disabled=!pending.length;setTimeout(()=>{if(WorkdayUI.postponeBtn&&!WorkdayUI.postponeBtn.disabled){try{WorkdayUI.postponeBtn.focus({preventScroll:true})}catch{WorkdayUI.postponeBtn.focus()}}},80)}
+
+function closeWorkdayDialog(){if(!WorkdayUI.overlay)return;WorkdayUI.overlay.classList.remove('is-open');WorkdayUI.overlay.setAttribute('aria-hidden','true');document.body.classList.remove('workday-dialog-open')}
+
+function postponePendingTasks(){if(!workdayState)return;const pending=collectWorkdayPendingTasks(workdayState);if(!pending.length){toast('Все задачи уже перенесены');return}const nextDay=new Date(workdayState.start);nextDay.setDate(nextDay.getDate()+1);nextDay.setHours(0,0,0,0);const nextIso=nextDay.toISOString();let changed=false;for(const item of pending){const task=findTask(item.id);if(!task)continue;task.due=nextIso;changed=true}if(changed){Store.write(tasks);render();toast('Дедлайны перенесены на следующий день');updateWorkdayDialogContent()}}
+
+let workdayRefreshTimer=null;
+
+function updateWorkdayUI(){if(!WorkdayUI.bar)return;const now=Date.now();const info=ensureWorkdayState(now);let datasetState='inactive';let statusText='Рабочий день ещё не начался';let stats={timeMs:0,doneCount:0};const hasState=!!workdayState;const isCurrent=hasState&&info.state==='active'&&workdayState.id===info.id;const isLocked=hasState&&workdayState.locked;if(isCurrent){stats=computeWorkdayProgress(now,{persist:true,allowBaselineUpdate:true});statusText=`Рабочий день: ${formatWorkdayRangeShort(workdayState.start,workdayState.end)}`;datasetState='active'}else if(hasState){if(!isLocked&&now<workdayState.end){stats=computeWorkdayProgress(now,{persist:true,allowBaselineUpdate:true})}else{stats={timeMs:workdayState.finalTimeMs||0,doneCount:workdayState.finalDoneCount||0}}if(info.state==='waiting'){const nextTime=formatTimeHM(info.nextStart);statusText=`День завершён. Новый день начнётся в ${nextTime}`;datasetState='waiting'}else{statusText=`День завершён (${formatWorkdayRangeShort(workdayState.start,workdayState.end)})`;datasetState='inactive'}}if(WorkdayUI.time)WorkdayUI.time.textContent=formatDuration(stats.timeMs);if(WorkdayUI.done)WorkdayUI.done.textContent=String(stats.doneCount);if(WorkdayUI.status)WorkdayUI.status.textContent=statusText;WorkdayUI.bar.dataset.state=datasetState;if(WorkdayUI.button){const canInteract=!!workdayState;WorkdayUI.button.disabled=!canInteract;WorkdayUI.button.setAttribute('aria-disabled',canInteract?'false':'true')}}
+
+function ensureWorkdayRefreshLoop(){if(workdayRefreshTimer)return;workdayRefreshTimer=setInterval(()=>updateWorkdayUI(),WORKDAY_REFRESH_INTERVAL)}
+
 function totalTimeMs(task,now=Date.now()){if(!task)return 0;const base=typeof task.timeSpent==='number'&&isFinite(task.timeSpent)?Math.max(0,task.timeSpent):0;if(task.timerActive&&typeof task.timerStart==='number'&&isFinite(task.timerStart)){const diff=Math.max(0,now-task.timerStart);return base+diff}return base}
 function formatDuration(ms){if(!ms)return'0 мин';const totalMinutes=Math.floor(ms/60000);if(totalMinutes<=0)return'0 мин';const hours=Math.floor(totalMinutes/60);const minutes=totalMinutes%60;const parts=[];if(hours>0)parts.push(`${hours} ч`);if(minutes>0||!parts.length)parts.push(`${minutes} мин`);return parts.join(' ')}
 function hasActiveTimer(list=tasks){if(!Array.isArray(list))return false;for(const item of list){if(item&&item.timerActive)return true;if(item&&Array.isArray(item.children)&&item.children.length&&hasActiveTimer(item.children))return true}return false}
 function ensureTimerLoop(){if(timerInterval)return;timerInterval=setInterval(()=>updateTimerDisplays(),TIME_UPDATE_INTERVAL)}
 function stopTimerLoop(){if(timerInterval){clearInterval(timerInterval);timerInterval=null}}
 function syncTimerLoop(){if(hasActiveTimer())ensureTimerLoop();else stopTimerLoop();updateTimerDisplays()}
-function updateTimerDisplays(){const rows=$$('#tasks .task[data-id]');const now=Date.now();for(const row of rows){const id=row.dataset.id;const task=findTask(id);if(!task)continue;const timeEl=row.querySelector('.time-spent');if(timeEl)timeEl.textContent=formatDuration(totalTimeMs(task,now));const timerBtn=row.querySelector('.timer-btn');if(timerBtn){timerBtn.dataset.active=task.timerActive?'true':'false';timerBtn.title=task.timerActive?'Остановить таймер':'Запустить таймер';timerBtn.setAttribute('aria-pressed',task.timerActive?'true':'false')}}}
+function updateTimerDisplays(){const rows=$$('#tasks .task[data-id]');const now=Date.now();for(const row of rows){const id=row.dataset.id;const task=findTask(id);if(!task)continue;const timeEl=row.querySelector('.time-spent');if(timeEl)timeEl.textContent=formatDuration(totalTimeMs(task,now));const timerBtn=row.querySelector('.timer-btn');if(timerBtn){timerBtn.dataset.active=task.timerActive?'true':'false';timerBtn.title=task.timerActive?'Остановить таймер':'Запустить таймер';timerBtn.setAttribute('aria-pressed',task.timerActive?'true':'false')}}updateWorkdayUI()}
 function stopTaskTimer(task,{silent=false}={}){if(!task||!task.timerActive)return;const now=Date.now();if(typeof task.timerStart==='number'&&isFinite(task.timerStart)){task.timeSpent=totalTimeMs(task,now)}if(typeof task.timeSpent!=='number'||!isFinite(task.timeSpent))task.timeSpent=0;task.timerActive=false;task.timerStart=null;if(!silent)Store.write(tasks)}
 function stopAllTimersExcept(activeId,list=tasks){if(!Array.isArray(list))return;for(const item of list){if(!item)continue;if(item.timerActive&&item.id!==activeId){stopTaskTimer(item,{silent:true})}if(Array.isArray(item.children)&&item.children.length){stopAllTimersExcept(activeId,item.children)}}}
 function startTaskTimer(task){if(!task)return;if(task.timerActive)return;stopAllTimersExcept(task.id);task.timerActive=true;task.timerStart=Date.now();Store.write(tasks);syncTimerLoop()}
@@ -80,8 +173,8 @@ function addTask(title){
   render()
 }
 function addSubtask(parentId){const p=findTask(parentId);if(!p) return;const depth=getTaskDepth(parentId);if(depth===-1||depth>=MAX_TASK_DEPTH){toast('Максимальная вложенность — три уровня');return}const inheritedProject=typeof p.project==='undefined'?null:p.project;const child={id:uid(),title:'',done:false,children:[],collapsed:false,due:null,project:inheritedProject,notes:'',timeSpent:0,timerActive:false,timerStart:null};p.children.push(child);p.collapsed=false;Store.write(tasks);pendingEditId=child.id;render()}
-function toggleTask(id){const t=findTask(id);if(!t) return;t.done=!t.done;if(t.done)stopTaskTimer(t,{silent:true});Store.write(tasks);syncTimerLoop();render();toast(t.done?'Отмечено как выполнено':'Снята отметка выполнения')}
-function markTaskDone(id){const t=findTask(id);if(!t)return;if(t.done){toast('Задача уже выполнена');return}t.done=true;stopTaskTimer(t,{silent:true});Store.write(tasks);syncTimerLoop();render();toast('Отмечено как выполнено')}
+function toggleTask(id){const t=findTask(id);if(!t) return;const now=Date.now();t.done=!t.done;updateWorkdayCompletionState(t,t.done,now);if(t.done)stopTaskTimer(t,{silent:true});Store.write(tasks);syncTimerLoop();render();toast(t.done?'Отмечено как выполнено':'Снята отметка выполнения')}
+function markTaskDone(id){const t=findTask(id);if(!t)return;if(t.done){toast('Задача уже выполнена');return}const now=Date.now();t.done=true;updateWorkdayCompletionState(t,true,now);stopTaskTimer(t,{silent:true});Store.write(tasks);syncTimerLoop();render();toast('Отмечено как выполнено')}
 function deleteTask(id,list=tasks){for(let i=0;i<list.length;i++){if(list[i].id===id){list.splice(i,1);return true}if(deleteTask(id,list[i].children)) return true}return false}
 function handleDelete(id,{visibleOrder=null}={}){
   if(!Array.isArray(visibleOrder))visibleOrder=getVisibleTaskIds();
@@ -144,7 +237,7 @@ window.addEventListener('click',e=>{
   }
   if(!Ctx.el.contains(e.target)&&!Ctx.sub.contains(e.target))closeContextMenu()
 });
-window.addEventListener('keydown',e=>{if(e.key==='Escape'){closeContextMenu();closeNotesPanel();closeDuePicker()}});
+window.addEventListener('keydown',e=>{if(e.key==='Escape'){closeContextMenu();closeNotesPanel();closeDuePicker();closeWorkdayDialog()}});
 window.addEventListener('resize',closeContextMenu);
 window.addEventListener('scroll',closeContextMenu,true);
 
@@ -173,7 +266,8 @@ function render(){
   if(!dataList.length){const empty=document.createElement('div');empty.className='task';empty.innerHTML='<div></div><div class="task-title">Здесь пусто.</div><div></div>';wrap.appendChild(empty);syncTimerLoop();return}
   for(const t of dataList){renderTaskRow(t,0,wrap)}
   if(pendingEditId){const rowEl=document.querySelector(`[data-id="${pendingEditId}"]`);const taskObj=findTask(pendingEditId);if(rowEl&&taskObj)startEdit(rowEl,taskObj);pendingEditId=null}
-  syncTimerLoop()
+  syncTimerLoop();
+  updateWorkdayUI()
 }
 
 function renderTaskRow(t,depth,container){
@@ -260,6 +354,12 @@ function initCalendar(){cal.track=$('#calTrack');cal.curr=$('#calCurr');cal.next
 $('#addBtn').onclick=()=>{addTask($('#taskInput').value);$('#taskInput').value=''};
 $('#taskInput').onkeydown=e=>{if(e.key==='Enter'){addTask(e.target.value);e.target.value=''}};
 $$('.nav-btn').forEach(btn=>btn.onclick=()=>{const view=btn.dataset.view;if(view==='today'){currentView='today';render();return}if(view==='sprint'){currentView='sprint';render();return}if(view==='eisenhower'){toast('Эта кнопка — заглушка');return}currentView='all';render()});
+
+if(WorkdayUI.button){WorkdayUI.button.addEventListener('click',()=>{if(WorkdayUI.button.disabled)return;openWorkdayDialog()})}
+if(WorkdayUI.closeBtn)WorkdayUI.closeBtn.addEventListener('click',()=>closeWorkdayDialog());
+if(WorkdayUI.closeAction)WorkdayUI.closeAction.addEventListener('click',()=>closeWorkdayDialog());
+if(WorkdayUI.overlay)WorkdayUI.overlay.addEventListener('click',e=>{if(e.target===WorkdayUI.overlay)closeWorkdayDialog()});
+if(WorkdayUI.postponeBtn)WorkdayUI.postponeBtn.addEventListener('click',()=>postponePendingTasks());
 
 const projList=$('#projList');
 const projAdd=$('#projAdd');
@@ -672,4 +772,4 @@ function closeDuePicker(){
 }
 window.addEventListener('click',e=>{if(Due.el.style.display==='block'&&!Due.el.contains(e.target)&&!(Due.anchor&&Due.anchor.contains(e.target))&&!e.target.closest('.due-btn'))closeDuePicker()},true);
 
-(function(){applyTheme(ThemeStore.read());render();initCalendar()})();
+(function(){applyTheme(ThemeStore.read());ensureWorkdayState();syncWorkdayTaskSnapshot();ensureWorkdayRefreshLoop();updateWorkdayUI();render();initCalendar();updateWorkdayUI()})();

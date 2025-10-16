@@ -59,17 +59,35 @@
 
   <main class="main">
     <div class="header">
-      <div class="title" id="viewTitle">Все задачи</div>
-      <div class="sprint-filters" id="sprintFilters" aria-hidden="true"></div>
-      <div class="header-actions">
-        <button
-          type="button"
-          class="icon-btn theme-btn"
-          id="themeToggle"
-          aria-label="Переключить на тёмную тему"
-          aria-pressed="false"
-          title="Переключить на тёмную тему"
-        ></button>
+      <div class="header-top">
+        <div class="header-leading">
+          <div class="title" id="viewTitle">Все задачи</div>
+          <div class="sprint-filters" id="sprintFilters" aria-hidden="true"></div>
+        </div>
+        <div class="workday-bar" id="workdayBar" aria-live="polite">
+          <div class="workday-status" id="workdayStatus">Рабочий день не начался</div>
+          <div class="workday-stats">
+            <div class="workday-stat">
+              <span class="workday-stat-label">Время сегодня:</span>
+              <span class="workday-stat-value" id="workdayTime">0 мин</span>
+            </div>
+            <div class="workday-stat">
+              <span class="workday-stat-label">Сделано:</span>
+              <span class="workday-stat-value" id="workdayDone">0</span>
+            </div>
+          </div>
+          <button type="button" class="workday-finish" id="workdayFinishBtn">Завершить день</button>
+        </div>
+        <div class="header-actions">
+          <button
+            type="button"
+            class="icon-btn theme-btn"
+            id="themeToggle"
+            aria-label="Переключить на тёмную тему"
+            aria-pressed="false"
+            title="Переключить на тёмную тему"
+          ></button>
+        </div>
       </div>
     </div>
     <div class="composer">
@@ -99,6 +117,35 @@
       placeholder="Добавьте заметки для этой задачи..."
     ></textarea>
   </aside>
+
+  <div class="workday-overlay" id="workdayOverlay" aria-hidden="true">
+    <div class="workday-dialog" role="dialog" aria-modal="true" aria-labelledby="workdayDialogTitle">
+      <button type="button" class="workday-dialog-close" id="workdayDialogClose" aria-label="Закрыть окно">×</button>
+      <div class="workday-dialog-header">
+        <div class="workday-dialog-title" id="workdayDialogTitle">Итоги рабочего дня</div>
+        <div class="workday-dialog-range" id="workdayDialogRange"></div>
+      </div>
+      <div class="workday-summary">
+        <div class="workday-summary-item">
+          <div class="workday-summary-label">Затраченное время</div>
+          <div class="workday-summary-value" id="workdaySummaryTime">0 мин</div>
+        </div>
+        <div class="workday-summary-item">
+          <div class="workday-summary-label">Закрыто задач</div>
+          <div class="workday-summary-value" id="workdaySummaryDone">0</div>
+        </div>
+      </div>
+      <div class="workday-dialog-section">
+        <div class="workday-dialog-subtitle">Незакрытые задачи на сегодня</div>
+        <div class="workday-dialog-empty" id="workdayDialogEmpty">Все задачи закрыты — отличный результат!</div>
+        <ul class="workday-dialog-list" id="workdayPendingList" aria-live="polite"></ul>
+      </div>
+      <div class="workday-dialog-actions">
+        <button type="button" class="workday-dialog-action" id="workdayPostponeBtn">Перенести на следующий день</button>
+        <button type="button" class="workday-dialog-secondary" id="workdayDialogDone">Готово</button>
+      </div>
+    </div>
+  </div>
 
   <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1/index.js"></script>
   <script src="main.js" defer></script>
