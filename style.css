@@ -185,26 +185,31 @@ body.view-sprint .composer{display:none}
 .ctx-submenu .ctx-submenu-item+.ctx-submenu-item{margin-top:2px}
 .ctx-submenu-item{padding:6px 12px;border-radius:7px;cursor:pointer;user-select:none;font-size:13px;line-height:1.25;font-weight:500;letter-spacing:.01em;transition:background .12s ease,color .12s ease}
 .ctx-submenu-item:hover,.ctx-submenu-item.is-submenu-open{background:var(--hover-strong)}
-.note-btn,.due-btn,.timer-btn{border:none;background:transparent;color:var(--text);padding:6px 8px;font-size:14px;cursor:pointer;border-radius:10px;opacity:0;transform:translateY(0) scale(1);transition:opacity .12s ease,background-color .18s ease,color .18s ease,transform .2s ease,box-shadow .2s ease;will-change:transform,box-shadow}
+.note-btn,.due-btn,.timer-btn{border:1px solid transparent;background:transparent;color:var(--text);padding:6px 8px;font-size:14px;cursor:pointer;border-radius:10px;opacity:0;transform:translateY(0) scale(1);transition:opacity .12s ease,background-color .18s ease,color .18s ease,transform .2s ease,box-shadow .2s ease,border-color .18s ease;will-change:transform,box-shadow}
 .note-btn{display:inline-flex;align-items:center;justify-content:center;font-size:15px}
 .timer-btn{display:inline-flex;align-items:center;justify-content:center;font-size:15px}
 .task:hover .note-btn,.note-btn:focus-visible,.task:hover .timer-btn,.timer-btn:focus-visible{opacity:1}
 .note-btn[data-has-notes="true"]{opacity:1;color:var(--muted)}
-.timer-btn[data-active="true"]{opacity:1;color:var(--timer-accent);background-color:var(--timer-glow);box-shadow:0 4px 12px var(--timer-shadow);animation:timerButtonPulse 3.2s ease-in-out infinite}
+.timer-btn[data-active="true"]{opacity:1;color:var(--timer-accent);background-color:var(--timer-glow);box-shadow:0 4px 12px var(--timer-shadow);animation:timerButtonPulse 3.2s ease-in-out infinite;border-color:var(--timer-border)}
 .task:hover .due-btn,.due-btn:focus-visible{opacity:1}
-.note-btn:hover,.timer-btn:hover,.due-btn:hover{background-color:var(--hover-strong);transform:translateY(-1px) scale(1.05);box-shadow:0 8px 16px rgba(15,17,21,.12)}
-body.theme-dark .note-btn:hover,body.theme-dark .timer-btn:hover,body.theme-dark .due-btn:hover{box-shadow:0 8px 20px rgba(0,0,0,.45)}
+.note-btn:hover,.timer-btn:hover,.due-btn:hover{background-color:var(--hover-strong);transform:translateY(-1px) scale(1.05);box-shadow:none}
+.note-btn:hover{border-color:#1b3a8a}
+body.theme-dark .note-btn:hover{border-color:#56c7ff}
+.timer-btn:hover{border-color:#f2994a}
+body.theme-dark .timer-btn:hover{border-color:#f6c744}
+.due-btn:hover{border-color:#78d47d}
+body.theme-dark .due-btn:hover{border-color:#78d47d}
 .note-btn:active,.timer-btn:active,.due-btn:active{background-color:var(--hover);transform:translateY(0) scale(.94);box-shadow:0 3px 8px rgba(15,17,21,.16)}
 body.theme-dark .note-btn:active,body.theme-dark .timer-btn:active,body.theme-dark .due-btn:active{box-shadow:0 3px 10px rgba(0,0,0,.52)}
 .note-btn:focus-visible,.timer-btn:focus-visible,.due-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;background-color:var(--hover);box-shadow:0 0 0 4px rgba(0,0,0,.06)}
 body.theme-dark .note-btn:focus-visible,body.theme-dark .timer-btn:focus-visible,body.theme-dark .due-btn:focus-visible{box-shadow:0 0 0 4px rgba(0,0,0,.4)}
-.timer-btn[data-active="true"]:hover{background-color:var(--timer-glow-strong);box-shadow:0 8px 18px var(--timer-shadow)}
+.timer-btn[data-active="true"]:hover{background-color:var(--timer-glow-strong);box-shadow:none}
 .timer-btn[data-active="true"]:active{background-color:var(--timer-glow);box-shadow:0 4px 12px var(--timer-shadow)}
 .timer-btn[data-active="true"]:focus-visible{outline:2px solid var(--timer-accent);background-color:var(--timer-glow-strong);box-shadow:0 0 0 4px var(--timer-shadow)}
-.delete-btn{border:none;background:transparent;color:var(--muted);padding:6px 8px;font-size:16px;line-height:1;cursor:pointer;border-radius:10px;opacity:0;transition:opacity .12s ease,background .12s ease,color .12s ease}
+.delete-btn{border:1px solid transparent;background:transparent;color:var(--muted);padding:6px 8px;font-size:16px;line-height:1;cursor:pointer;border-radius:10px;opacity:0;transition:opacity .12s ease,background .12s ease,color .12s ease,border-color .12s ease}
 .task:hover .delete-btn,.delete-btn:focus-visible{opacity:1;color:var(--text)}
 .task.is-selected .delete-btn{opacity:1}
-.delete-btn:hover{background:var(--hover);color:var(--text)}
+.delete-btn:hover{background:var(--hover);color:#e34d4d;border-color:#e34d4d}
 .subtasks{grid-column:1 / -1;margin-left:28px;overflow:visible}
 .subtasks-inner{display:flex;flex-direction:column;gap:6px}
 .task-checkbox{width:32px;height:32px;display:inline-grid;place-items:center;cursor:pointer;font-size:20px;line-height:1;user-select:none;border-radius:calc(var(--radius)*.35);border:1px solid var(--toast-border);color:var(--muted);background:var(--surface);transition:background .16s ease,border-color .16s ease,color .16s ease,transform .16s ease,box-shadow .18s ease;align-self:center}
