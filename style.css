@@ -139,7 +139,7 @@ body.view-sprint .composer{display:none}
 .task[draggable="true"]{cursor:grab}
 .task.is-dragging{opacity:.6;cursor:grabbing}
 .task.is-drop-target{background:var(--hover-strong);box-shadow:0 0 0 2px var(--hint) inset}
-.task:hover{background:var(--hover);box-shadow:var(--shadow);transform:translateY(-1px)}
+.task:hover{background:var(--hover);box-shadow:none;transform:translateY(-1px)}
 .task.is-selected{background:var(--sel-bg)}
 .task-row{position:relative;overflow:hidden}
 .task.done{background:var(--hover)}
