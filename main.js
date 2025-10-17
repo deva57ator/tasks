@@ -1,9 +1,11 @@
 const Store={key:'mini-task-tracker:text:min:v14',read(){try{return JSON.parse(localStorage.getItem(this.key))||[]}catch{return[]}},write(d){localStorage.setItem(this.key,JSON.stringify(d));afterTasksPersisted()}};
 const ThemeStore={key:'mini-task-tracker:theme',read(){return localStorage.getItem(this.key)||'light'},write(v){localStorage.setItem(this.key,v)}};
 const ProjectsStore={key:'mini-task-tracker:projects',read(){try{return JSON.parse(localStorage.getItem(this.key))||[]}catch{return[]}},write(d){localStorage.setItem(this.key,JSON.stringify(d))}};
-const WorkdayStore={key:'mini-task-tracker:workday',read(){try{const raw=JSON.parse(localStorage.getItem(this.key));if(!raw||typeof raw!=='object'||!raw.id)return null;const normalized={...raw};if(typeof normalized.start!=='number')normalized.start=null;if(typeof normalized.end!=='number')normalized.end=null;if(typeof normalized.closedAt!=='number')normalized.closedAt=null;if(typeof normalized.finalTimeMs!=='number')normalized.finalTimeMs=0;if(typeof normalized.finalDoneCount!=='number')normalized.finalDoneCount=0;if(!normalized.baseline||typeof normalized.baseline!=='object')normalized.baseline={};if(!normalized.completed||typeof normalized.completed!=='object')normalized.completed={};return normalized}catch{return null}},write(d){if(!d)localStorage.removeItem(this.key);else localStorage.setItem(this.key,JSON.stringify(d))}};
+const WorkdayStore={key:'mini-task-tracker:workday',read(){try{const raw=JSON.parse(localStorage.getItem(this.key));if(!raw||typeof raw!=='object'||!raw.id)return null;const normalized={...raw};if(typeof normalized.start!=='number')normalized.start=null;if(typeof normalized.end!=='number')normalized.end=null;if(typeof normalized.closedAt!=='number')normalized.closedAt=null;if(typeof normalized.finalTimeMs!=='number')normalized.finalTimeMs=0;if(typeof normalized.finalDoneCount!=='number')normalized.finalDoneCount=0;if(!normalized.baseline||typeof normalized.baseline!=='object')normalized.baseline={};if(!normalized.completed||typeof normalized.completed!=='object')normalized.completed={};normalized.closedManually=normalized.closedManually===true;return normalized}catch{return null}},write(d){if(!d)localStorage.removeItem(this.key);else localStorage.setItem(this.key,JSON.stringify(d))}};
+const ArchiveStore={key:'mini-task-tracker:archive:v1',read(){try{const raw=JSON.parse(localStorage.getItem(this.key));if(!Array.isArray(raw))return[];return raw.filter(item=>item&&typeof item==='object')}catch{return[]}},write(d){localStorage.setItem(this.key,JSON.stringify(d))}};
 
 let tasks=Store.read();
+let archivedTasks=ArchiveStore.read();
 let selectedTaskId=null;
 let pendingEditId=null;
 let currentView='all';
@@ -55,6 +57,8 @@ const WORKDAY_REFRESH_INTERVAL=60000;
 
 const $=s=>document.querySelector(s),$$=s=>Array.from(document.querySelectorAll(s));
 const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
+function normalizeArchivedNode(node){if(!node||typeof node!=='object')return null;const normalized={id:typeof node.id==='string'&&node.id.trim()?node.id.trim():uid(),title:typeof node.title==='string'?node.title:'',done:true,due:typeof node.due==='string'&&node.due?node.due:null,project:typeof node.project==='string'&&node.project?node.project:null,notes:typeof node.notes==='string'?node.notes:'',timeSpent:typeof node.timeSpent==='number'&&isFinite(node.timeSpent)?Math.max(0,node.timeSpent):0,archivedAt:typeof node.archivedAt==='number'&&isFinite(node.archivedAt)?node.archivedAt:0,completedAt:typeof node.completedAt==='number'&&isFinite(node.completedAt)?node.completedAt:null,children:[]};if(Array.isArray(node.children)){const kids=[];for(const child of node.children){const normalizedChild=normalizeArchivedNode(child);if(normalizedChild)kids.push(normalizedChild)}normalized.children=kids}return normalized}
+if(!Array.isArray(archivedTasks))archivedTasks=[];else{const normalizedArchive=[];let patched=false;for(const entry of archivedTasks){const normalized=normalizeArchivedNode(entry);if(normalized){normalizedArchive.push(normalized);if(normalized!==entry)patched=true}else patched=true}if(patched||normalizedArchive.length!==archivedTasks.length){ArchiveStore.write(normalizedArchive)}archivedTasks=normalizedArchive}
 const MAX_TASK_DEPTH=2;
 const MONTH_NAMES=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 const TIME_UPDATE_INTERVAL=1000;
@@ -93,6 +97,7 @@ function migrate(list,depth=0){const extras=[];for(const t of list){if(!Array.is
 tasks=migrate(tasks);
 
 function findTask(id,list=tasks){for(const t of list){if(t.id===id) return t;const r=findTask(id,t.children||[]);if(r) return r}return null}
+function findArchivedTask(id,list=archivedTasks){if(!Array.isArray(list))return null;for(const item of list){if(item&&item.id===id)return item;const nested=findArchivedTask(id,item?.children||[]);if(nested)return nested}return null}
 function getTaskDepth(id,list=tasks,depth=0){for(const t of list){if(t.id===id) return depth;const childDepth=getTaskDepth(id,t.children||[],depth+1);if(childDepth!==-1) return childDepth}return-1}
 function getSubtreeDepth(task){if(!task||!Array.isArray(task.children)||!task.children.length)return 0;let max=0;for(const child of task.children){const childDepth=1+getSubtreeDepth(child);if(childDepth>max)max=childDepth}return max}
 function containsTask(root,targetId){if(!root||!targetId)return false;if(root.id===targetId)return true;if(!Array.isArray(root.children))return false;for(const child of root.children){if(containsTask(child,targetId))return true}return false}
@@ -114,7 +119,7 @@ function workdayDateKey(value){const d=value instanceof Date?value:new Date(valu
 
 function getWorkdayInfo(now=Date.now()){const current=new Date(now);const hour=current.getHours();if(hour<WORKDAY_END_HOUR){const start=new Date(current);start.setDate(start.getDate()-1);start.setHours(WORKDAY_START_HOUR,0,0,0);const end=new Date(start);end.setDate(end.getDate()+1);end.setHours(WORKDAY_END_HOUR,0,0,0);return{state:'active',start:start.getTime(),end:end.getTime(),id:workdayDateKey(start)}}if(hour>=WORKDAY_START_HOUR){const start=new Date(current);start.setHours(WORKDAY_START_HOUR,0,0,0);const end=new Date(start);end.setDate(end.getDate()+1);end.setHours(WORKDAY_END_HOUR,0,0,0);return{state:'active',start:start.getTime(),end:end.getTime(),id:workdayDateKey(start)}}const prevStart=new Date(current);prevStart.setDate(prevStart.getDate()-1);prevStart.setHours(WORKDAY_START_HOUR,0,0,0);const prevEnd=new Date(prevStart);prevEnd.setDate(prevEnd.getDate()+1);prevEnd.setHours(WORKDAY_END_HOUR,0,0,0);const nextStart=new Date(current);nextStart.setHours(WORKDAY_START_HOUR,0,0,0);return{state:'waiting',start:prevStart.getTime(),end:prevEnd.getTime(),id:workdayDateKey(prevStart),nextStart:nextStart.getTime()}}
 
-function createWorkdaySnapshot(info){const baseline={};walkTasks(tasks,item=>{baseline[item.id]=totalTimeMs(item,info.start)});return{id:info.id,start:info.start,end:info.end,baseline,completed:{},closedAt:null,finalTimeMs:0,finalDoneCount:0,locked:false}}
+function createWorkdaySnapshot(info){const baseline={};walkTasks(tasks,item=>{baseline[item.id]=totalTimeMs(item,info.start)});return{id:info.id,start:info.start,end:info.end,baseline,completed:{},closedAt:null,finalTimeMs:0,finalDoneCount:0,locked:false,closedManually:false}}
 
 function syncWorkdayTaskSnapshot(){if(!workdayState||workdayState.locked)return;let changed=false;const baseline=workdayState.baseline||(workdayState.baseline={});const seen=new Set();walkTasks(tasks,item=>{seen.add(item.id);if(!(item.id in baseline)){baseline[item.id]=totalTimeMs(item,workdayState.start);changed=true}else{const current=totalTimeMs(item);if(current<baseline[item.id]){baseline[item.id]=current;changed=true}}});for(const id of Object.keys(baseline)){if(!seen.has(id)){delete baseline[id];changed=true}}const completed=workdayState.completed||(workdayState.completed={});for(const id of Object.keys(completed)){const task=findTask(id);if(!task||!task.done){delete completed[id];changed=true}}if(changed)WorkdayStore.write(workdayState)}
 
@@ -122,7 +127,7 @@ function computeWorkdayProgress(now=Date.now(),{persist=true,allowBaselineUpdate
 
 function updateWorkdayCompletionState(task,done,now=Date.now()){if(!task)return;const info=ensureWorkdayState(now);if(!workdayState)return;const completed=workdayState.completed||(workdayState.completed={});let changed=false;if(done){if(info.state==='active'&&workdayState.id===info.id&&!completed[task.id]){completed[task.id]=now;changed=true}}else if(completed[task.id]){delete completed[task.id];changed=true}if(changed)WorkdayStore.write(workdayState)}
 
-function ensureWorkdayState(now=Date.now()){const info=getWorkdayInfo(now);if(info.state==='active'){if(!workdayState||workdayState.id!==info.id){workdayState=createWorkdaySnapshot(info);WorkdayStore.write(workdayState)}else{if(workdayState.start!==info.start||workdayState.end!==info.end){workdayState.start=info.start;workdayState.end=info.end;workdayState.locked=false;WorkdayStore.write(workdayState)}if(workdayState.closedAt&&now<workdayState.end){workdayState.closedAt=null;workdayState.finalTimeMs=0;workdayState.finalDoneCount=0;workdayState.locked=false;WorkdayStore.write(workdayState)}}}else if(workdayState&&now>=workdayState.end&&!workdayState.locked){const summary=computeWorkdayProgress(workdayState.end,{persist:true,allowBaselineUpdate:true});workdayState.finalTimeMs=summary.timeMs;workdayState.finalDoneCount=summary.doneCount;workdayState.locked=true;workdayState.closedAt=now;WorkdayStore.write(workdayState);if(hasActiveTimer()){stopAllTimersExcept(null);Store.write(tasks);syncTimerLoop()}}return info}
+function ensureWorkdayState(now=Date.now()){const info=getWorkdayInfo(now);if(info.state==='active'){if(!workdayState||workdayState.id!==info.id){workdayState=createWorkdaySnapshot(info);WorkdayStore.write(workdayState)}else{if(workdayState.start!==info.start||workdayState.end!==info.end){workdayState.start=info.start;workdayState.end=info.end;workdayState.locked=false;workdayState.closedManually=false;WorkdayStore.write(workdayState)}if(workdayState.closedAt&&now<workdayState.end&&!workdayState.closedManually){workdayState.closedAt=null;workdayState.finalTimeMs=0;workdayState.finalDoneCount=0;workdayState.locked=false;workdayState.closedManually=false;WorkdayStore.write(workdayState)}}}else if(workdayState&&now>=workdayState.end&&!workdayState.locked){const summary=computeWorkdayProgress(workdayState.end,{persist:true,allowBaselineUpdate:true});workdayState.finalTimeMs=summary.timeMs;workdayState.finalDoneCount=summary.doneCount;workdayState.locked=true;workdayState.closedAt=now;workdayState.closedManually=false;WorkdayStore.write(workdayState);if(hasActiveTimer()){stopAllTimersExcept(null);Store.write(tasks);syncTimerLoop()}}return info}
 
 function formatTimeHM(ms){const d=new Date(ms);if(isNaN(d))return'';return`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`}
 
@@ -170,6 +175,54 @@ function openWorkdayDialog(){if(!WorkdayUI.overlay)return;const pending=updateWo
 function closeWorkdayDialog(){if(!WorkdayUI.overlay)return;WorkdayUI.overlay.classList.remove('is-open');WorkdayUI.overlay.setAttribute('aria-hidden','true');document.body.classList.remove('workday-dialog-open')}
 
 function postponePendingTasks(){if(!workdayState)return;const pending=collectWorkdayPendingTasks(workdayState);if(!pending.length){toast('Все задачи уже перенесены');return}const nextDay=new Date(workdayState.start);nextDay.setDate(nextDay.getDate()+1);nextDay.setHours(0,0,0,0);const nextIso=nextDay.toISOString();let changed=false;for(const item of pending){const task=findTask(item.id);if(!task)continue;task.due=nextIso;changed=true}if(changed){Store.write(tasks);render();toast('Дедлайны перенесены на следующий день');updateWorkdayDialogContent()}}
+function finishWorkdayAndArchive(){
+  if(!workdayState){closeWorkdayDialog();return}
+  const now=Date.now();
+  ensureWorkdayState(now);
+  const summary=computeWorkdayProgress(now,{persist:true,allowBaselineUpdate:true});
+  workdayState.finalTimeMs=summary.timeMs;
+  workdayState.finalDoneCount=summary.doneCount;
+  workdayState.locked=true;
+  workdayState.closedAt=now;
+  workdayState.closedManually=true;
+  WorkdayStore.write(workdayState);
+  if(hasActiveTimer()){
+    stopAllTimersExcept(null);
+    Store.write(tasks);
+    syncTimerLoop()
+  }
+  const archived=archiveCompletedTasks(now);
+  let normalizedArchived=[];
+  if(archived.length){
+    normalizedArchived=archived.map(item=>normalizeArchivedNode(item)).filter(Boolean);
+    if(normalizedArchived.length){
+      archivedTasks=[...normalizedArchived,...archivedTasks];
+      ArchiveStore.write(archivedTasks);
+      if(workdayState&&workdayState.completed){
+        let removedAny=false;
+        const stack=[...normalizedArchived];
+        while(stack.length){
+          const entry=stack.pop();
+          if(entry&&workdayState.completed[entry.id]){
+            delete workdayState.completed[entry.id];
+            removedAny=true
+          }
+          if(entry&&Array.isArray(entry.children)&&entry.children.length){
+            for(const child of entry.children)stack.push(child)
+          }
+        }
+        if(removedAny)WorkdayStore.write(workdayState)
+      }
+    }
+  }
+  if(NotesPanel.taskId&&!findTask(NotesPanel.taskId)){closeNotesPanel()}
+  if(selectedTaskId&&!findTask(selectedTaskId)){selectedTaskId=null}
+  Store.write(tasks);
+  closeWorkdayDialog();
+  render();
+  updateWorkdayUI();
+  if(normalizedArchived.length){toast('Выполненные задачи отправлены в архив')}else{toast('Рабочий день закрыт')}
+}
 
 let workdayRefreshTimer=null;
 
@@ -210,6 +263,47 @@ function addTask(title){
 function addSubtask(parentId){const p=findTask(parentId);if(!p) return;const depth=getTaskDepth(parentId);if(depth===-1||depth>=MAX_TASK_DEPTH){toast('Максимальная вложенность — три уровня');return}const inheritedProject=typeof p.project==='undefined'?null:p.project;const child={id:uid(),title:'',done:false,children:[],collapsed:false,due:null,project:inheritedProject,notes:'',timeSpent:0,timerActive:false,timerStart:null};p.children.push(child);p.collapsed=false;Store.write(tasks);pendingEditId=child.id;render()}
 function toggleTask(id){const t=findTask(id);if(!t) return;const now=Date.now();const wasDone=t.done;const nextDone=!wasDone;t.done=nextDone;updateWorkdayCompletionState(t,nextDone,now);if(nextDone)stopTaskTimer(t,{silent:true});Store.write(tasks);syncTimerLoop();render();handleTaskCompletionEffects(id,{completed:!wasDone&&nextDone,undone:wasDone&&!nextDone});toast(nextDone?'Отмечено как выполнено':'Снята отметка выполнения')}
 function markTaskDone(id){const t=findTask(id);if(!t)return;if(t.done){toast('Задача уже выполнена');return}const now=Date.now();t.done=true;updateWorkdayCompletionState(t,true,now);stopTaskTimer(t,{silent:true});Store.write(tasks);syncTimerLoop();render();handleTaskCompletionEffects(id,{completed:true});toast('Отмечено как выполнено')}
+function cloneTaskForArchive(task,{archivedAt,completedLookup,children=[]}){
+  const completedAt=completedLookup&&typeof completedLookup[task.id]==='number'&&isFinite(completedLookup[task.id])?completedLookup[task.id]:null;
+  return{
+    id:task.id,
+    title:task.title||'',
+    done:true,
+    due:typeof task.due==='string'&&task.due?task.due:null,
+    project:typeof task.project==='string'&&task.project?task.project:null,
+    notes:typeof task.notes==='string'?task.notes:'',
+    timeSpent:totalTimeMs(task,archivedAt),
+    archivedAt,
+    completedAt,
+    children
+  }
+}
+function partitionTasksForArchive(list,completedLookup,archivedAt){
+  const remaining=[];
+  const archived=[];
+  if(!Array.isArray(list))return{remaining,archived};
+  for(const task of list){
+    if(!task||typeof task!=='object')continue;
+    const childList=Array.isArray(task.children)?task.children:[];
+    const{remaining:childRemaining,archived:childArchived}=partitionTasksForArchive(childList,completedLookup,archivedAt);
+    task.children=childRemaining;
+    if(task.done){
+      const clone=cloneTaskForArchive(task,{archivedAt,completedLookup,children:childArchived});
+      archived.push(clone)
+    }else{
+      if(childArchived.length)archived.push(...childArchived);
+      remaining.push(task)
+    }
+  }
+  return{remaining,archived}
+}
+function archiveCompletedTasks(now=Date.now()){
+  const lookup=workdayState&&workdayState.completed?workdayState.completed:null;
+  const{remaining,archived}=partitionTasksForArchive(tasks,lookup,now);
+  if(!archived.length)return[];
+  tasks=remaining;
+  return archived
+}
 function deleteTask(id,list=tasks){for(let i=0;i<list.length;i++){if(list[i].id===id){list.splice(i,1);return true}if(deleteTask(id,list[i].children)) return true}return false}
 function handleDelete(id,{visibleOrder=null}={}){
   if(!Array.isArray(visibleOrder))visibleOrder=getVisibleTaskIds();
@@ -235,15 +329,15 @@ function renameTask(id,title){const t=findTask(id);if(!t) return;const v=String(
 function toggleCollapse(id){const t=findTask(id);if(!t) return;t.collapsed=!t.collapsed;Store.write(tasks);render()}
 
 const Ctx={el:$('#ctxMenu'),taskId:null,sub:document.getElementById('ctxSub'),submenuAnchor:null};
-const NotesPanel={panel:document.getElementById('notesSidebar'),overlay:document.getElementById('notesOverlay'),close:document.getElementById('notesClose'),title:document.getElementById('notesTaskTitle'),input:document.getElementById('notesInput'),taskId:null};
+const NotesPanel={panel:document.getElementById('notesSidebar'),overlay:document.getElementById('notesOverlay'),close:document.getElementById('notesClose'),title:document.getElementById('notesTaskTitle'),input:document.getElementById('notesInput'),taskId:null,mode:'tasks'};
 const TimeDialog={overlay:document.getElementById('timeOverlay'),close:document.getElementById('timeDialogClose'),cancel:document.getElementById('timeDialogCancel'),form:document.getElementById('timeDialogForm'),hours:document.getElementById('timeInputHours'),minutes:document.getElementById('timeInputMinutes'),summary:document.getElementById('timeDialogSummary'),subtitle:document.getElementById('timeDialogSubtitle'),error:document.getElementById('timeDialogError'),save:document.getElementById('timeDialogSave')};
 let timeDialogTaskId=null;
 
 function updateNoteIndicator(taskId){const btn=document.querySelector(`.task[data-id="${taskId}"] .note-btn`);if(btn){const t=findTask(taskId);btn.dataset.hasNotes=t&&t.notes&&t.notes.trim()? 'true':'false'}}
 
-function openNotesPanel(taskId){const t=findTask(taskId);if(!t||!NotesPanel.panel||!NotesPanel.overlay||!NotesPanel.input)return;closeContextMenu();NotesPanel.taskId=taskId;NotesPanel.title&&(NotesPanel.title.textContent=t.title||'');NotesPanel.input.value=t.notes||'';NotesPanel.overlay.classList.add('is-visible');NotesPanel.overlay.setAttribute('aria-hidden','false');NotesPanel.panel.classList.add('is-open');NotesPanel.panel.setAttribute('aria-hidden','false');document.body.classList.add('notes-open');setTimeout(()=>{try{NotesPanel.input.focus({preventScroll:true})}catch{NotesPanel.input.focus()}},60);updateNoteIndicator(taskId)}
+function openNotesPanel(taskId,{source='tasks'}={}){if(!NotesPanel.panel||!NotesPanel.overlay||!NotesPanel.input)return;closeContextMenu();const isArchive=source==='archive';const task=isArchive?findArchivedTask(taskId):findTask(taskId);if(!task)return;NotesPanel.taskId=taskId;NotesPanel.mode=isArchive?'archive':'tasks';if(NotesPanel.title)NotesPanel.title.textContent=task.title||'';NotesPanel.input.value=task.notes||'';NotesPanel.input.readOnly=isArchive;NotesPanel.input.classList.toggle('is-readonly',isArchive);if(isArchive){NotesPanel.input.setAttribute('aria-readonly','true')}else{NotesPanel.input.removeAttribute('aria-readonly')}NotesPanel.overlay.classList.add('is-visible');NotesPanel.overlay.setAttribute('aria-hidden','false');NotesPanel.panel.classList.add('is-open');NotesPanel.panel.setAttribute('aria-hidden','false');document.body.classList.add('notes-open');if(!isArchive){setTimeout(()=>{try{NotesPanel.input.focus({preventScroll:true})}catch{NotesPanel.input.focus()}},60);updateNoteIndicator(taskId)}}
 
-function closeNotesPanel(){if(!NotesPanel.panel||!NotesPanel.overlay)return;NotesPanel.taskId=null;NotesPanel.overlay.classList.remove('is-visible');NotesPanel.overlay.setAttribute('aria-hidden','true');NotesPanel.panel.classList.remove('is-open');NotesPanel.panel.setAttribute('aria-hidden','true');document.body.classList.remove('notes-open');NotesPanel.title&&(NotesPanel.title.textContent='');NotesPanel.input&&(NotesPanel.input.value='')}
+function closeNotesPanel(){if(!NotesPanel.panel||!NotesPanel.overlay)return;NotesPanel.taskId=null;NotesPanel.mode='tasks';NotesPanel.overlay.classList.remove('is-visible');NotesPanel.overlay.setAttribute('aria-hidden','true');NotesPanel.panel.classList.remove('is-open');NotesPanel.panel.setAttribute('aria-hidden','true');document.body.classList.remove('notes-open');if(NotesPanel.title)NotesPanel.title.textContent='';if(NotesPanel.input){NotesPanel.input.value='';NotesPanel.input.readOnly=false;NotesPanel.input.classList.remove('is-readonly');NotesPanel.input.removeAttribute('aria-readonly')}}
 function parseTimeDialogInput({normalize=false}={}){if(!TimeDialog.hours||!TimeDialog.minutes)return{valid:false,totalMinutes:0,hours:0,minutes:0};let hours=Number.parseInt(TimeDialog.hours.value,10);let minutes=Number.parseInt(TimeDialog.minutes.value,10);if(!Number.isFinite(hours))hours=0;if(!Number.isFinite(minutes))minutes=0;if(hours<0||minutes<0)return{valid:false,totalMinutes:0,hours,minutes};if(normalize){hours=Math.max(0,Math.floor(hours));minutes=Math.max(0,Math.floor(minutes));if(minutes>=60){hours+=Math.floor(minutes/60);minutes%=60}TimeDialog.hours.value=String(hours);TimeDialog.minutes.value=String(minutes)}const totalMinutes=Math.max(0,hours*60+minutes);return{valid:true,totalMinutes,hours,minutes}}
 function setTimeDialogError(msg){if(!TimeDialog.error)return;TimeDialog.error.textContent=msg||''}
 function updateTimeDialogSummary(){const{valid,totalMinutes}=parseTimeDialogInput({normalize:false});if(TimeDialog.summary)TimeDialog.summary.textContent=formatDuration(Math.max(0,totalMinutes)*60000);if(TimeDialog.save)TimeDialog.save.disabled=!valid;if(valid)setTimeDialogError('')}
@@ -285,7 +379,7 @@ window.addEventListener('scroll',closeContextMenu,true);
 
 NotesPanel.overlay&&NotesPanel.overlay.addEventListener('click',()=>closeNotesPanel());
 NotesPanel.close&&NotesPanel.close.addEventListener('click',()=>closeNotesPanel());
-NotesPanel.input&&NotesPanel.input.addEventListener('input',()=>{if(!NotesPanel.taskId)return;const task=findTask(NotesPanel.taskId);if(!task)return;task.notes=NotesPanel.input.value;Store.write(tasks);updateNoteIndicator(task.id)});
+NotesPanel.input&&NotesPanel.input.addEventListener('input',()=>{if(NotesPanel.mode==='archive')return;if(!NotesPanel.taskId)return;const task=findTask(NotesPanel.taskId);if(!task)return;task.notes=NotesPanel.input.value;Store.write(tasks);updateNoteIndicator(task.id)});
 
 TimeDialog.overlay&&TimeDialog.overlay.addEventListener('click',e=>{if(e.target===TimeDialog.overlay)closeTimeDialog()});
 TimeDialog.close&&TimeDialog.close.addEventListener('click',()=>closeTimeDialog());
@@ -293,20 +387,26 @@ TimeDialog.cancel&&TimeDialog.cancel.addEventListener('click',()=>closeTimeDialo
 TimeDialog.form&&TimeDialog.form.addEventListener('submit',e=>{e.preventDefault();submitTimeDialog()});
 for(const input of[TimeDialog.hours,TimeDialog.minutes]){if(!input)continue;input.addEventListener('input',()=>updateTimeDialogSummary());input.addEventListener('blur',()=>{const state=parseTimeDialogInput({normalize:true});updateTimeDialogSummary();if(!state.valid)setTimeDialogError('Введите неотрицательные значения')})}
 
+function formatArchiveDateTime(ms){if(typeof ms!=='number'||!isFinite(ms)||ms<=0)return null;const date=new Date(ms);if(isNaN(date))return null;const timestamp=date.getTime();return`${formatDateDMY(timestamp)} ${formatTimeHM(timestamp)}`}
+function renderArchivedNode(node,depth,container){if(!node)return;const row=document.createElement('div');row.className='archive-task';row.dataset.id=node.id;row.dataset.depth=String(depth);if(depth>0)row.style.marginLeft=`${depth*18}px`;const status=document.createElement('div');status.className='archive-status';status.textContent='✔';const main=document.createElement('div');main.className='archive-main';const title=document.createElement('div');title.className='archive-title';title.textContent=node.title||'Без названия';main.appendChild(title);const tags=document.createElement('div');tags.className='archive-tags';if(node.due){const dueTag=document.createElement('span');dueTag.className='due-tag';if(isDueToday(node.due))dueTag.classList.add('is-today');dueTag.textContent=formatDue(node.due);if(dueTag.textContent)tags.appendChild(dueTag)}if(node.project){const projectMeta=getProjectMeta(node.project);const projTag=document.createElement('span');projTag.className='proj-tag';const emoji=projectMeta.emoji?`${projectMeta.emoji} `:'';projTag.textContent=`${emoji}${projectMeta.title}`.trim();tags.appendChild(projTag)}if(tags.childElementCount)main.appendChild(tags);const meta=document.createElement('div');meta.className='archive-meta';const completedText=formatArchiveDateTime(node.completedAt);if(completedText)meta.appendChild(document.createTextNode(`Завершено: ${completedText}`));const archivedText=formatArchiveDateTime(node.archivedAt);if(archivedText){if(meta.textContent)meta.appendChild(document.createTextNode(' • '));meta.appendChild(document.createTextNode(`В архиве: ${archivedText}`))}if(meta.textContent)main.appendChild(meta);const actions=document.createElement('div');actions.className='archive-actions';const time=document.createElement('div');time.className='archive-time';time.textContent=formatDuration(node.timeSpent);actions.appendChild(time);const noteBtn=document.createElement('button');noteBtn.className='note-btn';noteBtn.type='button';noteBtn.textContent='📝';noteBtn.title='Открыть заметки';noteBtn.setAttribute('aria-label','Заметки задачи');noteBtn.dataset.hasNotes=node.notes&&node.notes.trim()? 'true':'false';noteBtn.onclick=e=>{e.stopPropagation();openNotesPanel(node.id,{source:'archive'})};actions.appendChild(noteBtn);row.append(status,main,actions);container.appendChild(row);if(Array.isArray(node.children)&&node.children.length){for(const child of node.children){renderArchivedNode(child,depth+1,container)}}}
+function renderArchive(container){const wrap=document.createElement('div');wrap.className='archive-container';const items=[...archivedTasks];items.sort((a,b)=>(b.archivedAt||0)-(a.archivedAt||0)||(b.completedAt||0)-(a.completedAt||0));if(!items.length){const empty=document.createElement('div');empty.className='archive-empty';empty.textContent='Архив пока пуст.';container.appendChild(empty);return}for(const item of items){renderArchivedNode(item,0,wrap)}container.appendChild(wrap)}
 function render(){
   $$('.nav-btn').forEach(b=>b.classList.toggle('is-active',b.dataset.view===currentView));
+  if(archiveBtn)archiveBtn.classList.toggle('is-active',currentView==='archive');
   if(currentView!=='sprint'){
     if(sprintVisibleProjects.size)sprintVisibleProjects.clear();
     clearSprintFiltersUI();
   }
   const composer=$('.composer');
   if(composer){
-    const hide=currentView==='sprint';
+    const hide=currentView==='sprint'||currentView==='archive';
     if(composer.hidden!==hide)composer.hidden=hide;
     composer.setAttribute('aria-hidden',hide?'true':'false');
-    document.body.classList.toggle('view-sprint',hide);
+    document.body.classList.toggle('view-sprint',currentView==='sprint');
   }
+  document.body.classList.toggle('view-archive',currentView==='archive');
   const wrap=$('#tasks');wrap.innerHTML='';
+  if(currentView==='archive'){document.getElementById('viewTitle').textContent='Архив';renderArchive(wrap);updateWorkdayUI();return}
   if(currentView==='sprint'){document.getElementById('viewTitle').textContent='Спринт';renderSprint(wrap);syncTimerLoop();return}
   if(currentView==='project'){const proj=projects.find(p=>p.id===currentProjectId);document.getElementById('viewTitle').textContent=proj?proj.title:'Проект';const dataList=filterTree(tasks,t=>t.project===currentProjectId);if(!dataList.length){const empty=document.createElement('div');empty.className='task';empty.innerHTML='<div></div><div class="task-title">Нет задач этого проекта.</div><div></div>';wrap.appendChild(empty);syncTimerLoop();return}for(const t of dataList){renderTaskRow(t,0,wrap)}if(pendingEditId){const rowEl=document.querySelector(`[data-id="${pendingEditId}"]`);const taskObj=findTask(pendingEditId);if(rowEl&&taskObj)startEdit(rowEl,taskObj);pendingEditId=null}syncTimerLoop();return}
   document.getElementById('viewTitle').textContent=currentView==='today'?'Сегодня':'Все задачи';
@@ -378,6 +478,7 @@ function toggleTheme(){const dark=!document.body.classList.contains('theme-dark'
 if(themeToggle){themeToggle.addEventListener('click',toggleTheme)}
 
 const cal={track:null,curr:null,nextbuf:null,title:null,legend:null,toggle:null,prev:null,next:null,today:null,month:null,year:null,collapsed:false,focusDate:null,monthWeeks:[],activeWeekIndex:0};
+const archiveBtn=document.getElementById('archiveBtn');
 function normalizeDate(value){const d=new Date(value);d.setHours(0,0,0,0);return d}
 function sameDay(a,b){return!!(a&&b)&&a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate()}
 function isoWeekNumber(d){const date=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));const dayNum=(date.getUTCDay()+6)%7;date.setUTCDate(date.getUTCDate()-dayNum+3);const firstThursday=new Date(Date.UTC(date.getUTCFullYear(),0,4));const diff=date-firstThursday;return 1+Math.round(diff/(7*24*3600*1000))}
@@ -401,10 +502,11 @@ function initCalendar(){cal.track=$('#calTrack');cal.curr=$('#calCurr');cal.next
 $('#addBtn').onclick=()=>{addTask($('#taskInput').value);$('#taskInput').value=''};
 $('#taskInput').onkeydown=e=>{if(e.key==='Enter'){addTask(e.target.value);e.target.value=''}};
 $$('.nav-btn').forEach(btn=>btn.onclick=()=>{const view=btn.dataset.view;if(view==='today'){currentView='today';render();return}if(view==='sprint'){currentView='sprint';render();return}if(view==='eisenhower'){toast('Эта кнопка — заглушка');return}currentView='all';render()});
+if(archiveBtn){archiveBtn.addEventListener('click',()=>{currentView='archive';render()})}
 
 if(WorkdayUI.button){WorkdayUI.button.addEventListener('click',()=>{if(WorkdayUI.button.disabled)return;openWorkdayDialog()})}
 if(WorkdayUI.closeBtn)WorkdayUI.closeBtn.addEventListener('click',()=>closeWorkdayDialog());
-if(WorkdayUI.closeAction)WorkdayUI.closeAction.addEventListener('click',()=>closeWorkdayDialog());
+if(WorkdayUI.closeAction)WorkdayUI.closeAction.addEventListener('click',()=>finishWorkdayAndArchive());
 if(WorkdayUI.overlay)WorkdayUI.overlay.addEventListener('click',e=>{if(e.target===WorkdayUI.overlay)closeWorkdayDialog()});
 if(WorkdayUI.postponeBtn)WorkdayUI.postponeBtn.addEventListener('click',()=>postponePendingTasks());
 

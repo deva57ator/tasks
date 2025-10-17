@@ -8,6 +8,11 @@ code, .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consol
 .nav-btn{appearance:none;border:none;background:transparent;color:var(--text);padding:8px 10px;text-align:left;cursor:pointer;border-radius:10px;transition:background .12s ease,color .12s ease,transform .08s ease;font-size:16px;font-weight:700}
 .nav-btn:hover,.nav-btn.is-active{background:var(--hover-strong)}
 .nav-btn:active{transform:translateY(1px)}
+.archive-access{margin:4px 6px 0}
+.archive-btn{appearance:none;border:1px solid var(--hint);background:transparent;color:var(--text);padding:8px 12px;width:100%;border-radius:12px;font-weight:700;font-size:15px;cursor:pointer;transition:background .12s ease,border-color .12s ease,color .12s ease,transform .12s ease;text-align:left}
+.archive-btn:hover{background:var(--hover);border-color:var(--muted)}
+.archive-btn:active{transform:translateY(1px)}
+.archive-btn.is-active{background:var(--hover-strong);border-color:var(--text)}
 .calendar{margin-top:auto;margin-bottom:4px;border-radius:12px;overflow:hidden}
 .cal-header{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:6px;padding:6px 4px 8px}
 .cal-title{font-size:13px;font-weight:700;justify-self:center}
@@ -135,6 +140,22 @@ body.view-sprint .composer{display:none}
 .add-btn{border:none;background:transparent;color:var(--text);cursor:pointer;padding:8px 10px;border-radius:10px}
 .add-btn:hover{background:var(--hover)}
 .tasks{display:flex;flex-direction:column;gap:6px;overflow:auto}
+.archive-container{display:flex;flex-direction:column;gap:6px}
+.archive-empty{padding:20px 12px;border-radius:var(--radius);background:var(--surface);border:1px dashed var(--hint);color:var(--muted);text-align:center}
+.archive-task{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:flex-start;padding:10px 12px;border-radius:var(--radius);background:var(--surface);border:1px solid var(--toast-border)}
+.archive-task:hover{background:var(--hover)}
+.archive-status{font-size:20px;line-height:1;color:var(--success)}
+.archive-main{display:flex;flex-direction:column;gap:4px;min-width:0}
+.archive-title{font-weight:700;word-break:break-word}
+.archive-tags{display:flex;flex-wrap:wrap;gap:6px;color:var(--muted);font-size:12px}
+.archive-tags:empty{display:none}
+.archive-meta{display:flex;flex-wrap:wrap;gap:8px;color:var(--muted);font-size:12px}
+.archive-meta:empty{display:none}
+.archive-actions{display:flex;align-items:center;gap:6px}
+.archive-task .note-btn{opacity:1}
+.archive-task .note-btn:hover{transform:translateY(-1px) scale(1.05)}
+.archive-task .note-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.archive-time{font-size:12px;color:var(--muted)}
 .task{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;padding:8px 10px;border-radius:var(--radius);transition:background .16s ease,box-shadow .2s ease,transform .18s ease;border:1px solid transparent;background:var(--surface);position:relative;overflow:hidden}
 .task[draggable="true"]{cursor:grab}
 .task.is-dragging{opacity:.6;cursor:grabbing}
@@ -284,6 +305,8 @@ button,input,select,textarea{font:inherit}
 .notes-input{flex:1;border:1px solid var(--hint);border-radius:16px;padding:16px;background:var(--surface);color:var(--text);resize:none;min-height:0;box-shadow:inset 0 1px 2px rgba(0,0,0,.08);line-height:1.5;transition:border-color .12s ease,box-shadow .12s ease;overflow:auto;white-space:pre-wrap;word-break:break-word}
 .notes-input::placeholder{color:var(--hint)}
 .notes-input:focus{border-color:var(--text);box-shadow:inset 0 1px 2px rgba(0,0,0,.08),0 0 0 2px var(--hint);outline:none}
+.notes-input.is-readonly{background:var(--hover);color:var(--muted);box-shadow:inset 0 1px 2px rgba(0,0,0,.04)}
+.notes-input.is-readonly:focus{border-color:var(--hint);box-shadow:inset 0 1px 2px rgba(0,0,0,.04)}
 .notes-sidebar textarea{font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,Inter,"Noto Sans",Ubuntu,Cantarell,"Helvetica Neue",Arial,sans-serif}
 .notes-sidebar::after{content:"";margin-top:auto}
 .notes-sidebar{overflow-y:auto}
