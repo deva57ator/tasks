@@ -135,7 +135,7 @@ body.view-sprint .composer{display:none}
 .add-btn{border:none;background:transparent;color:var(--text);cursor:pointer;padding:8px 10px;border-radius:10px}
 .add-btn:hover{background:var(--hover)}
 .tasks{display:flex;flex-direction:column;gap:6px;overflow:auto}
-.task{display:grid;grid-template-columns:auto auto 1fr auto auto;gap:8px;align-items:flex-start;padding:8px 6px;border-radius:calc(var(--radius)*.6);transition:background .16s ease,box-shadow .2s ease,transform .18s ease;border:1px solid transparent;background:var(--surface);position:relative;overflow:hidden}
+.task{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;padding:8px 10px;border-radius:var(--radius);transition:background .16s ease,box-shadow .2s ease,transform .18s ease;border:1px solid transparent;background:var(--surface);position:relative;overflow:hidden}
 .task[draggable="true"]{cursor:grab}
 .task.is-dragging{opacity:.6;cursor:grabbing}
 .task.is-drop-target{background:var(--hover-strong);box-shadow:0 0 0 2px var(--hint) inset}
@@ -143,7 +143,7 @@ body.view-sprint .composer{display:none}
 .task.is-selected{background:var(--sel-bg)}
 .task-row{position:relative;overflow:hidden;border-radius:inherit}
 .task.done{background:var(--hover)}
-.task-main{display:flex;flex-direction:column;gap:4px;min-width:0}
+.task-main{display:flex;flex-direction:column;gap:4px;min-width:0;align-self:flex-start}
 .task-title{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;min-width:0}
 .task-title-text{flex:0 1 auto;max-width:100%;white-space:pre-wrap;word-break:break-word}
 .task-tags{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
@@ -154,7 +154,7 @@ body.view-sprint .composer{display:none}
 .due-tag{display:inline-flex;align-items:center;padding:1px 6px;border-radius:8px;background:var(--hover);font-size:11px;color:var(--muted);line-height:1.2}
 .due-tag.is-today{background:var(--today-bg);color:var(--today-text);font-weight:600}
 .proj-tag{display:inline-flex;align-items:center;padding:1px 6px;border-radius:8px;background:var(--hover);font-size:11px;color:var(--muted);line-height:1.2}
-.task-actions{display:flex;align-items:center;gap:6px;justify-content:flex-end;white-space:nowrap;justify-self:end}
+.task-actions{display:flex;align-items:center;gap:6px;justify-content:flex-end;white-space:nowrap;justify-self:end;align-self:center}
 .time-spent{display:inline-flex;align-items:center;padding:2px 6px;border-radius:8px;background:var(--hover);font-size:12px;color:var(--muted);gap:4px}
 .ctx-submenu{position:fixed;z-index:10000;min-width:160px;display:none}
 .ctx-submenu .ctx-submenu-item+.ctx-submenu-item{margin-top:2px}
@@ -180,13 +180,9 @@ body.theme-dark .note-btn:focus-visible,body.theme-dark .timer-btn:focus-visible
 .task:hover .delete-btn,.delete-btn:focus-visible{opacity:1;color:var(--text)}
 .task.is-selected .delete-btn{opacity:1}
 .delete-btn:hover{background:var(--hover);color:var(--text)}
-.toggle{width:20px;height:20px;display:grid;place-items:center;cursor:pointer;border-radius:6px;user-select:none}
-.toggle:hover{background:var(--hover)}
-.toggle::before{content:"▾"}
-.task.is-collapsed > .toggle::before{content:"▸"}
-.subtasks{grid-column:1 / -1;margin-left:28px;overflow:hidden;transition:max-height .22s ease}
+.subtasks{grid-column:1 / -1;margin-left:28px;overflow:visible}
 .subtasks-inner{display:flex;flex-direction:column;gap:6px}
-.task-checkbox{width:32px;height:32px;display:inline-grid;place-items:center;cursor:pointer;font-size:20px;line-height:1;user-select:none;border-radius:calc(var(--radius)*.35);border:1px solid var(--toast-border);color:var(--muted);background:var(--surface);transition:background .16s ease,border-color .16s ease,color .16s ease,transform .16s ease,box-shadow .18s ease}
+.task-checkbox{width:32px;height:32px;display:inline-grid;place-items:center;cursor:pointer;font-size:20px;line-height:1;user-select:none;border-radius:calc(var(--radius)*.35);border:1px solid var(--toast-border);color:var(--muted);background:var(--surface);transition:background .16s ease,border-color .16s ease,color .16s ease,transform .16s ease,box-shadow .18s ease;align-self:center}
 .task-checkbox::before{content:"";font-weight:700}
 .task-checkbox[data-checked="true"]{background:var(--accent-soft);border-color:var(--accent-border);color:var(--accent)}
 .task-checkbox[data-checked="true"]::before{content:"✔"}
