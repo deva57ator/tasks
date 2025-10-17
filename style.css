@@ -135,7 +135,7 @@ body.view-sprint .composer{display:none}
 .add-btn{border:none;background:transparent;color:var(--text);cursor:pointer;padding:8px 10px;border-radius:10px}
 .add-btn:hover{background:var(--hover)}
 .tasks{display:flex;flex-direction:column;gap:6px;overflow:auto}
-.task{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;padding:8px 10px;border-radius:calc(var(--radius) + 6px);transition:background .16s ease,box-shadow .2s ease,transform .18s ease;border:1px solid transparent;background:var(--surface);position:relative;overflow:hidden}
+.task{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;padding:8px 10px;border-radius:var(--radius);transition:background .16s ease,box-shadow .2s ease,transform .18s ease;border:1px solid transparent;background:var(--surface);position:relative;overflow:hidden}
 .task[draggable="true"]{cursor:grab}
 .task.is-dragging{opacity:.6;cursor:grabbing}
 .task.is-drop-target{background:var(--hover-strong);box-shadow:0 0 0 2px var(--hint) inset}
