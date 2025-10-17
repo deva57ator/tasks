@@ -141,7 +141,7 @@ body.view-sprint .composer{display:none}
 .task.is-drop-target{background:var(--hover-strong);box-shadow:0 0 0 2px var(--hint) inset}
 .task:hover{background:var(--hover);box-shadow:var(--shadow);transform:translateY(-1px)}
 .task.is-selected{background:var(--sel-bg)}
-.task-row{position:relative;overflow:hidden;border-radius:inherit}
+.task-row{position:relative;overflow:hidden}
 .task.done{background:var(--hover)}
 .task-main{display:flex;flex-direction:column;gap:4px;min-width:0;align-self:flex-start}
 .task-title{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;min-width:0}
