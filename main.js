@@ -242,7 +242,7 @@ function hasActiveTimer(list=tasks){if(!Array.isArray(list))return false;for(con
 function ensureTimerLoop(){if(timerInterval)return;timerInterval=setInterval(()=>updateTimerDisplays(),TIME_UPDATE_INTERVAL)}
 function stopTimerLoop(){if(timerInterval){clearInterval(timerInterval);timerInterval=null}}
 function syncTimerLoop(){if(hasActiveTimer())ensureTimerLoop();else stopTimerLoop();updateTimerDisplays()}
-function updateTimerDisplays(){const rows=$$('#tasks .task[data-id]');const now=Date.now();for(const row of rows){const id=row.dataset.id;const task=findTask(id);if(!task)continue;const timeEl=row.querySelector('.time-spent');if(timeEl)timeEl.textContent=formatDuration(totalTimeMs(task,now));const timerBtn=row.querySelector('.timer-btn');if(timerBtn){timerBtn.dataset.active=task.timerActive?'true':'false';timerBtn.title=task.timerActive?'Остановить таймер':'Запустить таймер';timerBtn.setAttribute('aria-pressed',task.timerActive?'true':'false')}}updateWorkdayUI()}
+function updateTimerDisplays(){const rows=$$('#tasks .task[data-id]');const now=Date.now();for(const row of rows){const id=row.dataset.id;const task=findTask(id);if(!task)continue;const timeEl=row.querySelector('.time-spent');if(timeEl){const timeSpentMs=totalTimeMs(task,now);if(timeSpentMs>0){timeEl.textContent=formatDuration(timeSpentMs);timeEl.hidden=false;}else{timeEl.textContent='';timeEl.hidden=true;}}const timerBtn=row.querySelector('.timer-btn');if(timerBtn){timerBtn.dataset.active=task.timerActive?'true':'false';timerBtn.title=task.timerActive?'Остановить таймер':'Запустить таймер';timerBtn.setAttribute('aria-pressed',task.timerActive?'true':'false')}}updateWorkdayUI()}
 function stopTaskTimer(task,{silent=false}={}){if(!task||!task.timerActive)return;const now=Date.now();if(typeof task.timerStart==='number'&&isFinite(task.timerStart)){task.timeSpent=totalTimeMs(task,now)}if(typeof task.timeSpent!=='number'||!isFinite(task.timeSpent))task.timeSpent=0;task.timerActive=false;task.timerStart=null;if(!silent)Store.write(tasks)}
 function stopAllTimersExcept(activeId,list=tasks){if(!Array.isArray(list))return;for(const item of list){if(!item)continue;if(item.timerActive&&item.id!==activeId){stopTaskTimer(item,{silent:true})}if(Array.isArray(item.children)&&item.children.length){stopAllTimersExcept(activeId,item.children)}}}
 function startTaskTimer(task){if(!task)return;if(task.timerActive)return;stopAllTimersExcept(task.id);task.timerActive=true;task.timerStart=Date.now();Store.write(tasks);syncTimerLoop()}
@@ -444,7 +444,16 @@ function renderTaskRow(t,depth,container){
   title.appendChild(titleText);
   content.appendChild(title);
   const tagsWrap=document.createElement('div');tagsWrap.className='task-tags';
-  const timeBadge=document.createElement('span');timeBadge.className='time-spent';timeBadge.textContent=formatDuration(totalTimeMs(t));
+  const timeBadge=document.createElement('span');
+  timeBadge.className='time-spent';
+  const timeSpentMs=totalTimeMs(t);
+  if(timeSpentMs>0){
+    timeBadge.textContent=formatDuration(timeSpentMs);
+    timeBadge.hidden=false;
+  }else{
+    timeBadge.textContent='';
+    timeBadge.hidden=true;
+  }
   const timerBtn=document.createElement('button');timerBtn.className='timer-btn';timerBtn.type='button';timerBtn.textContent='⏱️';timerBtn.dataset.active=t.timerActive?'true':'false';timerBtn.title=t.timerActive?'Остановить таймер':'Запустить таймер';timerBtn.setAttribute('aria-label','Таймер задачи');timerBtn.setAttribute('aria-pressed',t.timerActive?'true':'false');timerBtn.onclick=e=>{e.stopPropagation();toggleTaskTimer(t.id)};
   const noteBtn=document.createElement('button');noteBtn.className='note-btn';noteBtn.type='button';noteBtn.setAttribute('aria-label','Заметки задачи');noteBtn.title='Открыть заметки';noteBtn.textContent='📝';noteBtn.onclick=e=>{e.stopPropagation();openNotesPanel(t.id)};noteBtn.dataset.hasNotes=t.notes&&t.notes.trim()? 'true':'false';
   const dueBtn=document.createElement('button');dueBtn.className='due-btn';dueBtn.title='Установить дедлайн';dueBtn.textContent='📅';dueBtn.onclick=e=>{e.stopPropagation();openDuePicker(t.id,dueBtn)};
