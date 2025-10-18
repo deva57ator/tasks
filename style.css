@@ -191,12 +191,12 @@ body.view-sprint .composer{display:none}
 .timer-btn[data-active="true"]{opacity:1;color:var(--timer-accent);background-color:var(--timer-glow);box-shadow:0 4px 12px var(--timer-shadow);animation:timerButtonPulse 3.2s ease-in-out infinite;border-color:var(--timer-border)}
 .task:hover .due-btn,.due-btn:focus-visible{opacity:1}
 .note-btn:hover,.timer-btn:hover,.due-btn:hover{background:var(--hover)}
-.note-btn:hover{border-color:#1b3a8a;color:#1b3a8a}
-body.theme-dark .note-btn:hover{border-color:#56c7ff;color:#56c7ff}
-.timer-btn:hover{border-color:#f2994a;color:#f2994a}
-body.theme-dark .timer-btn:hover{border-color:#f6c744;color:#f6c744}
-.due-btn:hover{border-color:#78d47d;color:#2f9a5d}
-body.theme-dark .due-btn:hover{border-color:#78d47d;color:#78d47d}
+.note-btn:hover{border-color:#f2994a;color:#f2994a}
+body.theme-dark .note-btn:hover{border-color:#f2994a;color:#f2994a}
+.timer-btn:hover{border-color:#e45b4d;color:#e45b4d}
+body.theme-dark .timer-btn:hover{border-color:#e45b4d;color:#e45b4d}
+.due-btn:hover{border-color:#3a82f6;color:#3a82f6}
+body.theme-dark .due-btn:hover{border-color:#3a82f6;color:#3a82f6}
 .note-btn:active,.timer-btn:active,.due-btn:active{background:var(--hover-strong)}
 .note-btn:focus-visible,.timer-btn:focus-visible,.due-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;background:var(--hover);box-shadow:0 0 0 4px rgba(0,0,0,.06)}
 body.theme-dark .note-btn:focus-visible,body.theme-dark .timer-btn:focus-visible,body.theme-dark .due-btn:focus-visible{box-shadow:0 0 0 4px rgba(0,0,0,.4)}
