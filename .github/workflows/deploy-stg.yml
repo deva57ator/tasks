@@ -1,0 +1,40 @@
+name: Deploy STG (tasks)
+
+on:
+  push:
+    branches:
+      - stg
+
+jobs:
+  deploy-stg:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.DEPLOY_HOST }}
+      SSH_USER: ${{ secrets.DEPLOY_USER }}
+      SSH_KEY:  ${{ secrets.SSH_KEY }}
+      PATH_STG: ${{ secrets.DEPLOY_PATH_STG }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf "Host ${SSH_HOST}\n\tStrictHostKeyChecking no\n" >> ~/.ssh/config
+
+      - name: Rsync static to STG
+        run: |
+          rsync -az --delete \
+            --rsh="ssh -i ~/.ssh/id_ed25519" \
+            --exclude ".git/" \
+            --exclude ".github/" \
+            ./ \
+            ${SSH_USER}@${SSH_HOST}:${PATH_STG}/
+
+      - name: Touch index.html to bust caches
+        run: |
+          ssh -i ~/.ssh/id_ed25519 ${SSH_USER}@${SSH_HOST} \
+            "find ${PATH_STG} -maxdepth 1 -name index.html -exec touch {} +"
