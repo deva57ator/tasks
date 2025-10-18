@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - stg
+  workflow_dispatch:   # ← добавляем эту строку
 
 jobs:
   deploy-stg:
