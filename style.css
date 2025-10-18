@@ -187,9 +187,11 @@ body.view-sprint .composer{display:none}
 .ctx-submenu-item:hover,.ctx-submenu-item.is-submenu-open{background:var(--hover-strong)}
 .note-btn,.due-btn,.timer-btn{border:1px solid transparent;background:transparent;color:var(--text);padding:4px 6px;font-size:16px;line-height:1;cursor:pointer;border-radius:8px;opacity:0;display:inline-flex;align-items:center;justify-content:center;transition:opacity .12s ease,color .12s ease,background .12s ease,border-color .12s ease}
 .task:hover .note-btn,.note-btn:focus-visible,.task:hover .timer-btn,.timer-btn:focus-visible{opacity:1}
+.task.is-selected .note-btn,.task.is-selected .timer-btn{opacity:1}
 .note-btn[data-has-notes="true"]{opacity:1;color:var(--muted)}
 .timer-btn[data-active="true"]{opacity:1;color:var(--timer-accent);background-color:var(--timer-glow);box-shadow:0 4px 12px var(--timer-shadow);animation:timerButtonPulse 3.2s ease-in-out infinite;border-color:var(--timer-border)}
 .task:hover .due-btn,.due-btn:focus-visible{opacity:1}
+.task.is-selected .due-btn{opacity:1}
 .note-btn:hover,.timer-btn:hover,.due-btn:hover{background:var(--hover)}
 .note-btn:hover{border-color:#f2994a;color:#f2994a}
 body.theme-dark .note-btn:hover{border-color:#f2994a;color:#f2994a}
