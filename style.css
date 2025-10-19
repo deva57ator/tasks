@@ -2,7 +2,7 @@
 body.theme-dark{--bg:#0f1115;--text:#e7e7e7;--muted:#a5a5a5;--hint:#4b4f57;--hover:#1a1d23;--hover-strong:#22262d;--icon:#e7e7e7;--surface:transparent;--toast-bg:rgba(22,24,29,.95);--toast-border:#2a2e36;--shadow:0 10px 24px rgba(0,0,0,.35);--sidebar-bg:#171b22;--sidebar-shadow:none;--radius:16px;--cal-grid:#2a2e36;--today-bg:rgba(60,155,90,.32);--today-text:#8de5a2;--cal-today:var(--today-bg);--cal-week-bg:#1c2129;--sel-bg:#1b2433;--context-menu-bg:#171b22;--accent:#7da6ff;--accent-soft:rgba(61,117,255,.16);--accent-border:rgba(125,166,255,.36);--accent-shadow:rgba(28,58,128,.55);--success:#4cb07e;--success-soft:rgba(76,176,126,.22);--success-border:rgba(76,176,126,.45);--success-strong:#a3f3c1;--confetti-1:#2ecc71;--confetti-2:#5dade2;--confetti-3:#bb8fce;--confetti-4:#f7dc6f;--confetti-5:#f5b041;--confetti-6:#ec7063;--timer-accent:#ff8678;--timer-glow:rgba(255,104,89,.16);--timer-glow-strong:rgba(255,104,89,.26);--timer-border:rgba(255,104,89,.42);--timer-shadow:rgba(255,104,89,.38)}
 body{margin:0;background:var(--bg);color:var(--text);font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,Inter,"Noto Sans",Ubuntu,Cantarell,"Helvetica Neue",Arial,sans-serif;font-size:15px;line-height:1.45;min-height:100vh;display:grid;grid-template-columns:260px 1fr;gap:16px;box-sizing:border-box;padding:16px;align-items:start}
 code, .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
-.sidebar{display:grid;grid-template-rows:auto 1fr;gap:6px;padding:12px;background:var(--sidebar-bg);border-radius:var(--radius);box-shadow:var(--sidebar-shadow);position:sticky;top:16px;height:calc(100vh - 32px);align-self:start;box-sizing:border-box}
+.sidebar{display:grid;grid-template-rows:auto 1fr;gap:6px;padding:12px;background:var(--sidebar-bg);border-radius:var(--radius);box-shadow:var(--sidebar-shadow);position:sticky;top:16px;height:calc(100vh - 32px);align-self:start;box-sizing:border-box;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
 .sidebar h2{margin:2px 6px 6px;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px}
 .nav{display:flex;flex-direction:column;gap:6px}
 .nav-btn{appearance:none;border:none;background:transparent;color:var(--text);padding:8px 10px;text-align:left;cursor:pointer;border-radius:10px;transition:background .12s ease,color .12s ease,transform .08s ease;font-size:16px;font-weight:700}
@@ -296,7 +296,7 @@ body.theme-dark .proj-item{background:rgba(23,27,34,.85);box-shadow:0 1px 0 rgba
 .proj-input{width:100%;border:none;border-bottom:1px solid var(--hint);padding:6px 2px;background:transparent;color:var(--text);outline:none}
 @keyframes timerButtonPulse{0%,100%{background-color:var(--timer-glow);box-shadow:0 4px 12px var(--timer-shadow)}50%{background-color:var(--timer-glow-strong);box-shadow:0 10px 24px var(--timer-shadow)}}
 @media (prefers-reduced-motion:reduce){.note-btn,.timer-btn,.due-btn{transition:opacity .12s ease,background-color .18s ease,color .18s ease;transform:none!important}.note-btn:hover,.timer-btn:hover,.due-btn:hover,.note-btn:active,.timer-btn:active,.due-btn:active{transform:none}.timer-btn[data-active="true"]{animation:none}}
-@media (max-width:860px){body{grid-template-columns:1fr}.sidebar{order:2;position:static;height:auto}.main{order:1}}
+@media (max-width:860px){body{grid-template-columns:1fr}.sidebar{order:2;position:static;height:auto;overflow:visible}.main{order:1}}
 
 button,input,select,textarea{font:inherit}
 
