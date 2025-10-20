@@ -128,7 +128,7 @@ function computeWorkdayProgress(now=Date.now(),{persist=true,allowBaselineUpdate
 
 function getManualWorkdayStats(){if(!workdayState||!workdayState.manualClosedStats)return{timeMs:0,doneCount:0};const timeMs=typeof workdayState.manualClosedStats.timeMs==='number'&&isFinite(workdayState.manualClosedStats.timeMs)?Math.max(0,workdayState.manualClosedStats.timeMs):0;const doneCount=typeof workdayState.manualClosedStats.doneCount==='number'&&isFinite(workdayState.manualClosedStats.doneCount)?Math.max(0,Math.round(workdayState.manualClosedStats.doneCount)):0;return{timeMs,doneCount}}
 
-function computeAggregatedWorkdayStats(now=Date.now(),options){const delta=computeWorkdayProgress(now,options);const base=getManualWorkdayStats();return{timeMs:base.timeMs+delta.timeMs,doneCount:base.doneCount+delta.doneCount,base,delta}}
+function computeAggregatedWorkdayStats(now=Date.now(),options){const base=getManualWorkdayStats();let delta={timeMs:0,doneCount:0};const includeDelta=!workdayState||workdayState.closedManually!==true;if(includeDelta){delta=computeWorkdayProgress(now,options)}return{timeMs:base.timeMs+delta.timeMs,doneCount:base.doneCount+delta.doneCount,base,delta}}
 
 function updateWorkdayCompletionState(task,done,now=Date.now()){if(!task)return;const info=ensureWorkdayState(now);if(!workdayState)return;const completed=workdayState.completed||(workdayState.completed={});let changed=false;if(done){if(info.state==='active'&&workdayState.id===info.id&&!completed[task.id]){completed[task.id]=now;changed=true}}else if(completed[task.id]){delete completed[task.id];changed=true}if(changed)WorkdayStore.write(workdayState)}
 
