@@ -1,0 +1,6 @@
+.env
+npm-debug.log*
+/data/*.db
+/data/*.sqlite
+/data/*.sqlite-journal
+/data/*.sqlite-wal
