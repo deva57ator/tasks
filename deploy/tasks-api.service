@@ -1,0 +1,16 @@
+[Unit]
+Description=Tasks API service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/tasks-api
+EnvironmentFile=/opt/tasks-api/.env
+ExecStart=/usr/bin/node /opt/tasks-api/src/server.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
