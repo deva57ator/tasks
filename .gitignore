@@ -1,8 +1,32 @@
+# deps
+**/node_modules/
+
+# env
+*.env
 .env
-apps/api/.env
+
+# logs
+logs/
+*.log
 npm-debug.log*
-node_modules/
-/data/*
-!/data/.keep
+
+# build artifacts
+dist/
+build/
+coverage/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# lockfiles — разрешаем только API
+/package-lock.json
+/apps/web/package-lock.json
+!apps/api/package-lock.json
+
+# DB в API: игнорим всё, кроме плейсхолдеров
 apps/api/data/*
+!apps/api/data/.gitignore
 !apps/api/data/.keep
