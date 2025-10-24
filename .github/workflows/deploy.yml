@@ -14,6 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # === 1. Настройка SSH ===
       - name: Setup SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
@@ -26,11 +27,11 @@ jobs:
           ssh-keyscan -p "${{ env.SSH_PORT }}" -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      # ===== API → STG (/srv/tasks-stg) =====
-      - name: Copy API to STG
+      # === 2. Копируем API (apps/api) ===
+      - name: Copy API → STG (/srv/tasks-stg)
         run: |
           rsync -av --delete -e "ssh -p $SSH_PORT" \
-            --filter='merge infra/rsync/.rsync-filter-api' \
+            --filter='merge infra/rsync/api.filter' \
             ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH_STG }}-tmp/"
           ssh -p "$SSH_PORT" "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
             set -e
@@ -40,11 +41,10 @@ jobs:
             rm -rf "${DEPLOY_PATH}-tmp"
           ' DEPLOY_PATH="${{ secrets.DEPLOY_PATH_STG }}"
 
-      # ===== API → PROD (/srv/tasks-prod) =====
-      - name: Copy API to PROD
+      - name: Copy API → PROD (/srv/tasks-prod)
         run: |
           rsync -av --delete -e "ssh -p $SSH_PORT" \
-            --filter='merge infra/rsync/.rsync-filter-api' \
+            --filter='merge infra/rsync/api.filter' \
             ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH_PROD }}-tmp/"
           ssh -p "$SSH_PORT" "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
             set -e
@@ -54,21 +54,20 @@ jobs:
             rm -rf "${DEPLOY_PATH}-tmp"
           ' DEPLOY_PATH="${{ secrets.DEPLOY_PATH_PROD }}"
 
-      # ===== WEB → STG (/var/www/tasks-stg) =====
-      - name: Copy WEB to STG webroot
+      # === 3. Копируем WEB (apps/web) ===
+      - name: Copy WEB → STG (/var/www/tasks-stg)
         run: |
           rsync -av --delete -e "ssh -p $SSH_PORT" \
-            --filter='merge infra/rsync/.rsync-filter-web' \
+            --filter='merge infra/rsync/web.filter' \
             ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_WEB_PATH_STG }}/"
 
-      # ===== WEB → PROD (/var/www/tasks-prod) =====
-      - name: Copy WEB to PROD webroot
+      - name: Copy WEB → PROD (/var/www/tasks-prod)
         run: |
           rsync -av --delete -e "ssh -p $SSH_PORT" \
-            --filter='merge infra/rsync/.rsync-filter-web' \
+            --filter='merge infra/rsync/web.filter' \
             ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_WEB_PATH_PROD }}/"
 
-      # ===== post-deploy: npm ci, migrate, restart =====
+      # === 4. Устанавливаем зависимости, миграции, рестарт ===
       - name: Install & migrate & restart (STG)
         run: |
           ssh -p "$SSH_PORT" "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
