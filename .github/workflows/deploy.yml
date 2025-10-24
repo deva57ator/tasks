@@ -1,0 +1,61 @@
+name: Deploy tasks (stg & prod)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: 64.188.95.45
+      SSH_USER: deploy
+      SSH_PORT: 22
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy backend (apps/api) to STG
+        run: |
+          rsync -av --delete -e "ssh -p $SSH_PORT" \
+            --filter='merge infra/rsync/.rsync-filter' \
+            ./ ${SSH_USER}@${SSH_HOST}:/srv/tasks-stg-tmp/
+          ssh -p $SSH_PORT ${SSH_USER}@${SSH_HOST} 'rm -rf /srv/tasks-stg/apps && mv /srv/tasks-stg-tmp/apps /srv/tasks-stg/ && rmdir /srv/tasks-stg-tmp || true'
+
+      - name: Copy backend (apps/api) to PROD
+        run: |
+          rsync -av --delete -e "ssh -p $SSH_PORT" \
+            --filter='merge infra/rsync/.rsync-filter' \
+            ./ ${SSH_USER}@${SSH_HOST}:/srv/tasks-prod-tmp/
+          ssh -p $SSH_PORT ${SSH_USER}@${SSH_HOST} 'rm -rf /srv/tasks-prod/apps && mv /srv/tasks-prod-tmp/apps /srv/tasks-prod/ && rmdir /srv/tasks-prod-tmp || true'
+
+      - name: Copy frontend (apps/web) to STG webroot
+        run: |
+          rsync -av --delete -e "ssh -p $SSH_PORT" \
+            apps/web/ ${SSH_USER}@${SSH_HOST}:/var/www/tasks-stg/
+
+      - name: Copy frontend (apps/web) to PROD webroot
+        run: |
+          rsync -av --delete -e "ssh -p $SSH_PORT" \
+            apps/web/ ${SSH_USER}@${SSH_HOST}:/var/www/tasks-prod/
+
+      - name: Install & migrate & restart (STG)
+        run: |
+          ssh -p $SSH_PORT ${SSH_USER}@${SSH_HOST} '
+            set -e
+            cd /srv/tasks-stg/apps/api
+            npm ci --omit=dev
+            npm run migrate
+            sudo systemctl restart tasks-stg
+          '
+
+      - name: Install & migrate & restart (PROD)
+        run: |
+          ssh -p $SSH_PORT ${SSH_USER}@${SSH_HOST} '
+            set -e
+            cd /srv/tasks-prod/apps/api
+            npm ci --omit=dev
+            npm run migrate
+            sudo systemctl restart tasks-prod
+          '

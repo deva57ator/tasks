@@ -1,6 +1,8 @@
 .env
+apps/api/.env
 npm-debug.log*
-/data/*.db
-/data/*.sqlite
-/data/*.sqlite-journal
-/data/*.sqlite-wal
+node_modules/
+/data/*
+!/data/.keep
+apps/api/data/*
+!apps/api/data/.keep
