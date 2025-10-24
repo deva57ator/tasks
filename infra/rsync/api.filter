@@ -1,0 +1,9 @@
++ /apps/
++ /apps/api/
++ /apps/api/package.json
++ /apps/api/package-lock.json
++ /apps/api/src/***
++ /apps/api/scripts/***
++ /apps/api/migrations/***
++ /apps/api/data/***
+- *
