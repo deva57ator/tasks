@@ -9,65 +9,82 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      SSH_PORT: ${{ secrets.DEPLOY_PORT || 22 }} # если DEPLOY_PORT нет — возьмёт 22
+      SSH_PORT: ${{ secrets.DEPLOY_PORT || 22 }}
 
     steps:
       - uses: actions/checkout@v4
 
-      # 1) SSH-агент: кладём приватный ключ из твоего секрета SSH_KEY
       - name: Setup SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: |
             ${{ secrets.SSH_KEY }}
 
-      # 2) Добавляем host key сервера в known_hosts (иначе Host key verification failed)
       - name: Add host key
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan -p "${{ env.SSH_PORT }}" -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      # 3) Копируем backend+web на STG (через rsync-фильтр)
-      - name: Copy to STG
+      # ===== API → STG (/srv/tasks-stg) =====
+      - name: Copy API to STG
         run: |
           rsync -av --delete -e "ssh -p $SSH_PORT" \
-            --filter='merge infra/rsync/.rsync-filter' \
+            --filter='merge infra/rsync/.rsync-filter-api' \
             ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH_STG }}-tmp/"
           ssh -p "$SSH_PORT" "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
             set -e
-            rm -rf "${DEPLOY_PATH_STG}/apps" && mv "${DEPLOY_PATH_STG}-tmp/apps" "${DEPLOY_PATH_STG}/" && rmdir "${DEPLOY_PATH_STG}-tmp" || true
-          ' DEPLOY_PATH_STG="${{ secrets.DEPLOY_PATH_STG }}"
+            rm -rf "${DEPLOY_PATH}/apps/api"
+            mkdir -p "${DEPLOY_PATH}/apps"
+            mv "${DEPLOY_PATH}-tmp/apps/api" "${DEPLOY_PATH}/apps/"
+            rm -rf "${DEPLOY_PATH}-tmp"
+          ' DEPLOY_PATH="${{ secrets.DEPLOY_PATH_STG }}"
 
-      # 4) Копируем backend+web на PROD
-      - name: Copy to PROD
+      # ===== API → PROD (/srv/tasks-prod) =====
+      - name: Copy API to PROD
         run: |
           rsync -av --delete -e "ssh -p $SSH_PORT" \
-            --filter='merge infra/rsync/.rsync-filter' \
+            --filter='merge infra/rsync/.rsync-filter-api' \
             ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH_PROD }}-tmp/"
           ssh -p "$SSH_PORT" "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
             set -e
-            rm -rf "${DEPLOY_PATH_PROD}/apps" && mv "${DEPLOY_PATH_PROD}-tmp/apps" "${DEPLOY_PATH_PROD}/" && rmdir "${DEPLOY_PATH_PROD}-tmp" || true
-          ' DEPLOY_PATH_PROD="${{ secrets.DEPLOY_PATH_PROD }}"
+            rm -rf "${DEPLOY_PATH}/apps/api"
+            mkdir -p "${DEPLOY_PATH}/apps"
+            mv "${DEPLOY_PATH}-tmp/apps/api" "${DEPLOY_PATH}/apps/"
+            rm -rf "${DEPLOY_PATH}-tmp"
+          ' DEPLOY_PATH="${{ secrets.DEPLOY_PATH_PROD }}"
 
-      # 5) Устанавливаем зависимости, миграции, рестарт — STG
+      # ===== WEB → STG (/var/www/tasks-stg) =====
+      - name: Copy WEB to STG webroot
+        run: |
+          rsync -av --delete -e "ssh -p $SSH_PORT" \
+            --filter='merge infra/rsync/.rsync-filter-web' \
+            ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_WEB_PATH_STG }}/"
+
+      # ===== WEB → PROD (/var/www/tasks-prod) =====
+      - name: Copy WEB to PROD webroot
+        run: |
+          rsync -av --delete -e "ssh -p $SSH_PORT" \
+            --filter='merge infra/rsync/.rsync-filter-web' \
+            ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_WEB_PATH_PROD }}/"
+
+      # ===== post-deploy: npm ci, migrate, restart =====
       - name: Install & migrate & restart (STG)
         run: |
           ssh -p "$SSH_PORT" "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
             set -e
-            cd "${DEPLOY_PATH_STG}/apps/api"
+            cd "${DEPLOY_PATH}/apps/api"
             npm ci --omit=dev
             npm run migrate
             sudo systemctl restart tasks-stg
-          ' DEPLOY_PATH_STG="${{ secrets.DEPLOY_PATH_STG }}"
+          ' DEPLOY_PATH="${{ secrets.DEPLOY_PATH_STG }}"
 
-      # 6) Устанавливаем зависимости, миграции, рестарт — PROD
       - name: Install & migrate & restart (PROD)
         run: |
           ssh -p "$SSH_PORT" "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
             set -e
-            cd "${DEPLOY_PATH_PROD}/apps/api"
+            cd "${DEPLOY_PATH}/apps/api"
             npm ci --omit=dev
             npm run migrate
             sudo systemctl restart tasks-prod
-          ' DEPLOY_PATH_PROD="${{ secrets.DEPLOY_PATH_PROD }}"
+          ' DEPLOY_PATH="${{ secrets.DEPLOY_PATH_PROD }}"
