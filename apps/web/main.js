@@ -9,7 +9,8 @@ let storageMode=StorageModeStore.read();
 if(storageMode!==STORAGE_MODES.SERVER)storageMode=STORAGE_MODES.LOCAL;
 
 let apiSettings={baseUrl:DEFAULT_API_BASE,...ApiSettingsStore.read()};
-if(typeof apiSettings.baseUrl!=='string'||!apiSettings.baseUrl.trim()||apiSettings.baseUrl==='/api'){apiSettings.baseUrl=DEFAULT_API_BASE;ApiSettingsStore.write(apiSettings);}
+const rawBase=apiSettings.baseUrl;
+if(typeof rawBase!=='string'){apiSettings.baseUrl=DEFAULT_API_BASE;ApiSettingsStore.write(apiSettings);}else{const trimmedBase=rawBase.trim();if(!trimmedBase){apiSettings.baseUrl=DEFAULT_API_BASE;ApiSettingsStore.write(apiSettings);}else{apiSettings.baseUrl=trimmedBase;if(trimmedBase!==rawBase)ApiSettingsStore.write(apiSettings);}}
 
 function isServerMode(){return storageMode===STORAGE_MODES.SERVER}
 function getApiSettings(){return apiSettings}
