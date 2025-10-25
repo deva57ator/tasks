@@ -2,14 +2,25 @@ const StorageModeStore={key:'mini-task-tracker:storage-mode',read(){return local
 const STORAGE_MODES={LOCAL:'local',SERVER:'server'};
 const ApiSettingsStore={key:'mini-task-tracker:api-settings',read(){try{const raw=JSON.parse(localStorage.getItem(this.key)||'{}');if(!raw||typeof raw!=='object')return{};return raw}catch{return{}}},write(settings){try{localStorage.setItem(this.key,JSON.stringify(settings||{}))}catch{}}};
 
+const isStg=location.pathname.startsWith('/tasks-stg/');
+const DEFAULT_API_BASE=isStg?'/tasks-stg/api':'/tasks/api';
+
 let storageMode=StorageModeStore.read();
 if(storageMode!==STORAGE_MODES.SERVER)storageMode=STORAGE_MODES.LOCAL;
 
-let apiSettings={baseUrl:'/api',...ApiSettingsStore.read()};
+let apiSettings={baseUrl:DEFAULT_API_BASE,...ApiSettingsStore.read()};
+if(typeof apiSettings.baseUrl!=='string'||!apiSettings.baseUrl.trim()||apiSettings.baseUrl==='/api'){apiSettings.baseUrl=DEFAULT_API_BASE;ApiSettingsStore.write(apiSettings);}
 
 function isServerMode(){return storageMode===STORAGE_MODES.SERVER}
 function getApiSettings(){return apiSettings}
 function setApiSettings(next){apiSettings={...apiSettings,...(next||{})};ApiSettingsStore.write(apiSettings)}
+
+const ApiSettingsDialog={overlay:document.getElementById('apiSettingsOverlay'),dialog:document.getElementById('apiSettingsDialog'),form:document.getElementById('apiSettingsForm'),apiKey:document.getElementById('apiSettingsKey'),base:document.getElementById('apiSettingsBase'),error:document.getElementById('apiSettingsError'),close:document.getElementById('apiSettingsClose'),cancel:document.getElementById('apiSettingsCancel')};
+
+function setApiSettingsError(msg){if(!ApiSettingsDialog.error)return;ApiSettingsDialog.error.textContent=msg||'';}
+function openApiSettingsDialog(){if(!ApiSettingsDialog.overlay)return;const settings=getApiSettings();if(ApiSettingsDialog.apiKey)ApiSettingsDialog.apiKey.value=typeof settings.apiKey==='string'?settings.apiKey:'';const baseValue=typeof settings.baseUrl==='string'&&settings.baseUrl.trim()?settings.baseUrl.trim():DEFAULT_API_BASE;if(ApiSettingsDialog.base)ApiSettingsDialog.base.value=baseValue;setApiSettingsError('');ApiSettingsDialog.overlay.classList.add('is-open');ApiSettingsDialog.overlay.setAttribute('aria-hidden','false');if(ApiSettingsDialog.dialog)ApiSettingsDialog.dialog.setAttribute('aria-hidden','false');document.body.classList.add('api-settings-open');const focusTarget=ApiSettingsDialog.base||ApiSettingsDialog.apiKey;setTimeout(()=>{if(!focusTarget)return;try{focusTarget.focus({preventScroll:true})}catch{focusTarget.focus();}},60);}
+function closeApiSettingsDialog(){if(!ApiSettingsDialog.overlay)return;ApiSettingsDialog.overlay.classList.remove('is-open');ApiSettingsDialog.overlay.setAttribute('aria-hidden','true');if(ApiSettingsDialog.dialog)ApiSettingsDialog.dialog.setAttribute('aria-hidden','true');document.body.classList.remove('api-settings-open');setApiSettingsError('');}
+function submitApiSettingsForm(event){if(event)event.preventDefault();const keyRaw=ApiSettingsDialog.apiKey?ApiSettingsDialog.apiKey.value:'';const baseRaw=ApiSettingsDialog.base?ApiSettingsDialog.base.value:'';const apiKey=typeof keyRaw==='string'?keyRaw.trim():'';let base=typeof baseRaw==='string'?baseRaw.trim():'';if(!base)base=DEFAULT_API_BASE;if(!base.startsWith('/')){setApiSettingsError('Base URL должен начинаться с "/"');if(ApiSettingsDialog.base){try{ApiSettingsDialog.base.focus({preventScroll:true})}catch{ApiSettingsDialog.base.focus();}if(typeof ApiSettingsDialog.base.select==='function')ApiSettingsDialog.base.select();}return;}setApiSettings({apiKey,baseUrl:base});closeApiSettingsDialog();const refreshPromise=isServerMode()?refreshDataForCurrentMode({silent:true}):null;if(refreshPromise&&typeof refreshPromise.catch==='function')refreshPromise.catch(()=>{});toast('Настройки API сохранены');}
 
 const Store={key:'mini-task-tracker:text:min:v14',read(){try{return JSON.parse(localStorage.getItem(this.key))||[]}catch{return[]}},write(d){if(isServerMode()){handleServerTaskWrite(d);return}localStorage.setItem(this.key,JSON.stringify(d));afterTasksPersisted()}};
 const ThemeStore={key:'mini-task-tracker:theme',read(){return localStorage.getItem(this.key)||'light'},write(v){localStorage.setItem(this.key,v)}};
@@ -92,7 +103,7 @@ const pendingTaskUpdates=new Map();
 function getApiBaseUrl(){const base=(getApiSettings().baseUrl||'/api').trim();if(!base)return'/api';return base.endsWith('/')?base.slice(0,-1):base}
 function getApiKey(){const key=getApiSettings().apiKey;return typeof key==='string'?key.trim():''}
 
-async function apiRequest(path,{method='GET',body,headers}={}){const base=getApiBaseUrl();const url=base+path;const init={method,headers:{Accept:'application/json',...(headers||{})}};if(body!==undefined){init.body=typeof body==='string'?body:JSON.stringify(body);if(!init.headers['Content-Type'])init.headers['Content-Type']='application/json'}const apiKey=getApiKey();if(apiKey)init.headers['x-api-key']=apiKey;let response;try{response=await fetch(url,init)}catch(err){throw new Error('Нет соединения с API')}if(!response.ok){let message=`Ошибка API (${response.status})`;try{const errBody=await response.json();if(errBody&&errBody.error&&errBody.error.message)message=errBody.error.message}catch{}throw new Error(message)}if(response.status===204)return null;const text=await response.text();if(!text)return null;try{return JSON.parse(text)}catch{return null}}
+async function apiRequest(path,{method='GET',body,headers}={}){const base=getApiBaseUrl();const url=base+path;const init={method,headers:{Accept:'application/json',...(headers||{})}};if(body!==undefined){init.body=typeof body==='string'?body:JSON.stringify(body);if(!init.headers['Content-Type'])init.headers['Content-Type']='application/json'}const apiKey=getApiKey();if(!apiKey)throw new Error('API ключ не задан');init.headers['x-api-key']=apiKey;let response;try{response=await fetch(url,init)}catch(err){throw new Error('Нет соединения с API')}if(!response.ok){let message=`Ошибка API (${response.status})`;try{const errBody=await response.json();if(errBody&&errBody.error&&errBody.error.message)message=errBody.error.message}catch{}throw new Error(message)}if(response.status===204)return null;const text=await response.text();if(!text)return null;try{return JSON.parse(text)}catch{return null}}
 
 function handleApiError(err,fallback){const message=err&&err.message?err.message:fallback||'Ошибка при работе с API';console.error(err);toast(message)}
 
@@ -480,7 +491,7 @@ window.addEventListener('click',e=>{
   }
   if(!Ctx.el.contains(e.target)&&!Ctx.sub.contains(e.target))closeContextMenu()
 });
-window.addEventListener('keydown',e=>{if(e.key==='Escape'){closeContextMenu();closeNotesPanel();closeDuePicker();closeWorkdayDialog();closeTimeDialog()}});
+window.addEventListener('keydown',e=>{if(e.key==='Escape'){closeContextMenu();closeNotesPanel();closeDuePicker();closeWorkdayDialog();closeTimeDialog();closeApiSettingsDialog()}});
 window.addEventListener('resize',closeContextMenu);
 window.addEventListener('scroll',closeContextMenu,true);
 
@@ -622,6 +633,13 @@ if(archiveBtn){archiveBtn.addEventListener('click',()=>{currentView='archive';re
 
 const storageToggleBtn=document.getElementById('storageToggle');
 if(storageToggleBtn){storageToggleBtn.addEventListener('click',async()=>{if(isDataLoading)return;if(isServerMode()){await setStorageModeAndReload(STORAGE_MODES.LOCAL);toast('Режим: localStorage')}else{if(!ensureApiCredentials())return;await setStorageModeAndReload(STORAGE_MODES.SERVER);toast('Режим: API')}})}
+
+const apiSettingsBtn=document.getElementById('apiSettingsBtn');
+if(apiSettingsBtn){apiSettingsBtn.addEventListener('click',()=>openApiSettingsDialog());}
+if(ApiSettingsDialog.close){ApiSettingsDialog.close.addEventListener('click',()=>closeApiSettingsDialog());}
+if(ApiSettingsDialog.cancel){ApiSettingsDialog.cancel.addEventListener('click',()=>closeApiSettingsDialog());}
+if(ApiSettingsDialog.overlay){ApiSettingsDialog.overlay.addEventListener('click',e=>{if(e.target===ApiSettingsDialog.overlay)closeApiSettingsDialog()});}
+if(ApiSettingsDialog.form){ApiSettingsDialog.form.addEventListener('submit',submitApiSettingsForm);}
 
 if(WorkdayUI.button){WorkdayUI.button.addEventListener('click',()=>{if(WorkdayUI.button.disabled)return;openWorkdayDialog()})}
 if(WorkdayUI.closeBtn)WorkdayUI.closeBtn.addEventListener('click',()=>closeWorkdayDialog());

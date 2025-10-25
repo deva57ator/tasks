@@ -85,6 +85,13 @@
         <div class="header-actions">
           <button
             type="button"
+            class="icon-btn settings-btn"
+            id="apiSettingsBtn"
+            aria-label="Настройки API"
+            title="Настройки API"
+          ></button>
+          <button
+            type="button"
             class="icon-btn theme-btn"
             id="themeToggle"
             aria-label="Переключить на тёмную тему"
@@ -183,6 +190,31 @@
         <button type="button" class="workday-dialog-action" id="workdayPostponeBtn">Перенести на следующий день</button>
         <button type="button" class="workday-dialog-secondary" id="workdayDialogDone">На сегодня всё!</button>
       </div>
+    </div>
+  </div>
+
+  <div class="api-settings-overlay" id="apiSettingsOverlay" aria-hidden="true">
+    <div class="api-settings-dialog" id="apiSettingsDialog" role="dialog" aria-modal="true" aria-labelledby="apiSettingsTitle">
+      <button type="button" class="api-settings-close" id="apiSettingsClose" aria-label="Закрыть окно">×</button>
+      <div class="api-settings-header">
+        <div class="api-settings-title" id="apiSettingsTitle">Настройки API</div>
+        <div class="api-settings-description">Укажите ключ и базовый URL для запросов.</div>
+      </div>
+      <form class="api-settings-form" id="apiSettingsForm">
+        <label class="api-settings-field">
+          <span class="api-settings-label">API ключ</span>
+          <input type="text" class="api-settings-input" id="apiSettingsKey" placeholder="Введите ключ" autocomplete="off" />
+        </label>
+        <label class="api-settings-field">
+          <span class="api-settings-label">Base URL API</span>
+          <input type="text" class="api-settings-input" id="apiSettingsBase" placeholder="/tasks/api" autocomplete="off" />
+        </label>
+        <div class="api-settings-error" id="apiSettingsError" role="alert" aria-live="polite"></div>
+        <div class="api-settings-actions">
+          <button type="button" class="api-settings-secondary" id="apiSettingsCancel">Отмена</button>
+          <button type="submit" class="api-settings-primary" id="apiSettingsSave">Сохранить</button>
+        </div>
+      </form>
     </div>
   </div>
 
