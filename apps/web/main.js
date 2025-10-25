@@ -44,17 +44,65 @@ function normalizeWorkdayState(raw){
   return normalized;
 }
 
-const WorkdayStore={key:'mini-task-tracker:workday',read(){try{return normalizeWorkdayState(JSON.parse(localStorage.getItem(this.key)))}catch{return null}},write(d){if(!d){localStorage.removeItem(this.key);if(isServerMode())handleServerWorkdayWrite(null);}else{localStorage.setItem(this.key,JSON.stringify(d));if(isServerMode())handleServerWorkdayWrite(d)}}};
+const WORKDAY_STORAGE_KEY='mini-task-tracker:workday';
+const WORKDAY_SERVER_STORAGE_KEY=`${WORKDAY_STORAGE_KEY}:server`;
+const WorkdayStore={
+  key:WORKDAY_STORAGE_KEY,
+  serverKey:WORKDAY_SERVER_STORAGE_KEY,
+  getKey(mode=storageMode){return mode===STORAGE_MODES.SERVER?this.serverKey:this.key},
+  read({mode,allowLegacyFallback=true}={}){
+    const targetMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:mode===STORAGE_MODES.LOCAL?STORAGE_MODES.LOCAL:storageMode;
+    const key=this.getKey(targetMode);
+    try{
+      const raw=localStorage.getItem(key);
+      if(raw){
+        const parsed=normalizeWorkdayState(JSON.parse(raw));
+        if(parsed)return parsed;
+      }
+    }catch{}
+    if(targetMode===STORAGE_MODES.SERVER&&allowLegacyFallback){
+      try{
+        const legacyRaw=localStorage.getItem(this.key);
+        if(legacyRaw){
+          const legacyState=normalizeWorkdayState(JSON.parse(legacyRaw));
+          if(legacyState){
+            this.write(legacyState,{mode:STORAGE_MODES.SERVER,skipServerSync:true});
+            return legacyState;
+          }
+        }
+      }catch{}
+    }
+    return null;
+  },
+  write(state,{mode,skipServerSync=false}={}){
+    const targetMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:mode===STORAGE_MODES.LOCAL?STORAGE_MODES.LOCAL:storageMode;
+    const key=this.getKey(targetMode);
+    if(!state){
+      localStorage.removeItem(key);
+      if(targetMode===STORAGE_MODES.SERVER&&!skipServerSync&&storageMode===STORAGE_MODES.SERVER){
+        handleServerWorkdayWrite(null);
+      }
+      return;
+    }
+    try{localStorage.setItem(key,JSON.stringify(state));}catch{}
+    if(targetMode===STORAGE_MODES.SERVER&&!skipServerSync&&storageMode===STORAGE_MODES.SERVER){
+      handleServerWorkdayWrite(state);
+    }
+  }
+};
 
-function persistLocalWorkdayState(state){
+function persistLocalWorkdayState(state,{mode}={}){
+  const targetMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:mode===STORAGE_MODES.LOCAL?STORAGE_MODES.LOCAL:storageMode;
   try{
     const normalized=normalizeWorkdayState(state);
     if(!normalized){
-      localStorage.removeItem(WorkdayStore.key);
+      WorkdayStore.write(null,{mode:targetMode,skipServerSync:true});
     }else{
-      localStorage.setItem(WorkdayStore.key,JSON.stringify(normalized));
+      WorkdayStore.write(normalized,{mode:targetMode,skipServerSync:true});
     }
-  }catch{}
+  }catch{
+    WorkdayStore.write(null,{mode:targetMode,skipServerSync:true});
+  }
 }
 const ArchiveStore={key:'mini-task-tracker:archive:v1',read(){try{const raw=JSON.parse(localStorage.getItem(this.key));if(!Array.isArray(raw))return[];return raw.filter(item=>item&&typeof item==='object')}catch{return[]}},write(d){if(isServerMode()){handleServerArchiveWrite(d);return}localStorage.setItem(this.key,JSON.stringify(d))}};
 
