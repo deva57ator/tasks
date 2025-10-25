@@ -26,7 +26,36 @@ function submitApiSettingsForm(event){if(event)event.preventDefault();const keyR
 const Store={key:'mini-task-tracker:text:min:v14',read(){try{return JSON.parse(localStorage.getItem(this.key))||[]}catch{return[]}},write(d){if(isServerMode()){handleServerTaskWrite(d);return}localStorage.setItem(this.key,JSON.stringify(d));afterTasksPersisted()}};
 const ThemeStore={key:'mini-task-tracker:theme',read(){return localStorage.getItem(this.key)||'light'},write(v){localStorage.setItem(this.key,v)}};
 const ProjectsStore={key:'mini-task-tracker:projects',read(){try{return JSON.parse(localStorage.getItem(this.key))||[]}catch{return[]}},write(d){if(isServerMode()){handleServerProjectsWrite(d);return}localStorage.setItem(this.key,JSON.stringify(d))}};
-const WorkdayStore={key:'mini-task-tracker:workday',read(){try{const raw=JSON.parse(localStorage.getItem(this.key));if(!raw||typeof raw!=='object'||!raw.id)return null;const normalized={...raw};if(typeof normalized.start!=='number')normalized.start=null;if(typeof normalized.end!=='number')normalized.end=null;if(typeof normalized.closedAt!=='number')normalized.closedAt=null;if(typeof normalized.finalTimeMs!=='number')normalized.finalTimeMs=0;if(typeof normalized.finalDoneCount!=='number')normalized.finalDoneCount=0;if(!normalized.baseline||typeof normalized.baseline!=='object')normalized.baseline={};if(!normalized.completed||typeof normalized.completed!=='object')normalized.completed={};const manualStats=normalized.manualClosedStats;const manualTime=manualStats&&typeof manualStats.timeMs==='number'&&isFinite(manualStats.timeMs)?Math.max(0,manualStats.timeMs):0;const manualDone=manualStats&&typeof manualStats.doneCount==='number'&&isFinite(manualStats.doneCount)?Math.max(0,Math.round(manualStats.doneCount)):0;normalized.manualClosedStats={timeMs:manualTime,doneCount:manualDone};normalized.closedManually=normalized.closedManually===true;return normalized}catch{return null}},write(d){if(!d){localStorage.removeItem(this.key);if(isServerMode())handleServerWorkdayWrite(null);}else{localStorage.setItem(this.key,JSON.stringify(d));if(isServerMode())handleServerWorkdayWrite(d)}}};
+function normalizeWorkdayState(raw){
+  if(!raw||typeof raw!=='object'||!raw.id)return null;
+  const normalized={...raw};
+  if(typeof normalized.start!=='number'||!isFinite(normalized.start))normalized.start=null;
+  if(typeof normalized.end!=='number'||!isFinite(normalized.end))normalized.end=null;
+  if(typeof normalized.closedAt!=='number'||!isFinite(normalized.closedAt))normalized.closedAt=null;
+  if(typeof normalized.finalTimeMs!=='number'||!isFinite(normalized.finalTimeMs))normalized.finalTimeMs=0;
+  if(typeof normalized.finalDoneCount!=='number'||!isFinite(normalized.finalDoneCount))normalized.finalDoneCount=0;
+  if(!normalized.baseline||typeof normalized.baseline!=='object')normalized.baseline={};
+  if(!normalized.completed||typeof normalized.completed!=='object')normalized.completed={};
+  const manualStats=normalized.manualClosedStats;
+  const manualTime=manualStats&&typeof manualStats.timeMs==='number'&&isFinite(manualStats.timeMs)?Math.max(0,manualStats.timeMs):0;
+  const manualDone=manualStats&&typeof manualStats.doneCount==='number'&&isFinite(manualStats.doneCount)?Math.max(0,Math.round(manualStats.doneCount)):0;
+  normalized.manualClosedStats={timeMs:manualTime,doneCount:manualDone};
+  normalized.closedManually=normalized.closedManually===true;
+  return normalized;
+}
+
+const WorkdayStore={key:'mini-task-tracker:workday',read(){try{return normalizeWorkdayState(JSON.parse(localStorage.getItem(this.key)))}catch{return null}},write(d){if(!d){localStorage.removeItem(this.key);if(isServerMode())handleServerWorkdayWrite(null);}else{localStorage.setItem(this.key,JSON.stringify(d));if(isServerMode())handleServerWorkdayWrite(d)}}};
+
+function persistLocalWorkdayState(state){
+  try{
+    const normalized=normalizeWorkdayState(state);
+    if(!normalized){
+      localStorage.removeItem(WorkdayStore.key);
+    }else{
+      localStorage.setItem(WorkdayStore.key,JSON.stringify(normalized));
+    }
+  }catch{}
+}
 const ArchiveStore={key:'mini-task-tracker:archive:v1',read(){try{const raw=JSON.parse(localStorage.getItem(this.key));if(!Array.isArray(raw))return[];return raw.filter(item=>item&&typeof item==='object')}catch{return[]}},write(d){if(isServerMode()){handleServerArchiveWrite(d);return}localStorage.setItem(this.key,JSON.stringify(d))}};
 
 let tasks=Store.read();
@@ -132,7 +161,7 @@ function finalizeDataLoad(){tasks=migrate(tasks);ensureTaskParentIds(tasks,null)
 
 async function loadDataFromLocal(){tasks=Store.read();tasks=migrate(tasks);ensureTaskParentIds(tasks,null);projects=ProjectsStore.read();if(!Array.isArray(projects))projects=[];normalizeProjectsList(projects,{persist:!isServerMode()});archivedTasks=normalizeArchiveList(ArchiveStore.read(),{persist:!isServerMode()});workdayState=WorkdayStore.read();if(workdayState&&(!workdayState.id||typeof workdayState.start!=='number'||typeof workdayState.end!=='number'))workdayState=null;finalizeDataLoad();updateStorageToggle()}
 
-async function loadDataFromServer({silent=false}={}){if(isDataLoading)return;isDataLoading=true;updateStorageToggle({loading:true});try{const [tasksPayload,projectsPayload,archivePayload,workdayPayload]=await Promise.all([apiRequest('/tasks'),apiRequest(`/projects?limit=${API_DEFAULT_LIMIT}`),apiRequest(`/archive?limit=${API_DEFAULT_LIMIT}`),apiRequest('/workday/current')]);const serverTasks=Array.isArray(tasksPayload?.items)?tasksPayload.items:Array.isArray(tasksPayload)?tasksPayload:[];tasks=normalizeTaskTree(serverTasks,null);projects=normalizeProjectsList(projectsPayload&&Array.isArray(projectsPayload.items)?projectsPayload.items:[],{persist:false});const archiveItems=normalizeArchivePayload(archivePayload&&Array.isArray(archivePayload.items)?archivePayload.items:[]);archivedTasks=normalizeArchiveList(archiveItems,{persist:false});workdayState=workdayPayload&&workdayPayload.workday&&workdayPayload.workday.payload?workdayPayload.workday.payload:null;if(workdayState&&(!workdayState.id||typeof workdayState.start!=='number'||typeof workdayState.end!=='number'))workdayState=null;finalizeDataLoad()}catch(err){if(!silent)handleApiError(err,'Не удалось загрузить данные с сервера');storageMode=STORAGE_MODES.LOCAL;StorageModeStore.write(storageMode);updateStorageToggle();await loadDataFromLocal()}finally{isDataLoading=false;updateStorageToggle({loading:false})}}
+async function loadDataFromServer({silent=false}={}){if(isDataLoading)return;isDataLoading=true;updateStorageToggle({loading:true});try{const [tasksPayload,projectsPayload,archivePayload,workdayPayload]=await Promise.all([apiRequest('/tasks'),apiRequest(`/projects?limit=${API_DEFAULT_LIMIT}`),apiRequest(`/archive?limit=${API_DEFAULT_LIMIT}`),apiRequest('/workday/current')]);const serverTasks=Array.isArray(tasksPayload?.items)?tasksPayload.items:Array.isArray(tasksPayload)?tasksPayload:[];tasks=normalizeTaskTree(serverTasks,null);projects=normalizeProjectsList(projectsPayload&&Array.isArray(projectsPayload.items)?projectsPayload.items:[],{persist:false});const archiveItems=normalizeArchivePayload(archivePayload&&Array.isArray(archivePayload.items)?archivePayload.items:[]);archivedTasks=normalizeArchiveList(archiveItems,{persist:false});const serverWorkday=workdayPayload&&workdayPayload.workday?workdayPayload.workday:null;workdayState=hydrateWorkdayStateFromServer(serverWorkday);persistLocalWorkdayState(workdayState);finalizeDataLoad()}catch(err){if(!silent)handleApiError(err,'Не удалось загрузить данные с сервера');storageMode=STORAGE_MODES.LOCAL;StorageModeStore.write(storageMode);updateStorageToggle();await loadDataFromLocal()}finally{isDataLoading=false;updateStorageToggle({loading:false})}}
 
 async function refreshDataForCurrentMode(options={}){if(isServerMode())return loadDataFromServer(options);return loadDataFromLocal()}
 
@@ -151,6 +180,58 @@ function cloneWorkdayStateForTransport(state){if(!state||typeof state!=='object'
 function buildWorkdayPayloadForServer(state){if(!state||!state.id)return null;const summary=computeAggregatedWorkdayStats(Date.now(),{persist:false,allowBaselineUpdate:false})||{timeMs:0,doneCount:0};const payloadState=cloneWorkdayStateForTransport(state);if(!payloadState)return null;return{id:state.id,startTs:typeof state.start==='number'&&isFinite(state.start)?state.start:null,endTs:typeof state.end==='number'&&isFinite(state.end)?state.end:null,summaryTimeMs:Math.max(0,Number(summary.timeMs)||0),summaryDone:Math.max(0,Number(summary.doneCount)||0),payload:payloadState,closedAt:typeof state.closedAt==='number'&&isFinite(state.closedAt)?state.closedAt:null}}
 
 function stringifyWorkdayPayload(payload){try{return JSON.stringify(payload)}catch{return null}}
+
+function hydrateWorkdayStateFromServer(record){
+  if(!record){
+    const fallback=WorkdayStore.read();
+    return fallback?normalizeWorkdayState(cloneWorkdayStateForTransport(fallback)):null;
+  }
+  const payloadState=normalizeWorkdayState(record.payload);
+  const summaryTimeMs=Math.max(0,Number(record.summaryTimeMs)||0);
+  const summaryDone=Math.max(0,Math.round(Number(record.summaryDone)||0));
+  const closedAt=typeof record.closedAt==='number'&&isFinite(record.closedAt)?record.closedAt:null;
+  const startTs=Number.isFinite(Number(record.startTs))?Number(record.startTs):null;
+  const endTs=Number.isFinite(Number(record.endTs))?Number(record.endTs):null;
+  let state=payloadState;
+  if(!state){
+    const localSnapshot=WorkdayStore.read();
+    if(localSnapshot&&(!record.id||localSnapshot.id===record.id)){
+      state=normalizeWorkdayState(cloneWorkdayStateForTransport(localSnapshot));
+    }
+  }
+  if(!state){
+    if(!record.id)return null;
+    state={id:record.id,start:startTs,end:endTs,baseline:{},completed:{},closedAt:closedAt,finalTimeMs:summaryTimeMs,finalDoneCount:summaryDone,locked:closedAt!==null,closedManually:false,manualClosedStats:{timeMs:0,doneCount:0}};
+  }else{
+    if(record.id&&typeof state.id!=='string')state.id=String(record.id);
+    if(startTs!==null)state.start=startTs;else if(state.start===undefined)state.start=null;
+    if(endTs!==null)state.end=endTs;else if(state.end===undefined)state.end=null;
+    if(closedAt!==null)state.closedAt=closedAt;
+    state.locked=state.locked===true||closedAt!==null;
+    if(typeof state.finalTimeMs!=='number'||!isFinite(state.finalTimeMs))state.finalTimeMs=0;
+    if(typeof state.finalDoneCount!=='number'||!isFinite(state.finalDoneCount))state.finalDoneCount=0;
+    if(!state.manualClosedStats||typeof state.manualClosedStats!=='object')state.manualClosedStats={timeMs:0,doneCount:0};
+  }
+  if(!state.baseline||typeof state.baseline!=='object')state.baseline={};
+  if(!state.completed||typeof state.completed!=='object')state.completed={};
+  const isClosed=state.locked===true||closedAt!==null;
+  if(isClosed){
+    state.finalTimeMs=Math.max(state.finalTimeMs,summaryTimeMs);
+    state.finalDoneCount=Math.max(state.finalDoneCount,summaryDone);
+    return state;
+  }
+  const hasBaseline=Object.keys(state.baseline).length>0;
+  if(!hasBaseline){
+    const baseline={};
+    walkTasks(tasks,item=>{baseline[item.id]=totalTimeMs(item);});
+    state.baseline=baseline;
+    state.completed={};
+    state.manualClosedStats={timeMs:summaryTimeMs,doneCount:summaryDone};
+    state.finalTimeMs=Math.max(state.finalTimeMs,summaryTimeMs);
+    state.finalDoneCount=Math.max(state.finalDoneCount,summaryDone);
+  }
+  return state;
+}
 
 function scheduleWorkdaySync(delay=400){if(workdaySyncTimer)clearTimeout(workdaySyncTimer);workdaySyncTimer=setTimeout(()=>{workdaySyncTimer=null;if(workdaySyncInFlight){scheduleWorkdaySync(delay);return}sendPendingWorkdaySync()},delay)}
 
