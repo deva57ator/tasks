@@ -1,8 +1,21 @@
-const Store={key:'mini-task-tracker:text:min:v14',read(){try{return JSON.parse(localStorage.getItem(this.key))||[]}catch{return[]}},write(d){localStorage.setItem(this.key,JSON.stringify(d));afterTasksPersisted()}};
+const StorageModeStore={key:'mini-task-tracker:storage-mode',read(){return localStorage.getItem(this.key)||'local'},write(mode){localStorage.setItem(this.key,mode)}};
+const STORAGE_MODES={LOCAL:'local',SERVER:'server'};
+const ApiSettingsStore={key:'mini-task-tracker:api-settings',read(){try{const raw=JSON.parse(localStorage.getItem(this.key)||'{}');if(!raw||typeof raw!=='object')return{};return raw}catch{return{}}},write(settings){try{localStorage.setItem(this.key,JSON.stringify(settings||{}))}catch{}}};
+
+let storageMode=StorageModeStore.read();
+if(storageMode!==STORAGE_MODES.SERVER)storageMode=STORAGE_MODES.LOCAL;
+
+let apiSettings={baseUrl:'/api',...ApiSettingsStore.read()};
+
+function isServerMode(){return storageMode===STORAGE_MODES.SERVER}
+function getApiSettings(){return apiSettings}
+function setApiSettings(next){apiSettings={...apiSettings,...(next||{})};ApiSettingsStore.write(apiSettings)}
+
+const Store={key:'mini-task-tracker:text:min:v14',read(){try{return JSON.parse(localStorage.getItem(this.key))||[]}catch{return[]}},write(d){if(isServerMode()){handleServerTaskWrite(d);return}localStorage.setItem(this.key,JSON.stringify(d));afterTasksPersisted()}};
 const ThemeStore={key:'mini-task-tracker:theme',read(){return localStorage.getItem(this.key)||'light'},write(v){localStorage.setItem(this.key,v)}};
-const ProjectsStore={key:'mini-task-tracker:projects',read(){try{return JSON.parse(localStorage.getItem(this.key))||[]}catch{return[]}},write(d){localStorage.setItem(this.key,JSON.stringify(d))}};
+const ProjectsStore={key:'mini-task-tracker:projects',read(){try{return JSON.parse(localStorage.getItem(this.key))||[]}catch{return[]}},write(d){if(isServerMode()){handleServerProjectsWrite(d);return}localStorage.setItem(this.key,JSON.stringify(d))}};
 const WorkdayStore={key:'mini-task-tracker:workday',read(){try{const raw=JSON.parse(localStorage.getItem(this.key));if(!raw||typeof raw!=='object'||!raw.id)return null;const normalized={...raw};if(typeof normalized.start!=='number')normalized.start=null;if(typeof normalized.end!=='number')normalized.end=null;if(typeof normalized.closedAt!=='number')normalized.closedAt=null;if(typeof normalized.finalTimeMs!=='number')normalized.finalTimeMs=0;if(typeof normalized.finalDoneCount!=='number')normalized.finalDoneCount=0;if(!normalized.baseline||typeof normalized.baseline!=='object')normalized.baseline={};if(!normalized.completed||typeof normalized.completed!=='object')normalized.completed={};const manualStats=normalized.manualClosedStats;const manualTime=manualStats&&typeof manualStats.timeMs==='number'&&isFinite(manualStats.timeMs)?Math.max(0,manualStats.timeMs):0;const manualDone=manualStats&&typeof manualStats.doneCount==='number'&&isFinite(manualStats.doneCount)?Math.max(0,Math.round(manualStats.doneCount)):0;normalized.manualClosedStats={timeMs:manualTime,doneCount:manualDone};normalized.closedManually=normalized.closedManually===true;return normalized}catch{return null}},write(d){if(!d)localStorage.removeItem(this.key);else localStorage.setItem(this.key,JSON.stringify(d))}};
-const ArchiveStore={key:'mini-task-tracker:archive:v1',read(){try{const raw=JSON.parse(localStorage.getItem(this.key));if(!Array.isArray(raw))return[];return raw.filter(item=>item&&typeof item==='object')}catch{return[]}},write(d){localStorage.setItem(this.key,JSON.stringify(d))}};
+const ArchiveStore={key:'mini-task-tracker:archive:v1',read(){try{const raw=JSON.parse(localStorage.getItem(this.key));if(!Array.isArray(raw))return[];return raw.filter(item=>item&&typeof item==='object')}catch{return[]}},write(d){if(isServerMode()){handleServerArchiveWrite(d);return}localStorage.setItem(this.key,JSON.stringify(d))}};
 
 let tasks=Store.read();
 let archivedTasks=ArchiveStore.read();
@@ -15,20 +28,27 @@ let activeInputEl=null;
 let projects=ProjectsStore.read();
 if(!Array.isArray(projects))projects=[];
 const DEFAULT_PROJECT_EMOJI='📁';
-let projectsPatched=false;
 const SPRINT_UNASSIGNED_KEY='__none__';
 let sprintVisibleProjects=new Map();
-for(const proj of projects){
-  if(!proj||typeof proj!=='object')continue;
-  if(!('emoji' in proj)||proj.emoji===undefined){proj.emoji=null;projectsPatched=true;continue}
-  if(proj.emoji!==null&&typeof proj.emoji!=='string'){proj.emoji=null;projectsPatched=true;continue}
-  if(typeof proj.emoji==='string'){
-    const trimmed=proj.emoji.trim();
-    if(!trimmed){proj.emoji=null;projectsPatched=true}
-    else if(trimmed!==proj.emoji){proj.emoji=trimmed;projectsPatched=true}
+
+function normalizeProjectsList(list,{persist=false}={}){
+  if(!Array.isArray(list))return[];
+  let patched=false;
+  for(const proj of list){
+    if(!proj||typeof proj!=='object')continue;
+    if(!('emoji'in proj)||proj.emoji===undefined){proj.emoji=null;patched=true;continue}
+    if(proj.emoji!==null&&typeof proj.emoji!=='string'){proj.emoji=null;patched=true;continue}
+    if(typeof proj.emoji==='string'){
+      const trimmed=proj.emoji.trim();
+      if(!trimmed){proj.emoji=null;patched=true}
+      else if(trimmed!==proj.emoji){proj.emoji=trimmed;patched=true}
+    }
   }
+  if(patched&&persist){ProjectsStore.write(list)}
+  return list
 }
-if(projectsPatched){ProjectsStore.write(projects)}
+
+normalizeProjectsList(projects,{persist:!isServerMode()});
 
 let workdayState=WorkdayStore.read();
 if(workdayState&&(!workdayState.id||typeof workdayState.start!=='number'||typeof workdayState.end!=='number'))workdayState=null;
@@ -58,10 +78,71 @@ const WORKDAY_REFRESH_INTERVAL=60000;
 const $=s=>document.querySelector(s),$$=s=>Array.from(document.querySelectorAll(s));
 const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
 function normalizeArchivedNode(node){if(!node||typeof node!=='object')return null;const normalized={id:typeof node.id==='string'&&node.id.trim()?node.id.trim():uid(),title:typeof node.title==='string'?node.title:'',done:true,due:typeof node.due==='string'&&node.due?node.due:null,project:typeof node.project==='string'&&node.project?node.project:null,notes:typeof node.notes==='string'?node.notes:'',timeSpent:typeof node.timeSpent==='number'&&isFinite(node.timeSpent)?Math.max(0,node.timeSpent):0,archivedAt:typeof node.archivedAt==='number'&&isFinite(node.archivedAt)?node.archivedAt:0,completedAt:typeof node.completedAt==='number'&&isFinite(node.completedAt)?node.completedAt:null,children:[]};if(Array.isArray(node.children)){const kids=[];for(const child of node.children){const normalizedChild=normalizeArchivedNode(child);if(normalizedChild)kids.push(normalizedChild)}normalized.children=kids}return normalized}
-if(!Array.isArray(archivedTasks))archivedTasks=[];else{const normalizedArchive=[];let patched=false;for(const entry of archivedTasks){const normalized=normalizeArchivedNode(entry);if(normalized){normalizedArchive.push(normalized);if(normalized!==entry)patched=true}else patched=true}if(patched||normalizedArchive.length!==archivedTasks.length){ArchiveStore.write(normalizedArchive)}archivedTasks=normalizedArchive}
+function normalizeArchiveList(list,{persist=false}={}){if(!Array.isArray(list))return[];const normalizedArchive=[];let patched=false;for(const entry of list){const normalized=normalizeArchivedNode(entry);if(normalized){normalizedArchive.push(normalized);if(normalized!==entry)patched=true}else patched=true}if((patched||normalizedArchive.length!==list.length)&&persist){ArchiveStore.write(normalizedArchive)}return normalizedArchive}
+if(!Array.isArray(archivedTasks))archivedTasks=[];else archivedTasks=normalizeArchiveList(archivedTasks,{persist:!isServerMode()});
 const MAX_TASK_DEPTH=2;
 const MONTH_NAMES=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 const TIME_UPDATE_INTERVAL=1000;
+
+const API_DEFAULT_LIMIT=200;
+let isDataLoading=false;
+let dataInitialized=false;
+const pendingTaskUpdates=new Map();
+
+function getApiBaseUrl(){const base=(getApiSettings().baseUrl||'/api').trim();if(!base)return'/api';return base.endsWith('/')?base.slice(0,-1):base}
+function getApiKey(){const key=getApiSettings().apiKey;return typeof key==='string'?key.trim():''}
+
+async function apiRequest(path,{method='GET',body,headers}={}){const base=getApiBaseUrl();const url=base+path;const init={method,headers:{Accept:'application/json',...(headers||{})}};if(body!==undefined){init.body=typeof body==='string'?body:JSON.stringify(body);if(!init.headers['Content-Type'])init.headers['Content-Type']='application/json'}const apiKey=getApiKey();if(apiKey)init.headers['x-api-key']=apiKey;let response;try{response=await fetch(url,init)}catch(err){throw new Error('Нет соединения с API')}if(!response.ok){let message=`Ошибка API (${response.status})`;try{const errBody=await response.json();if(errBody&&errBody.error&&errBody.error.message)message=errBody.error.message}catch{}throw new Error(message)}if(response.status===204)return null;const text=await response.text();if(!text)return null;try{return JSON.parse(text)}catch{return null}}
+
+function handleApiError(err,fallback){const message=err&&err.message?err.message:fallback||'Ошибка при работе с API';console.error(err);toast(message)}
+
+function runServerAction(fn,{onSuccess,onError,silent=false}={}){const promise=Promise.resolve().then(fn);promise.then(result=>{if(typeof onSuccess==='function')onSuccess(result)}).catch(err=>{if(!silent)handleApiError(err);if(typeof onError==='function')onError(err)});return promise}
+
+function mapTaskForServer(task){return{id:task.id,title:task.title||'',done:task.done===true,due:task.due||null,project:task.project||null,notes:task.notes||'',timeSpent:Number.isFinite(Number(task.timeSpent))?Math.max(0,Number(task.timeSpent)):0,parentId:task.parentId||null}}
+
+function normalizeTaskPatch(patch){const payload={};if(patch.title!==undefined)payload.title=String(patch.title);if(patch.done!==undefined)payload.done=!!patch.done;if(patch.due!==undefined)payload.due=patch.due||null;if(patch.project!==undefined)payload.project=patch.project||null;if(patch.notes!==undefined)payload.notes=patch.notes||'';if(patch.timeSpent!==undefined)payload.timeSpent=Math.max(0,Number(patch.timeSpent)||0);if(patch.parentId!==undefined)payload.parentId=patch.parentId||null;if(patch.completedAt!==undefined)payload.completedAt=patch.completedAt;return payload}
+
+function normalizeTaskTree(list,parentId=null){if(!Array.isArray(list))return[];const normalized=[];for(const item of list){if(!item||typeof item!=='object')continue;const node={id:typeof item.id==='string'?item.id:uid(),title:typeof item.title==='string'?item.title:'',done:item.done===true,due:typeof item.due==='string'&&item.due?item.due:null,project:typeof item.project==='string'&&item.project?item.project:null,notes:typeof item.notes==='string'?item.notes:'',timeSpent:Number.isFinite(Number(item.timeSpent))?Math.max(0,Number(item.timeSpent)):0,parentId:parentId,children:normalizeTaskTree(item.children||[],typeof item.id==='string'?item.id:null),collapsed:item.collapsed===true,timerActive:false,timerStart:null};normalized.push(node)}return normalized}
+
+function ensureTaskParentIds(list,parentId=null){if(!Array.isArray(list))return;for(const item of list){if(!item||typeof item!=='object')continue;item.parentId=parentId;if(Array.isArray(item.children))ensureTaskParentIds(item.children,item.id)}}
+
+function normalizeProjectPayload(project){return{id:project.id,title:project.title||'',emoji:typeof project.emoji==='string'&&project.emoji.trim()?project.emoji.trim():null}}
+
+function normalizeArchivePayload(items){if(!Array.isArray(items))return[];return items.map(entry=>entry&&entry.payload?entry.payload:entry).filter(Boolean)}
+
+function updateStorageToggle({loading=false}={}){const btn=document.getElementById('storageToggle');if(!btn)return;btn.dataset.mode=isServerMode()?'server':'local';btn.classList.toggle('is-loading',loading);if(loading){btn.textContent='…';btn.setAttribute('aria-busy','true')}else{btn.textContent=isServerMode()?'API':'LS';btn.removeAttribute('aria-busy')}const label=isServerMode()?'Режим: серверный API':'Режим: localStorage';btn.title=label;btn.setAttribute('aria-label',loading?`${label}. Загрузка…`:label)}
+
+function finalizeDataLoad(){tasks=migrate(tasks);ensureTaskParentIds(tasks,null);normalizeProjectsList(projects,{persist:false});archivedTasks=normalizeArchiveList(archivedTasks,{persist:false});renderProjects();render();updateWorkdayUI();ensureWorkdayRefreshLoop();dataInitialized=true}
+
+async function loadDataFromLocal(){tasks=Store.read();tasks=migrate(tasks);ensureTaskParentIds(tasks,null);projects=ProjectsStore.read();if(!Array.isArray(projects))projects=[];normalizeProjectsList(projects,{persist:!isServerMode()});archivedTasks=normalizeArchiveList(ArchiveStore.read(),{persist:!isServerMode()});workdayState=WorkdayStore.read();if(workdayState&&(!workdayState.id||typeof workdayState.start!=='number'||typeof workdayState.end!=='number'))workdayState=null;finalizeDataLoad();updateStorageToggle()}
+
+async function loadDataFromServer({silent=false}={}){if(isDataLoading)return;isDataLoading=true;updateStorageToggle({loading:true});try{const [tasksPayload,projectsPayload,archivePayload,workdayPayload]=await Promise.all([apiRequest('/tasks'),apiRequest(`/projects?limit=${API_DEFAULT_LIMIT}`),apiRequest(`/archive?limit=${API_DEFAULT_LIMIT}`),apiRequest('/workday/current')]);const serverTasks=Array.isArray(tasksPayload?.items)?tasksPayload.items:Array.isArray(tasksPayload)?tasksPayload:[];tasks=normalizeTaskTree(serverTasks,null);projects=normalizeProjectsList(projectsPayload&&Array.isArray(projectsPayload.items)?projectsPayload.items:[],{persist:false});const archiveItems=normalizeArchivePayload(archivePayload&&Array.isArray(archivePayload.items)?archivePayload.items:[]);archivedTasks=normalizeArchiveList(archiveItems,{persist:false});workdayState=workdayPayload&&workdayPayload.workday&&workdayPayload.workday.payload?workdayPayload.workday.payload:null;if(workdayState&&(!workdayState.id||typeof workdayState.start!=='number'||typeof workdayState.end!=='number'))workdayState=null;finalizeDataLoad()}catch(err){if(!silent)handleApiError(err,'Не удалось загрузить данные с сервера');storageMode=STORAGE_MODES.LOCAL;StorageModeStore.write(storageMode);updateStorageToggle();await loadDataFromLocal()}finally{isDataLoading=false;updateStorageToggle({loading:false})}}
+
+async function refreshDataForCurrentMode(options={}){if(isServerMode())return loadDataFromServer(options);return loadDataFromLocal()}
+
+function flushPendingTaskUpdates(){for(const [id,entry]of pendingTaskUpdates.entries()){if(entry&&entry.timer)clearTimeout(entry.timer);if(entry&&entry.patch){runServerAction(()=>apiRequest(`/tasks/${encodeURIComponent(id)}`,{method:'PUT',body:entry.patch}),{silent:true,onError:()=>refreshDataForCurrentMode({silent:true})})}}pendingTaskUpdates.clear()}
+
+function ensureApiCredentials(){const key=getApiKey();if(key)return true;const input=prompt('Введите API ключ','');if(input===null)return false;const trimmed=input.trim();if(!trimmed){toast('API ключ обязателен для работы с сервером');return false}setApiSettings({apiKey:trimmed});return true}
+
+async function setStorageModeAndReload(mode,{silent=false}={}){const nextMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:STORAGE_MODES.LOCAL;if(storageMode===nextMode&&!silent)return;storageMode=nextMode;StorageModeStore.write(storageMode);updateStorageToggle();flushPendingTaskUpdates();await refreshDataForCurrentMode({silent})}
+
+function handleServerTaskWrite(){afterTasksPersisted()}
+function handleServerProjectsWrite(data){if(Array.isArray(data)){projects=data}}
+function handleServerArchiveWrite(data){if(Array.isArray(data))archivedTasks=normalizeArchiveList(data,{persist:false})}
+
+function queueTaskCreate(task){if(!isServerMode())return;const payload=mapTaskForServer(task);runServerAction(()=>apiRequest('/tasks',{method:'POST',body:payload}),{onError:()=>refreshDataForCurrentMode({silent:true})})}
+
+function queueTaskUpdate(id,patch,{debounce=false}={}){if(!isServerMode()||!id)return;const payload=normalizeTaskPatch(patch||{});if(debounce){const entry=pendingTaskUpdates.get(id)||{patch:{},timer:null};entry.patch={...entry.patch,...payload};if(entry.timer)clearTimeout(entry.timer);entry.timer=setTimeout(()=>{pendingTaskUpdates.delete(id);runServerAction(()=>apiRequest(`/tasks/${encodeURIComponent(id)}`,{method:'PUT',body:entry.patch}),{silent:true,onError:()=>refreshDataForCurrentMode({silent:true})})},320);pendingTaskUpdates.set(id,entry);return}runServerAction(()=>apiRequest(`/tasks/${encodeURIComponent(id)}`,{method:'PUT',body:payload}),{onError:()=>refreshDataForCurrentMode({silent:true})})}
+
+function queueTaskDelete(id){if(!isServerMode()||!id)return;runServerAction(()=>apiRequest(`/tasks/${encodeURIComponent(id)}`,{method:'DELETE'}),{onError:()=>refreshDataForCurrentMode({silent:true})})}
+
+function queueProjectCreate(project){if(!isServerMode())return;const payload=normalizeProjectPayload(project);runServerAction(()=>apiRequest('/projects',{method:'POST',body:payload}),{onError:()=>refreshDataForCurrentMode({silent:true})})}
+
+function queueProjectUpdate(id,patch){if(!isServerMode()||!id)return;const payload={};if(patch.title!==undefined)payload.title=String(patch.title);if(patch.emoji!==undefined)payload.emoji=typeof patch.emoji==='string'&&patch.emoji.trim()?patch.emoji.trim():null;runServerAction(()=>apiRequest(`/projects/${encodeURIComponent(id)}`,{method:'PUT',body:payload}),{onError:()=>refreshDataForCurrentMode({silent:true})})}
+
+function queueProjectDelete(id){if(!isServerMode()||!id)return;runServerAction(()=>apiRequest(`/projects/${encodeURIComponent(id)}`,{method:'DELETE'}),{onError:()=>refreshDataForCurrentMode({silent:true})})}
+
+function queueArchiveDelete(id){if(!isServerMode()||!id)return;runServerAction(()=>apiRequest(`/archive/${encodeURIComponent(id)}`,{method:'DELETE'}),{onError:()=>refreshDataForCurrentMode({silent:true})})}
 
 const EffectsStore={key:'mini-task-tracker:effects',read(){try{return JSON.parse(localStorage.getItem(this.key))||{}}catch{return{}}},write(d){try{localStorage.setItem(this.key,JSON.stringify(d))}catch{}}};
 const DEFAULT_EFFECTS_SETTINGS={sound:true,confetti:true};
@@ -95,14 +176,15 @@ function handleTaskCompletionEffects(taskId,{completed=false,undone=false}={}){i
 function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('show'),1400)}
 function migrate(list,depth=0){const extras=[];for(const t of list){if(!Array.isArray(t.children)) t.children=[];if(typeof t.collapsed!=='boolean') t.collapsed=false;if(typeof t.done!=='boolean') t.done=false;if(!('due' in t)) t.due=null;if(!('project' in t)) t.project=null;if(typeof t.notes!=='string') t.notes='';if(typeof t.timeSpent!=='number'||!isFinite(t.timeSpent)||t.timeSpent<0)t.timeSpent=0;if(typeof t.timerActive!=='boolean')t.timerActive=false;if(typeof t.timerStart!=='number'||!isFinite(t.timerStart))t.timerStart=null;if(t.children.length){migrate(t.children,depth+1);if(depth>=MAX_TASK_DEPTH){extras.push(...t.children);t.children=[]}}}if(extras.length) list.push(...extras);return list}
 tasks=migrate(tasks);
+ensureTaskParentIds(tasks,null);
 
 function findTask(id,list=tasks){for(const t of list){if(t.id===id) return t;const r=findTask(id,t.children||[]);if(r) return r}return null}
 function findArchivedTask(id,list=archivedTasks){if(!Array.isArray(list))return null;for(const item of list){if(item&&item.id===id)return item;const nested=findArchivedTask(id,item?.children||[]);if(nested)return nested}return null}
-function removeArchivedTask(id,list=archivedTasks){if(!Array.isArray(list))return false;const index=list.findIndex(item=>item&&item.id===id);if(index!==-1){list.splice(index,1);return true}for(const item of list){if(item&&Array.isArray(item.children)&&item.children.length){const removed=removeArchivedTask(id,item.children);if(removed){return true}}}return false}
+function removeArchivedTask(id,list=archivedTasks){if(!Array.isArray(list))return null;const index=list.findIndex(item=>item&&item.id===id);if(index!==-1){const [removed]=list.splice(index,1);return removed||null}for(const item of list){if(item&&Array.isArray(item.children)&&item.children.length){const removed=removeArchivedTask(id,item.children);if(removed){return removed}}}return null}
 function getTaskDepth(id,list=tasks,depth=0){for(const t of list){if(t.id===id) return depth;const childDepth=getTaskDepth(id,t.children||[],depth+1);if(childDepth!==-1) return childDepth}return-1}
 function getSubtreeDepth(task){if(!task||!Array.isArray(task.children)||!task.children.length)return 0;let max=0;for(const child of task.children){const childDepth=1+getSubtreeDepth(child);if(childDepth>max)max=childDepth}return max}
 function containsTask(root,targetId){if(!root||!targetId)return false;if(root.id===targetId)return true;if(!Array.isArray(root.children))return false;for(const child of root.children){if(containsTask(child,targetId))return true}return false}
-function detachTaskFromTree(id,list=tasks){if(!Array.isArray(list))return null;for(let i=0;i<list.length;i++){const item=list[i];if(item.id===id){return list.splice(i,1)[0]}const pulled=detachTaskFromTree(id,item.children||[]);if(pulled){if(item.children&&item.children.length===0)item.collapsed=false;return pulled}}return null}
+function detachTaskFromTree(id,list=tasks){if(!Array.isArray(list))return null;for(let i=0;i<list.length;i++){const item=list[i];if(item.id===id){const pulled=list.splice(i,1)[0];if(pulled)pulled.parentId=null;return pulled}const pulled=detachTaskFromTree(id,item.children||[]);if(pulled){if(item.children&&item.children.length===0)item.collapsed=false;return pulled}}return null}
 let draggingTaskId=null;
 let dropTargetId=null;
 let sprintDraggingId=null;
@@ -179,7 +261,7 @@ function openWorkdayDialog(){if(!WorkdayUI.overlay)return;const pending=updateWo
 
 function closeWorkdayDialog(){if(!WorkdayUI.overlay)return;WorkdayUI.overlay.classList.remove('is-open');WorkdayUI.overlay.setAttribute('aria-hidden','true');document.body.classList.remove('workday-dialog-open')}
 
-function postponePendingTasks(){if(!workdayState)return;const pending=collectWorkdayPendingTasks(workdayState);if(!pending.length){toast('Все задачи уже перенесены');return}const nextDay=new Date(workdayState.start);nextDay.setDate(nextDay.getDate()+1);nextDay.setHours(0,0,0,0);const nextIso=nextDay.toISOString();let changed=false;for(const item of pending){const task=findTask(item.id);if(!task)continue;task.due=nextIso;changed=true}if(changed){Store.write(tasks);render();toast('Дедлайны перенесены на следующий день');updateWorkdayDialogContent()}}
+function postponePendingTasks(){if(!workdayState)return;const pending=collectWorkdayPendingTasks(workdayState);if(!pending.length){toast('Все задачи уже перенесены');return}const nextDay=new Date(workdayState.start);nextDay.setDate(nextDay.getDate()+1);nextDay.setHours(0,0,0,0);const nextIso=nextDay.toISOString();let changed=false;const updatedIds=[];for(const item of pending){const task=findTask(item.id);if(!task)continue;task.due=nextIso;changed=true;if(isServerMode())updatedIds.push(task.id)}if(changed){Store.write(tasks);if(updatedIds.length){updatedIds.forEach(id=>queueTaskUpdate(id,{due:nextIso}))}render();toast('Дедлайны перенесены на следующий день');updateWorkdayDialogContent()}}
 function finishWorkdayAndArchive(){
   if(!workdayState){closeWorkdayDialog();return}
   const now=Date.now();
@@ -224,6 +306,22 @@ function finishWorkdayAndArchive(){
   if(NotesPanel.taskId&&!findTask(NotesPanel.taskId)){closeNotesPanel()}
   if(selectedTaskId&&!findTask(selectedTaskId)){selectedTaskId=null}
   Store.write(tasks);
+  if(isServerMode()){
+    const completedIds=normalizedArchived.map(item=>item.id);
+    const workdayPayload={
+      id:workdayState.id,
+      startTs:workdayState.start||null,
+      endTs:workdayState.end||null,
+      summaryTimeMs:aggregated.timeMs,
+      summaryDone:aggregated.doneCount,
+      payload:{...workdayState},
+      closedAt:new Date(now).toISOString()
+    };
+    runServerAction(()=>apiRequest('/workday/close',{method:'POST',body:{workday:workdayPayload,completedTaskIds:completedIds}}),{
+      onSuccess:()=>refreshDataForCurrentMode({silent:true}),
+      onError:()=>refreshDataForCurrentMode({silent:true})
+    });
+  }
   closeWorkdayDialog();
   render();
   updateWorkdayUI();
@@ -243,13 +341,13 @@ function ensureTimerLoop(){if(timerInterval)return;timerInterval=setInterval(()=
 function stopTimerLoop(){if(timerInterval){clearInterval(timerInterval);timerInterval=null}}
 function syncTimerLoop(){if(hasActiveTimer())ensureTimerLoop();else stopTimerLoop();updateTimerDisplays()}
 function updateTimerDisplays(){const rows=$$('#tasks .task[data-id]');const now=Date.now();for(const row of rows){const id=row.dataset.id;const task=findTask(id);if(!task)continue;const timeEl=row.querySelector('.time-spent');if(timeEl){const timeSpentMs=totalTimeMs(task,now);if(timeSpentMs>0){timeEl.textContent=formatDuration(timeSpentMs);timeEl.hidden=false;}else{timeEl.textContent='';timeEl.hidden=true;}}const timerBtn=row.querySelector('.timer-btn');if(timerBtn){timerBtn.dataset.active=task.timerActive?'true':'false';timerBtn.title=task.timerActive?'Остановить таймер':'Запустить таймер';timerBtn.setAttribute('aria-pressed',task.timerActive?'true':'false')}}updateWorkdayUI()}
-function stopTaskTimer(task,{silent=false}={}){if(!task||!task.timerActive)return;const now=Date.now();if(typeof task.timerStart==='number'&&isFinite(task.timerStart)){task.timeSpent=totalTimeMs(task,now)}if(typeof task.timeSpent!=='number'||!isFinite(task.timeSpent))task.timeSpent=0;task.timerActive=false;task.timerStart=null;if(!silent)Store.write(tasks)}
+function stopTaskTimer(task,{silent=false}={}){if(!task||!task.timerActive)return;const now=Date.now();if(typeof task.timerStart==='number'&&isFinite(task.timerStart)){task.timeSpent=totalTimeMs(task,now)}if(typeof task.timeSpent!=='number'||!isFinite(task.timeSpent))task.timeSpent=0;task.timerActive=false;task.timerStart=null;if(!silent){Store.write(tasks);if(isServerMode())queueTaskUpdate(task.id,{timeSpent:task.timeSpent})}}
 function stopAllTimersExcept(activeId,list=tasks){if(!Array.isArray(list))return;for(const item of list){if(!item)continue;if(item.timerActive&&item.id!==activeId){stopTaskTimer(item,{silent:true})}if(Array.isArray(item.children)&&item.children.length){stopAllTimersExcept(activeId,item.children)}}}
 function startTaskTimer(task){if(!task)return;if(task.timerActive)return;stopAllTimersExcept(task.id);task.timerActive=true;task.timerStart=Date.now();Store.write(tasks);syncTimerLoop()}
-function toggleTaskTimer(id){const task=findTask(id);if(!task)return;if(task.timerActive){stopTaskTimer(task,{silent:true});Store.write(tasks);syncTimerLoop()}else{startTaskTimer(task)}}
+function toggleTaskTimer(id){const task=findTask(id);if(!task)return;if(task.timerActive){stopTaskTimer(task,{silent:true});Store.write(tasks);if(isServerMode())queueTaskUpdate(task.id,{timeSpent:task.timeSpent});syncTimerLoop()}else{startTaskTimer(task)}}
 function setSprintDropColumn(col){if(sprintDropColumn===col)return;if(sprintDropColumn){sprintDropColumn.classList.remove('is-drop-target')}sprintDropColumn=col||null;if(sprintDropColumn){sprintDropColumn.classList.add('is-drop-target')}}
 function clearSprintDragState(){const prev=document.querySelector('.sprint-task.is-dragging');if(prev)prev.classList.remove('is-dragging');setSprintDropColumn(null);sprintDraggingId=null}
-function applySprintDrop(targetDate){if(!sprintDraggingId)return;const task=findTask(sprintDraggingId);if(!task)return;const d=new Date(targetDate);if(isNaN(d))return;d.setHours(0,0,0,0);const iso=d.toISOString();if(task.due!==iso){task.due=iso;Store.write(tasks)}clearSprintDragState();render()}
+function applySprintDrop(targetDate){if(!sprintDraggingId)return;const task=findTask(sprintDraggingId);if(!task)return;const d=new Date(targetDate);if(isNaN(d))return;d.setHours(0,0,0,0);const iso=d.toISOString();if(task.due!==iso){task.due=iso;Store.write(tasks);if(isServerMode())queueTaskUpdate(task.id,{due:iso})}clearSprintDragState();render()}
 function setDropTarget(id){if(dropTargetId===id||dropTargetId===null&&id===null)return;if(dropTargetId){const prev=document.querySelector(`.task[data-id="${dropTargetId}"]`);prev&&prev.classList.remove('is-drop-target')}dropTargetId=id||null;if(dropTargetId){const el=document.querySelector(`.task[data-id="${dropTargetId}"]`);el&&el.classList.add('is-drop-target')}}
 function clearDragIndicators(){if(draggingTaskId){const dragEl=document.querySelector(`.task[data-id="${draggingTaskId}"]`);dragEl&&dragEl.classList.remove('is-dragging')}setDropTarget(null);draggingTaskId=null}
 function rowClass(t){return'task'+(selectedTaskId===t.id?' is-selected':'')+(t.done?' done':'')}
@@ -262,13 +360,15 @@ function addTask(title){
     const exists=projects.some(p=>p&&p.id===currentProjectId);
     if(exists)assignedProject=currentProjectId;
   }
-  tasks.unshift({id:uid(),title,done:false,children:[],collapsed:false,due:null,project:assignedProject,notes:'',timeSpent:0,timerActive:false,timerStart:null});
+  const task={id:uid(),title,done:false,children:[],collapsed:false,due:null,project:assignedProject,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:null};
+  tasks.unshift(task);
   Store.write(tasks);
+  if(isServerMode())queueTaskCreate(task);
   render()
 }
-function addSubtask(parentId){const p=findTask(parentId);if(!p) return;const depth=getTaskDepth(parentId);if(depth===-1||depth>=MAX_TASK_DEPTH){toast('Максимальная вложенность — три уровня');return}const inheritedProject=typeof p.project==='undefined'?null:p.project;const child={id:uid(),title:'',done:false,children:[],collapsed:false,due:null,project:inheritedProject,notes:'',timeSpent:0,timerActive:false,timerStart:null};p.children.push(child);p.collapsed=false;Store.write(tasks);pendingEditId=child.id;render()}
-function toggleTask(id){const t=findTask(id);if(!t) return;const now=Date.now();const wasDone=t.done;const nextDone=!wasDone;t.done=nextDone;updateWorkdayCompletionState(t,nextDone,now);if(nextDone)stopTaskTimer(t,{silent:true});Store.write(tasks);syncTimerLoop();render();handleTaskCompletionEffects(id,{completed:!wasDone&&nextDone,undone:wasDone&&!nextDone});toast(nextDone?'Отмечено как выполнено':'Снята отметка выполнения')}
-function markTaskDone(id){const t=findTask(id);if(!t)return;if(t.done){toast('Задача уже выполнена');return}const now=Date.now();t.done=true;updateWorkdayCompletionState(t,true,now);stopTaskTimer(t,{silent:true});Store.write(tasks);syncTimerLoop();render();handleTaskCompletionEffects(id,{completed:true});toast('Отмечено как выполнено')}
+function addSubtask(parentId){const p=findTask(parentId);if(!p) return;const depth=getTaskDepth(parentId);if(depth===-1||depth>=MAX_TASK_DEPTH){toast('Максимальная вложенность — три уровня');return}const inheritedProject=typeof p.project==='undefined'?null:p.project;const child={id:uid(),title:'',done:false,children:[],collapsed:false,due:null,project:inheritedProject,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:parentId};p.children.push(child);p.collapsed=false;Store.write(tasks);if(isServerMode())queueTaskCreate(child);pendingEditId=child.id;render()}
+function toggleTask(id){const t=findTask(id);if(!t) return;const now=Date.now();const wasDone=t.done;const nextDone=!wasDone;t.done=nextDone;updateWorkdayCompletionState(t,nextDone,now);if(nextDone)stopTaskTimer(t,{silent:true});Store.write(tasks);if(isServerMode()){const payload={done:nextDone};if(nextDone&&typeof t.timeSpent==='number')payload.timeSpent=t.timeSpent;queueTaskUpdate(id,payload)}syncTimerLoop();render();handleTaskCompletionEffects(id,{completed:!wasDone&&nextDone,undone:wasDone&&!nextDone});toast(nextDone?'Отмечено как выполнено':'Снята отметка выполнения')}
+function markTaskDone(id){const t=findTask(id);if(!t)return;if(t.done){toast('Задача уже выполнена');return}const now=Date.now();t.done=true;updateWorkdayCompletionState(t,true,now);stopTaskTimer(t,{silent:true});Store.write(tasks);if(isServerMode()){const payload={done:true};if(typeof t.timeSpent==='number')payload.timeSpent=t.timeSpent;queueTaskUpdate(id,payload)}syncTimerLoop();render();handleTaskCompletionEffects(id,{completed:true});toast('Отмечено как выполнено')}
 function cloneTaskForArchive(task,{archivedAt,completedLookup,children=[]}){
   const completedAt=completedLookup&&typeof completedLookup[task.id]==='number'&&isFinite(completedLookup[task.id])?completedLookup[task.id]:null;
   return{
@@ -310,7 +410,7 @@ function archiveCompletedTasks(now=Date.now()){
   tasks=remaining;
   return archived
 }
-function deleteTask(id,list=tasks){for(let i=0;i<list.length;i++){if(list[i].id===id){list.splice(i,1);return true}if(deleteTask(id,list[i].children)) return true}return false}
+function deleteTask(id,list=tasks){if(!Array.isArray(list))return null;for(let i=0;i<list.length;i++){const item=list[i];if(item.id===id){const removed=list.splice(i,1)[0];return removed||null}const childRemoved=deleteTask(id,item.children||[]);if(childRemoved)return childRemoved}return null}
 function handleDelete(id,{visibleOrder=null}={}){
   if(!Array.isArray(visibleOrder))visibleOrder=getVisibleTaskIds();
   const target=findTask(id);
@@ -328,10 +428,11 @@ function handleDelete(id,{visibleOrder=null}={}){
   }
   if(nextId){selectedTaskId=nextId}else if(selectedTaskId===id){selectedTaskId=null}
   Store.write(tasks);
+  if(isServerMode())queueTaskDelete(id);
   syncTimerLoop();
   render()
 }
-function renameTask(id,title){const t=findTask(id);if(!t) return;const v=String(title||'').trim();if(v&&v!==t.title){t.title=v;if(NotesPanel.taskId===id&&NotesPanel.title)NotesPanel.title.textContent=t.title;Store.write(tasks)}render()}
+function renameTask(id,title){const t=findTask(id);if(!t) return;const v=String(title||'').trim();if(v&&v!==t.title){t.title=v;if(NotesPanel.taskId===id&&NotesPanel.title)NotesPanel.title.textContent=t.title;Store.write(tasks);if(isServerMode())queueTaskUpdate(id,{title:v})}render()}
 function toggleCollapse(id){const t=findTask(id);if(!t) return;t.collapsed=!t.collapsed;Store.write(tasks);render()}
 
 const Ctx={el:$('#ctxMenu'),taskId:null,sub:document.getElementById('ctxSub'),submenuAnchor:null};
@@ -349,7 +450,7 @@ function setTimeDialogError(msg){if(!TimeDialog.error)return;TimeDialog.error.te
 function updateTimeDialogSummary(){const{valid,totalMinutes}=parseTimeDialogInput({normalize:false});if(TimeDialog.summary)TimeDialog.summary.textContent=formatDuration(Math.max(0,totalMinutes)*60000);if(TimeDialog.save)TimeDialog.save.disabled=!valid;if(valid)setTimeDialogError('')}
 function openTimeEditDialog(taskId){const task=findTask(taskId);if(!task||!TimeDialog.overlay)return;timeDialogTaskId=taskId;const currentMinutes=Math.max(0,Math.round(totalTimeMs(task)/60000));const hours=Math.floor(currentMinutes/60);const minutes=currentMinutes%60;if(TimeDialog.hours)TimeDialog.hours.value=String(hours);if(TimeDialog.minutes)TimeDialog.minutes.value=String(minutes);if(TimeDialog.subtitle)TimeDialog.subtitle.textContent=currentMinutes?`Текущее значение: ${formatDuration(currentMinutes*60000)}`:'Текущее значение: 0 мин';setTimeDialogError('');updateTimeDialogSummary();TimeDialog.overlay.classList.add('is-open');TimeDialog.overlay.setAttribute('aria-hidden','false');document.body.classList.add('time-dialog-open');const focusTarget=TimeDialog.minutes||TimeDialog.hours;setTimeout(()=>{if(!focusTarget)return;try{focusTarget.focus({preventScroll:true})}catch{focusTarget.focus()}},60)}
 function closeTimeDialog(){if(!TimeDialog.overlay)return;timeDialogTaskId=null;TimeDialog.overlay.classList.remove('is-open');TimeDialog.overlay.setAttribute('aria-hidden','true');document.body.classList.remove('time-dialog-open');setTimeDialogError('');if(TimeDialog.save)TimeDialog.save.disabled=false}
-function submitTimeDialog(){if(!timeDialogTaskId)return;const task=findTask(timeDialogTaskId);if(!task){closeTimeDialog();return}const{valid,totalMinutes}=parseTimeDialogInput({normalize:true});if(!valid){setTimeDialogError('Введите неотрицательные значения');return}const minutes=Math.round(totalMinutes);task.timeSpent=Math.max(0,minutes)*60000;task.timerActive=false;task.timerStart=null;Store.write(tasks);syncTimerLoop();render();toast(`Время обновлено: ${formatDuration(task.timeSpent)}`);closeTimeDialog()}
+function submitTimeDialog(){if(!timeDialogTaskId)return;const task=findTask(timeDialogTaskId);if(!task){closeTimeDialog();return}const{valid,totalMinutes}=parseTimeDialogInput({normalize:true});if(!valid){setTimeDialogError('Введите неотрицательные значения');return}const minutes=Math.round(totalMinutes);task.timeSpent=Math.max(0,minutes)*60000;task.timerActive=false;task.timerStart=null;Store.write(tasks);if(isServerMode())queueTaskUpdate(task.id,{timeSpent:task.timeSpent});syncTimerLoop();render();toast(`Время обновлено: ${formatDuration(task.timeSpent)}`);closeTimeDialog()}
 function openContextMenu(taskId,x,y){
   Ctx.taskId=taskId;const menu=Ctx.el;menu.innerHTML='';closeAssignSubmenu();closeDuePicker();
   const btnEdit=document.createElement('div');btnEdit.className='context-item';btnEdit.textContent='Редактировать';
@@ -385,7 +486,7 @@ window.addEventListener('scroll',closeContextMenu,true);
 
 NotesPanel.overlay&&NotesPanel.overlay.addEventListener('click',()=>closeNotesPanel());
 NotesPanel.close&&NotesPanel.close.addEventListener('click',()=>closeNotesPanel());
-NotesPanel.input&&NotesPanel.input.addEventListener('input',()=>{if(NotesPanel.mode==='archive')return;if(!NotesPanel.taskId)return;const task=findTask(NotesPanel.taskId);if(!task)return;task.notes=NotesPanel.input.value;Store.write(tasks);updateNoteIndicator(task.id)});
+NotesPanel.input&&NotesPanel.input.addEventListener('input',()=>{if(NotesPanel.mode==='archive')return;if(!NotesPanel.taskId)return;const task=findTask(NotesPanel.taskId);if(!task)return;task.notes=NotesPanel.input.value;Store.write(tasks);if(isServerMode())queueTaskUpdate(task.id,{notes:task.notes},{debounce:true});updateNoteIndicator(task.id)});
 
 TimeDialog.overlay&&TimeDialog.overlay.addEventListener('click',e=>{if(e.target===TimeDialog.overlay)closeTimeDialog()});
 TimeDialog.close&&TimeDialog.close.addEventListener('click',()=>closeTimeDialog());
@@ -394,7 +495,7 @@ TimeDialog.form&&TimeDialog.form.addEventListener('submit',e=>{e.preventDefault(
 for(const input of[TimeDialog.hours,TimeDialog.minutes]){if(!input)continue;input.addEventListener('input',()=>updateTimeDialogSummary());input.addEventListener('blur',()=>{const state=parseTimeDialogInput({normalize:true});updateTimeDialogSummary();if(!state.valid)setTimeDialogError('Введите неотрицательные значения')})}
 
 function formatArchiveDateTime(ms){if(typeof ms!=='number'||!isFinite(ms)||ms<=0)return null;const date=new Date(ms);if(isNaN(date))return null;const timestamp=date.getTime();return`${formatDateDMY(timestamp)} ${formatTimeHM(timestamp)}`}
-function renderArchivedNode(node,depth,container){if(!node)return;const row=document.createElement('div');row.className='archive-task';row.dataset.id=node.id;row.dataset.depth=String(depth);if(depth>0)row.style.marginLeft=`${depth*18}px`;const status=document.createElement('div');status.className='archive-status';status.textContent='✔';const main=document.createElement('div');main.className='archive-main';const title=document.createElement('div');title.className='archive-title';title.textContent=node.title||'Без названия';main.appendChild(title);const tags=document.createElement('div');tags.className='archive-tags';if(node.due){const dueTag=document.createElement('span');dueTag.className='due-tag';if(isDueToday(node.due))dueTag.classList.add('is-today');dueTag.textContent=formatDue(node.due);if(dueTag.textContent)tags.appendChild(dueTag)}if(node.project){const projectMeta=getProjectMeta(node.project);const projTag=document.createElement('span');projTag.className='proj-tag';const emoji=projectMeta.emoji?`${projectMeta.emoji} `:'';projTag.textContent=`${emoji}${projectMeta.title}`.trim();tags.appendChild(projTag)}if(tags.childElementCount)main.appendChild(tags);const meta=document.createElement('div');meta.className='archive-meta';const completedText=formatArchiveDateTime(node.completedAt);if(completedText)meta.appendChild(document.createTextNode(`Завершено: ${completedText}`));const archivedText=formatArchiveDateTime(node.archivedAt);if(archivedText){if(meta.textContent)meta.appendChild(document.createTextNode(' • '));meta.appendChild(document.createTextNode(`В архиве: ${archivedText}`))}if(meta.textContent)main.appendChild(meta);const actions=document.createElement('div');actions.className='archive-actions';const time=document.createElement('div');time.className='archive-time';time.textContent=formatDuration(node.timeSpent);actions.appendChild(time);const noteBtn=document.createElement('button');noteBtn.className='note-btn';noteBtn.type='button';noteBtn.textContent='📝';noteBtn.title='Открыть заметки';noteBtn.setAttribute('aria-label','Заметки задачи');noteBtn.dataset.hasNotes=node.notes&&node.notes.trim()? 'true':'false';noteBtn.onclick=e=>{e.stopPropagation();openNotesPanel(node.id,{source:'archive'})};actions.appendChild(noteBtn);const deleteBtn=document.createElement('button');deleteBtn.className='archive-delete';deleteBtn.type='button';deleteBtn.textContent='✕';deleteBtn.title='Удалить из архива';deleteBtn.setAttribute('aria-label','Удалить задачу из архива');deleteBtn.onclick=e=>{e.stopPropagation();if(removeArchivedTask(node.id)){ArchiveStore.write(archivedTasks);if(currentView==='archive')render()}};actions.appendChild(deleteBtn);row.append(status,main,actions);container.appendChild(row);if(Array.isArray(node.children)&&node.children.length){for(const child of node.children){renderArchivedNode(child,depth+1,container)}}}
+function renderArchivedNode(node,depth,container){if(!node)return;const row=document.createElement('div');row.className='archive-task';row.dataset.id=node.id;row.dataset.depth=String(depth);if(depth>0)row.style.marginLeft=`${depth*18}px`;const status=document.createElement('div');status.className='archive-status';status.textContent='✔';const main=document.createElement('div');main.className='archive-main';const title=document.createElement('div');title.className='archive-title';title.textContent=node.title||'Без названия';main.appendChild(title);const tags=document.createElement('div');tags.className='archive-tags';if(node.due){const dueTag=document.createElement('span');dueTag.className='due-tag';if(isDueToday(node.due))dueTag.classList.add('is-today');dueTag.textContent=formatDue(node.due);if(dueTag.textContent)tags.appendChild(dueTag)}if(node.project){const projectMeta=getProjectMeta(node.project);const projTag=document.createElement('span');projTag.className='proj-tag';const emoji=projectMeta.emoji?`${projectMeta.emoji} `:'';projTag.textContent=`${emoji}${projectMeta.title}`.trim();tags.appendChild(projTag)}if(tags.childElementCount)main.appendChild(tags);const meta=document.createElement('div');meta.className='archive-meta';const completedText=formatArchiveDateTime(node.completedAt);if(completedText)meta.appendChild(document.createTextNode(`Завершено: ${completedText}`));const archivedText=formatArchiveDateTime(node.archivedAt);if(archivedText){if(meta.textContent)meta.appendChild(document.createTextNode(' • '));meta.appendChild(document.createTextNode(`В архиве: ${archivedText}`))}if(meta.textContent)main.appendChild(meta);const actions=document.createElement('div');actions.className='archive-actions';const time=document.createElement('div');time.className='archive-time';time.textContent=formatDuration(node.timeSpent);actions.appendChild(time);const noteBtn=document.createElement('button');noteBtn.className='note-btn';noteBtn.type='button';noteBtn.textContent='📝';noteBtn.title='Открыть заметки';noteBtn.setAttribute('aria-label','Заметки задачи');noteBtn.dataset.hasNotes=node.notes&&node.notes.trim()? 'true':'false';noteBtn.onclick=e=>{e.stopPropagation();openNotesPanel(node.id,{source:'archive'})};actions.appendChild(noteBtn);const deleteBtn=document.createElement('button');deleteBtn.className='archive-delete';deleteBtn.type='button';deleteBtn.textContent='✕';deleteBtn.title='Удалить из архива';deleteBtn.setAttribute('aria-label','Удалить задачу из архива');deleteBtn.onclick=e=>{e.stopPropagation();const removed=removeArchivedTask(node.id);if(removed){ArchiveStore.write(archivedTasks);if(isServerMode())queueArchiveDelete(node.id);if(currentView==='archive')render()}};actions.appendChild(deleteBtn);row.append(status,main,actions);container.appendChild(row);if(Array.isArray(node.children)&&node.children.length){for(const child of node.children){renderArchivedNode(child,depth+1,container)}}}
 function renderArchive(container){const wrap=document.createElement('div');wrap.className='archive-container';const items=[...archivedTasks];items.sort((a,b)=>(b.archivedAt||0)-(a.archivedAt||0)||(b.completedAt||0)-(a.completedAt||0));if(!items.length){const empty=document.createElement('div');empty.className='archive-empty';empty.textContent='Архив пока пуст.';container.appendChild(empty);return}for(const item of items){renderArchivedNode(item,0,wrap)}container.appendChild(wrap)}
 function render(){
   $$('.nav-btn').forEach(b=>b.classList.toggle('is-active',b.dataset.view===currentView));
@@ -435,7 +536,7 @@ function renderTaskRow(t,depth,container){
   row.addEventListener('dragenter',e=>{if(!draggingTaskId||draggingTaskId===t.id)return;if(!canAcceptChildren){setDropTarget(null);return}const dragged=findTask(draggingTaskId);if(!dragged)return;if(containsTask(dragged,t.id)){setDropTarget(null);return}const subtreeDepth=getSubtreeDepth(dragged);if(depth+1+subtreeDepth>MAX_TASK_DEPTH){setDropTarget(null);return}e.preventDefault();setDropTarget(t.id)});
   row.addEventListener('dragover',e=>{if(!draggingTaskId||draggingTaskId===t.id)return;const dragged=findTask(draggingTaskId);if(!dragged)return;if(!canAcceptChildren){if(e.dataTransfer)e.dataTransfer.dropEffect='none';return}if(containsTask(dragged,t.id))return;const subtreeDepth=getSubtreeDepth(dragged);if(depth+1+subtreeDepth>MAX_TASK_DEPTH){if(e.dataTransfer)e.dataTransfer.dropEffect='none';return}e.preventDefault();if(e.dataTransfer)e.dataTransfer.dropEffect='move'});
   row.addEventListener('dragleave',e=>{if(dropTargetId!==t.id)return;const rel=e.relatedTarget;if(rel&&row.contains(rel))return;setDropTarget(null)});
-  row.addEventListener('drop',e=>{if(!draggingTaskId)return;e.preventDefault();const sourceId=draggingTaskId;clearDragIndicators();if(sourceId===t.id)return;const draggedTask=findTask(sourceId);const targetTask=findTask(t.id);if(!draggedTask||!targetTask)return;if(!canAcceptChildren){toast('Максимальная вложенность — три уровня');return}if(containsTask(draggedTask,t.id))return;const subtreeDepth=getSubtreeDepth(draggedTask);if(depth+1+subtreeDepth>MAX_TASK_DEPTH){toast('Максимальная вложенность — три уровня');return}const moved=detachTaskFromTree(sourceId);if(!moved)return;if(!Array.isArray(targetTask.children))targetTask.children=[];const inheritedProject=typeof targetTask.project==='undefined'?null:targetTask.project;targetTask.children.push(moved);moved.project=inheritedProject;targetTask.collapsed=false;Store.write(tasks);selectedTaskId=moved.id;render()});
+  row.addEventListener('drop',e=>{if(!draggingTaskId)return;e.preventDefault();const sourceId=draggingTaskId;clearDragIndicators();if(sourceId===t.id)return;const draggedTask=findTask(sourceId);const targetTask=findTask(t.id);if(!draggedTask||!targetTask)return;if(!canAcceptChildren){toast('Максимальная вложенность — три уровня');return}if(containsTask(draggedTask,t.id))return;const subtreeDepth=getSubtreeDepth(draggedTask);if(depth+1+subtreeDepth>MAX_TASK_DEPTH){toast('Максимальная вложенность — три уровня');return}const moved=detachTaskFromTree(sourceId);if(!moved)return;if(!Array.isArray(targetTask.children))targetTask.children=[];const inheritedProject=typeof targetTask.project==='undefined'?null:targetTask.project;targetTask.children.push(moved);moved.project=inheritedProject;moved.parentId=targetTask.id;targetTask.collapsed=false;Store.write(tasks);if(isServerMode())queueTaskUpdate(moved.id,{parentId:targetTask.id,project:moved.project});selectedTaskId=moved.id;render()});
   row.addEventListener('contextmenu',e=>{e.preventDefault();openContextMenu(t.id,e.clientX,e.clientY)});
   const cb=document.createElement('div');cb.className='task-checkbox';cb.dataset.checked=t.done?'true':'false';cb.title=t.done?'Снять отметку выполнения':'Отметить как выполненную';cb.setAttribute('role','button');cb.setAttribute('aria-label',cb.title);cb.setAttribute('aria-pressed',t.done?'true':'false');cb.setAttribute('tabindex','0');cb.onclick=e=>{e.stopPropagation();toggleTask(t.id)};cb.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '||e.key==='Spacebar'){e.preventDefault();toggleTask(t.id)}});
   const content=document.createElement('div');content.className='task-main';
@@ -519,6 +620,9 @@ $('#taskInput').onkeydown=e=>{if(e.key==='Enter'){addTask(e.target.value);e.targ
 $$('.nav-btn').forEach(btn=>btn.onclick=()=>{const view=btn.dataset.view;if(view==='today'){currentView='today';render();return}if(view==='sprint'){currentView='sprint';render();return}currentView='all';render()});
 if(archiveBtn){archiveBtn.addEventListener('click',()=>{currentView='archive';render()})}
 
+const storageToggleBtn=document.getElementById('storageToggle');
+if(storageToggleBtn){storageToggleBtn.addEventListener('click',async()=>{if(isDataLoading)return;if(isServerMode()){await setStorageModeAndReload(STORAGE_MODES.LOCAL);toast('Режим: localStorage')}else{if(!ensureApiCredentials())return;await setStorageModeAndReload(STORAGE_MODES.SERVER);toast('Режим: API')}})}
+
 if(WorkdayUI.button){WorkdayUI.button.addEventListener('click',()=>{if(WorkdayUI.button.disabled)return;openWorkdayDialog()})}
 if(WorkdayUI.closeBtn)WorkdayUI.closeBtn.addEventListener('click',()=>closeWorkdayDialog());
 if(WorkdayUI.closeAction)WorkdayUI.closeAction.addEventListener('click',()=>finishWorkdayAndArchive());
@@ -576,6 +680,7 @@ function setProjectEmoji(projectId,emoji){
   const normalized=typeof emoji==='string'&&emoji.trim()?emoji.trim():null;
   proj.emoji=normalized;
   ProjectsStore.write(projects);
+  if(isServerMode())queueProjectUpdate(projectId,{emoji:normalized});
   renderProjects();
   render();
 }
@@ -622,9 +727,9 @@ window.addEventListener('keydown',e=>{if(e.key==='Escape')closeEmojiPicker()});
 window.addEventListener('resize',closeEmojiPicker);
 window.addEventListener('scroll',closeEmojiPicker,true);
 
-function startProjectRename(id,row){closeEmojiPicker();if(!projList)return;const p=projects.find(pr=>pr.id===id);if(!p)return;const target=row?.querySelector('.name')||[...projList.children].find(n=>n.dataset.id===id)?.querySelector('.name');if(!target)return;const input=document.createElement('input');input.className='proj-input';input.value=p.title;target.replaceWith(input);input.focus();input.select();let finished=false;const save=()=>{if(finished)return;finished=true;const v=(input.value||'').trim();if(!v){toast('Назови проект');input.focus();finished=false;return}p.title=v;ProjectsStore.write(projects);renderProjects()};const cancel=()=>{if(finished)return;finished=true;renderProjects()};input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();save()}else if(e.key==='Escape'){e.preventDefault();cancel()}});input.addEventListener('blur',()=>{if(!finished)save()})}
-function deleteProject(id){closeEmojiPicker();const idx=projects.findIndex(p=>p.id===id);if(idx===-1)return;projects.splice(idx,1);ProjectsStore.write(projects);renderProjects();toast('Проект удалён')}
-if(projAdd&&projList){projAdd.addEventListener('click',()=>{closeEmojiPicker();const placeholder=projList.firstElementChild;if(placeholder&&placeholder.classList.contains('is-empty')){placeholder.remove()}const row=document.createElement('div');row.className='proj-item';const input=document.createElement('input');input.className='proj-input';input.placeholder='Название проекта…';row.appendChild(input);if(projList.firstChild){projList.prepend(row)}else{projList.appendChild(row)}input.focus();let saved=false;const finish=save=>{if(saved)return;saved=true;const v=(input.value||'').trim();if(save){if(!v){toast('Назови проект');input.focus();saved=false;return}projects.unshift({id:uid(),title:v,emoji:null});ProjectsStore.write(projects)}renderProjects()};input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();finish(true)}else if(e.key==='Escape'){e.preventDefault();finish(false)}});input.addEventListener('blur',()=>{if(!saved)finish(true)})})}
+function startProjectRename(id,row){closeEmojiPicker();if(!projList)return;const p=projects.find(pr=>pr.id===id);if(!p)return;const target=row?.querySelector('.name')||[...projList.children].find(n=>n.dataset.id===id)?.querySelector('.name');if(!target)return;const input=document.createElement('input');input.className='proj-input';input.value=p.title;target.replaceWith(input);input.focus();input.select();let finished=false;const save=()=>{if(finished)return;finished=true;const v=(input.value||'').trim();if(!v){toast('Назови проект');input.focus();finished=false;return}p.title=v;ProjectsStore.write(projects);if(isServerMode())queueProjectUpdate(id,{title:v});renderProjects()};const cancel=()=>{if(finished)return;finished=true;renderProjects()};input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();save()}else if(e.key==='Escape'){e.preventDefault();cancel()}});input.addEventListener('blur',()=>{if(!finished)save()})}
+function deleteProject(id){closeEmojiPicker();const idx=projects.findIndex(p=>p.id===id);if(idx===-1)return;projects.splice(idx,1);ProjectsStore.write(projects);if(isServerMode())queueProjectDelete(id);renderProjects();toast('Проект удалён')}
+if(projAdd&&projList){projAdd.addEventListener('click',()=>{closeEmojiPicker();const placeholder=projList.firstElementChild;if(placeholder&&placeholder.classList.contains('is-empty')){placeholder.remove()}const row=document.createElement('div');row.className='proj-item';const input=document.createElement('input');input.className='proj-input';input.placeholder='Название проекта…';row.appendChild(input);if(projList.firstChild){projList.prepend(row)}else{projList.appendChild(row)}input.focus();let saved=false;const finish=save=>{if(saved)return;saved=true;const v=(input.value||'').trim();if(save){if(!v){toast('Назови проект');input.focus();saved=false;return}const project={id:uid(),title:v,emoji:null};projects.unshift(project);ProjectsStore.write(projects);if(isServerMode())queueProjectCreate(project)}renderProjects()};input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();finish(true)}else if(e.key==='Escape'){e.preventDefault();finish(false)}});input.addEventListener('blur',()=>{if(!saved)finish(true)})})}
 
 document.addEventListener('keydown',e=>{
   if(e.target&&(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.isContentEditable))return;
@@ -632,8 +737,8 @@ document.addEventListener('keydown',e=>{
   if((e.key==='Backspace'||e.key==='Delete')&&selectedTaskId){e.preventDefault();handleDelete(selectedTaskId,{visibleOrder:getVisibleTaskIds()})}
 });
 
-if(!tasks.length){tasks=[{id:uid(),title:'Добавь несколько задач',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,children:[{id:uid(),title:'Пример подзадачи',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,children:[]} ]},{id:uid(),title:'ПКМ по строке → «Редактировать»',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,children:[]},{id:uid(),title:'Отметь как выполненную — увидишь зачёркивание',done:true,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,children:[] }];Store.write(tasks)}
-if(!projects.length){projects=[{id:uid(),title:'Личный',emoji:DEFAULT_PROJECT_EMOJI},{id:uid(),title:'Работа',emoji:'💼'}];ProjectsStore.write(projects)}
+if(!tasks.length&&!isServerMode()){const rootId=uid();const childId=uid();tasks=[{id:rootId,title:'Добавь несколько задач',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:null,children:[{id:childId,title:'Пример подзадачи',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:rootId,children:[]} ]},{id:uid(),title:'ПКМ по строке → «Редактировать»',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:null,children:[]},{id:uid(),title:'Отметь как выполненную — увидишь зачёркивание',done:true,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:null,children:[] }];ensureTaskParentIds(tasks,null);Store.write(tasks)}
+if(!projects.length&&!isServerMode()){projects=[{id:uid(),title:'Личный',emoji:DEFAULT_PROJECT_EMOJI},{id:uid(),title:'Работа',emoji:'💼'}];ProjectsStore.write(projects)}
 
 renderProjects();
 
@@ -679,8 +784,8 @@ function renderSprintFiltersBar(entries){
     bar.appendChild(btn)
   }
 }
-function assignProject(taskId,projId){const t=findTask(taskId);if(!t)return;t.project=projId;Store.write(tasks);render();toast('Назначено в проект: '+getProjectTitle(projId))}
-function clearProject(taskId){const t=findTask(taskId);if(!t)return;t.project=null;Store.write(tasks);render()}
+function assignProject(taskId,projId){const t=findTask(taskId);if(!t)return;t.project=projId;Store.write(tasks);if(isServerMode())queueTaskUpdate(taskId,{project:projId});render();toast('Назначено в проект: '+getProjectTitle(projId))}
+function clearProject(taskId){const t=findTask(taskId);if(!t)return;t.project=null;Store.write(tasks);if(isServerMode())queueTaskUpdate(taskId,{project:null});render()}
 function openAssignSubmenu(taskId,anchorItem){
   closeDuePicker();
   if(!anchorItem)return;
@@ -1035,4 +1140,4 @@ window.addEventListener('click',e=>{if(Due.el.style.display==='block'&&!Due.el.c
   syncMode();
 })();
 
-(function(){applyTheme(ThemeStore.read());ensureWorkdayState();syncWorkdayTaskSnapshot();ensureWorkdayRefreshLoop();updateWorkdayUI();render();initCalendar();updateWorkdayUI()})();
+(function(){applyTheme(ThemeStore.read());initCalendar();updateStorageToggle();refreshDataForCurrentMode()})();
