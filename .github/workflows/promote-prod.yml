@@ -64,8 +64,8 @@ jobs:
         run: |
           : "${SSH_PORT:=22}"
           rsync -av --delete -e "ssh -p ${SSH_PORT}" \
-            --filter='merge infra/rsync/web.filter' \
-            ./ "${SSH_USER}@${SSH_HOST}:${WEB_PROD}/"
+            apps/web/ "${SSH_USER}@${SSH_HOST}:${WEB_PROD}/"
+
 
       # === deps, migrate, restart ===
       - name: Install deps, migrate, restart PROD
