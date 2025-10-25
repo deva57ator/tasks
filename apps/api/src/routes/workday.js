@@ -15,6 +15,22 @@ router.get('/current', async (req, res, next) => {
   }
 });
 
+router.post('/sync', async (req, res, next) => {
+  try {
+    const payload = req.body || {};
+    if (!payload.workday || !payload.workday.id) {
+      return res.status(400).json({ error: { code: 'validation_error', message: 'workday.id is required' } });
+    }
+    const workdayRecord = await workdays.upsert({
+      ...payload.workday,
+      closedAt: payload.workday.closedAt || null
+    });
+    res.json({ workday: workdayRecord });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/close', async (req, res, next) => {
   try {
     const payload = req.body || {};
