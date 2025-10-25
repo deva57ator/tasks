@@ -1,0 +1,79 @@
+name: Deploy STG (auto on push)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  deploy-stg:
+    runs-on: ubuntu-latest
+
+    env:
+      SSH_HOST: ${{ secrets.DEPLOY_HOST }}
+      SSH_USER: ${{ secrets.DEPLOY_USER }}
+      SSH_PORT: ${{ secrets.DEPLOY_PORT }}
+      PATH_STG:  ${{ secrets.DEPLOY_PATH_STG }}      # напр. /srv/tasks-stg
+      WEB_STG:   ${{ secrets.DEPLOY_WEB_PATH_STG }}  # напр. /var/www/tasks-stg
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH agent (SSH_KEY)
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: |
+            ${{ secrets.SSH_KEY }}
+
+      - name: Add host key (known_hosts)
+        run: |
+          : "${SSH_PORT:=22}"
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "${SSH_PORT}" -H "${SSH_HOST}" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      # === API → STG ===
+      - name: Copy API to STG (/srv/tasks-stg)
+        run: |
+          : "${SSH_PORT:=22}"
+          rsync -av --delete -e "ssh -p ${SSH_PORT}" \
+            --filter='merge infra/rsync/api.filter' \
+            ./ "${SSH_USER}@${SSH_HOST}:${PATH_STG}-tmp/"
+
+          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "set -eu
+            DEPLOY_PATH='${PATH_STG}'
+            rm -rf \"\$DEPLOY_PATH/apps/api\"
+            install -d \"\$DEPLOY_PATH/apps\"
+            mv \"${PATH_STG}-tmp/apps/api\" \"\$DEPLOY_PATH/apps/\"
+            rm -rf \"${PATH_STG}-tmp\"
+          "
+
+      # === WEB → STG ===
+      - name: Copy WEB to STG webroot (/var/www/tasks-stg)
+        run: |
+          : "${SSH_PORT:=22}"
+          rsync -av --delete -e "ssh -p ${SSH_PORT}" \
+            --filter='merge infra/rsync/web.filter' \
+            ./ "${SSH_USER}@${SSH_HOST}:${WEB_STG}/"
+
+      # === deps, migrate, restart ===
+      - name: Install deps, migrate, restart STG
+        run: |
+          : "${SSH_PORT:=22}"
+          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "set -eu
+            cd '${PATH_STG}/apps/api'
+            if [ -f package-lock.json ]; then
+              npm ci --omit=dev --no-audit --no-fund
+            else
+              npm install --omit=dev --no-audit --no-fund
+            fi
+            npm run migrate
+            sudo -n systemctl daemon-reload || true
+            sudo -n systemctl restart tasks-stg
+            systemctl status --no-pager tasks-stg | tail -n +1 || true
+          "
+
+      - name: Health check STG
+        run: |
+          curl -fsS https://parkhomenko.space/tasks-stg/api/health >/dev/null
