@@ -177,6 +177,7 @@ const API_DEFAULT_LIMIT=200;
 let isDataLoading=false;
 let dataInitialized=false;
 const pendingTaskUpdates=new Map();
+const pendingServerCreates=new Set();
 let pendingWorkdaySync=null;
 let workdaySyncTimer=null;
 let workdaySyncInFlight=false;
@@ -205,7 +206,7 @@ function normalizeArchivePayload(items){if(!Array.isArray(items))return[];return
 
 function updateStorageToggle({loading=false}={}){const btn=document.getElementById('storageToggle');if(!btn)return;btn.dataset.mode=isServerMode()?'server':'local';btn.classList.toggle('is-loading',loading);if(loading){btn.textContent='…';btn.setAttribute('aria-busy','true')}else{btn.textContent=isServerMode()?'API':'LS';btn.removeAttribute('aria-busy')}const label=isServerMode()?'Режим: серверный API':'Режим: localStorage';btn.title=label;btn.setAttribute('aria-label',loading?`${label}. Загрузка…`:label)}
 
-function finalizeDataLoad(){tasks=migrate(tasks);ensureTaskParentIds(tasks,null);normalizeProjectsList(projects,{persist:false});archivedTasks=normalizeArchiveList(archivedTasks,{persist:false});renderProjects();render();updateWorkdayUI();ensureWorkdayRefreshLoop();dataInitialized=true}
+function finalizeDataLoad(){tasks=migrate(tasks);ensureTaskParentIds(tasks,null);normalizeProjectsList(projects,{persist:false});archivedTasks=normalizeArchiveList(archivedTasks,{persist:false});pendingServerCreates.clear();renderProjects();render();updateWorkdayUI();ensureWorkdayRefreshLoop();dataInitialized=true}
 
 async function loadDataFromLocal(){tasks=Store.read();tasks=migrate(tasks);ensureTaskParentIds(tasks,null);projects=ProjectsStore.read();if(!Array.isArray(projects))projects=[];normalizeProjectsList(projects,{persist:!isServerMode()});archivedTasks=normalizeArchiveList(ArchiveStore.read(),{persist:!isServerMode()});workdayState=WorkdayStore.read();if(workdayState&&(!workdayState.id||typeof workdayState.start!=='number'||typeof workdayState.end!=='number'))workdayState=null;finalizeDataLoad();updateStorageToggle()}
 
@@ -527,7 +528,7 @@ function addTask(title){
   if(isServerMode())queueTaskCreate(task);
   render()
 }
-function addSubtask(parentId){const p=findTask(parentId);if(!p) return;const depth=getTaskDepth(parentId);if(depth===-1||depth>=MAX_TASK_DEPTH){toast('Максимальная вложенность — три уровня');return}const inheritedProject=typeof p.project==='undefined'?null:p.project;const child={id:uid(),title:'',done:false,children:[],collapsed:false,due:null,project:inheritedProject,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:parentId};p.children.push(child);p.collapsed=false;Store.write(tasks);if(isServerMode())queueTaskCreate(child);pendingEditId=child.id;render()}
+function addSubtask(parentId){const p=findTask(parentId);if(!p) return;const depth=getTaskDepth(parentId);if(depth===-1||depth>=MAX_TASK_DEPTH){toast('Максимальная вложенность — три уровня');return}const inheritedProject=typeof p.project==='undefined'?null:p.project;const child={id:uid(),title:'',done:false,children:[],collapsed:false,due:null,project:inheritedProject,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:parentId};p.children.push(child);p.collapsed=false;Store.write(tasks);if(isServerMode())pendingServerCreates.add(child.id);pendingEditId=child.id;render()}
 function toggleTask(id){const t=findTask(id);if(!t) return;const now=Date.now();const wasDone=t.done;const nextDone=!wasDone;t.done=nextDone;updateWorkdayCompletionState(t,nextDone,now);if(nextDone)stopTaskTimer(t,{silent:true});Store.write(tasks);if(isServerMode()){const payload={done:nextDone};if(nextDone&&typeof t.timeSpent==='number')payload.timeSpent=t.timeSpent;queueTaskUpdate(id,payload)}syncTimerLoop();render();handleTaskCompletionEffects(id,{completed:!wasDone&&nextDone,undone:wasDone&&!nextDone});toast(nextDone?'Отмечено как выполнено':'Снята отметка выполнения')}
 function markTaskDone(id){const t=findTask(id);if(!t)return;if(t.done){toast('Задача уже выполнена');return}const now=Date.now();t.done=true;updateWorkdayCompletionState(t,true,now);stopTaskTimer(t,{silent:true});Store.write(tasks);if(isServerMode()){const payload={done:true};if(typeof t.timeSpent==='number')payload.timeSpent=t.timeSpent;queueTaskUpdate(id,payload)}syncTimerLoop();render();handleTaskCompletionEffects(id,{completed:true});toast('Отмечено как выполнено')}
 function cloneTaskForArchive(task,{archivedAt,completedLookup,children=[]}){
@@ -578,6 +579,7 @@ function handleDelete(id,{visibleOrder=null}={}){
   if(target)stopTaskTimer(target,{silent:true});
   const removed=deleteTask(id,tasks);
   if(!removed)return;
+  pendingServerCreates.delete(id);
   if(NotesPanel.taskId===id)closeNotesPanel();
   let nextId=null;
   if(visibleOrder){
@@ -593,7 +595,7 @@ function handleDelete(id,{visibleOrder=null}={}){
   syncTimerLoop();
   render()
 }
-function renameTask(id,title){const t=findTask(id);if(!t) return;const v=String(title||'').trim();if(v&&v!==t.title){t.title=v;if(NotesPanel.taskId===id&&NotesPanel.title)NotesPanel.title.textContent=t.title;Store.write(tasks);if(isServerMode())queueTaskUpdate(id,{title:v})}render()}
+function renameTask(id,title){const t=findTask(id);if(!t) return;const v=String(title||'').trim();if(v&&v!==t.title){t.title=v;if(NotesPanel.taskId===id&&NotesPanel.title)NotesPanel.title.textContent=t.title;Store.write(tasks);if(isServerMode()){if(pendingServerCreates.has(id)){queueTaskCreate(t);pendingServerCreates.delete(id);}else queueTaskUpdate(id,{title:v});}}render()}
 function toggleCollapse(id){const t=findTask(id);if(!t) return;t.collapsed=!t.collapsed;Store.write(tasks);render()}
 
 const Ctx={el:$('#ctxMenu'),taskId:null,sub:document.getElementById('ctxSub'),submenuAnchor:null};
