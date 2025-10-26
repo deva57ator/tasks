@@ -781,19 +781,25 @@ function initCalendar(){cal.track=$('#calTrack');cal.curr=$('#calCurr');cal.next
 const taskInput=$('#taskInput');
 const addBtn=$('#addBtn');
 const composer=$('.composer');
+let taskInputDirty=false;
 
 function commitTaskInput(){
   if(!taskInput)return false;
   const value=(taskInput.value||'').trim();
-  if(!value)return false;
+  if(!value){
+    taskInputDirty=false;
+    return false;
+  }
   addTask(value);
   taskInput.value='';
+  taskInputDirty=false;
   return true;
 }
 
 function cancelTaskInput({blur=false}={}){
   if(!taskInput)return;
   taskInput.value='';
+  taskInputDirty=false;
   if(blur){
     try{taskInput.blur();}catch{}
   }
@@ -806,11 +812,16 @@ if(addBtn){
 }
 
 if(taskInput){
+  const syncDirtyState=()=>{
+    taskInputDirty=!!(taskInput.value&&taskInput.value.trim());
+  };
+  taskInput.addEventListener('input',syncDirtyState);
+  taskInput.addEventListener('focus',syncDirtyState);
   taskInput.addEventListener('keydown',event=>{
     if(event.key==='Enter'){
       event.preventDefault();
       commitTaskInput();
-    }else if(event.key==='Escape'){
+    }else if(event.key==='Escape'||event.key==='Esc'){
       event.preventDefault();
       cancelTaskInput({blur:true});
     }
@@ -818,7 +829,7 @@ if(taskInput){
 
   document.addEventListener('pointerdown',event=>{
     if(event.button!==0)return;
-    if(document.activeElement!==taskInput)return;
+    if(!taskInputDirty&&document.activeElement!==taskInput)return;
     const target=event.target;
     if(target===taskInput)return;
     if(target&&typeof target.closest==='function'){
