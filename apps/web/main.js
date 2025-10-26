@@ -579,7 +579,7 @@ function handleDelete(id,{visibleOrder=null}={}){
   if(target)stopTaskTimer(target,{silent:true});
   const removed=deleteTask(id,tasks);
   if(!removed)return;
-  pendingServerCreates.delete(id);
+  const wasPendingCreate=pendingServerCreates.delete(id);
   if(NotesPanel.taskId===id)closeNotesPanel();
   let nextId=null;
   if(visibleOrder){
@@ -591,7 +591,7 @@ function handleDelete(id,{visibleOrder=null}={}){
   }
   if(nextId){selectedTaskId=nextId}else if(selectedTaskId===id){selectedTaskId=null}
   Store.write(tasks);
-  if(isServerMode())queueTaskDelete(id);
+  if(isServerMode()&&!wasPendingCreate)queueTaskDelete(id);
   syncTimerLoop();
   render()
 }
@@ -739,16 +739,52 @@ function startEdit(row,t){
   const titleEl=row.querySelector('.task-title');
   const input=document.createElement('input');
   input.className='input';
-  input.value=t.title||'';
+  const originalTitle=typeof t.title==='string'?t.title:'';
+  const isNewTask=!originalTitle.trim();
+  input.value=originalTitle;
   input.placeholder='Название задачи…';
   input.addEventListener('mousedown',e=>e.stopPropagation());
   input.addEventListener('click',e=>e.stopPropagation());
   titleEl.replaceWith(input);
   input.focus();
   activeEditId=t.id;activeInputEl=input;
-  const trySave=()=>{if(!activeInputEl)return false;const v=(activeInputEl.value||'').trim();if(!v){toast('Напиши, что нужно сделать');activeInputEl.focus();return false}const id=activeEditId;activeEditId=null;activeInputEl=null;renameTask(id,v);return true};
-  input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();trySave()}});
-  input.addEventListener('blur',()=>{setTimeout(()=>input.focus(),0)})
+  let finished=false;
+  const finish=()=>{finished=true;activeEditId=null;activeInputEl=null;};
+  const trySave=()=>{
+    if(finished||!input)return false;
+    const v=(input.value||'').trim();
+    if(!v){toast('Напиши, что нужно сделать');input.focus();return false}
+    const id=t.id;
+    finish();
+    renameTask(id,v);
+    return true
+  };
+  const cancelEdit=()=>{
+    if(finished)return;
+    finish();
+    if(isNewTask){
+      handleDelete(t.id,{visibleOrder:getVisibleTaskIds()});
+      return;
+    }
+    selectedTaskId=t.id;
+    render();
+  };
+  input.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){
+      e.preventDefault();
+      trySave();
+    }else if(e.key==='Escape'||e.key==='Esc'){
+      e.preventDefault();
+      cancelEdit();
+    }
+  });
+  input.addEventListener('blur',()=>{
+    if(finished)return;
+    setTimeout(()=>{
+      if(finished)return;
+      try{input.focus({preventScroll:true})}catch{input.focus();}
+    },0)
+  })
 }
 
 function applyTheme(mode){const dark=mode==='dark';document.body.classList.toggle('theme-dark',dark);const btn=$('#themeToggle');if(btn){const label=dark?'Переключить на светлую тему':'Переключить на тёмную тему';btn.dataset.mode=dark?'dark':'light';btn.setAttribute('aria-pressed',String(dark));btn.setAttribute('aria-label',label);btn.title=label}}
