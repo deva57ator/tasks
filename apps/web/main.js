@@ -778,8 +778,56 @@ function jumpToToday(){const now=normalizeDate(new Date());if(cal.collapsed){set
 function setCollapsed(state){const nextState=!!state;if(cal.collapsed===nextState)return;cal.collapsed=nextState;if(!cal.focusDate){cal.focusDate=normalizeDate(new Date(cal.year||new Date().getFullYear(),cal.month||0,1))}if(!cal.collapsed){const fy=cal.focusDate.getFullYear();const fm=cal.focusDate.getMonth();if(fy!==cal.year||fm!==cal.month){setMonth(fy,fm,{focusDate:cal.focusDate});return}}applyCollapsedState();updateCalendarTitle()}
 function initCalendar(){cal.track=$('#calTrack');cal.curr=$('#calCurr');cal.nextbuf=$('#calNextBuf');cal.title=$('#calTitle');cal.legend=document.querySelector('#calendar .cal-legend');cal.toggle=$('#calToggle');cal.prev=$('#calPrev');cal.next=$('#calNext');cal.today=$('#calToday');const now=normalizeDate(new Date());cal.month=now.getMonth();cal.year=now.getFullYear();cal.focusDate=now;setMonth(cal.year,cal.month,{focusDate:now});applyCollapsedState();if(cal.prev)cal.prev.addEventListener('click',()=>{cal.collapsed?shiftWeek(-1):shiftMonth(-1)});if(cal.next)cal.next.addEventListener('click',()=>{cal.collapsed?shiftWeek(1):shiftMonth(1)});if(cal.today)cal.today.addEventListener('click',()=>jumpToToday());if(cal.toggle)cal.toggle.addEventListener('click',()=>setCollapsed(!cal.collapsed))}
 
-$('#addBtn').onclick=()=>{addTask($('#taskInput').value);$('#taskInput').value=''};
-$('#taskInput').onkeydown=e=>{if(e.key==='Enter'){addTask(e.target.value);e.target.value=''}};
+const taskInput=$('#taskInput');
+const addBtn=$('#addBtn');
+const composer=$('.composer');
+
+function commitTaskInput(){
+  if(!taskInput)return false;
+  const value=(taskInput.value||'').trim();
+  if(!value)return false;
+  addTask(value);
+  taskInput.value='';
+  return true;
+}
+
+function cancelTaskInput({blur=false}={}){
+  if(!taskInput)return;
+  taskInput.value='';
+  if(blur){
+    try{taskInput.blur();}catch{}
+  }
+}
+
+if(addBtn){
+  addBtn.addEventListener('click',()=>{
+    commitTaskInput();
+  });
+}
+
+if(taskInput){
+  taskInput.addEventListener('keydown',event=>{
+    if(event.key==='Enter'){
+      event.preventDefault();
+      commitTaskInput();
+    }else if(event.key==='Escape'){
+      event.preventDefault();
+      cancelTaskInput({blur:true});
+    }
+  });
+
+  document.addEventListener('pointerdown',event=>{
+    if(event.button!==0)return;
+    if(document.activeElement!==taskInput)return;
+    const target=event.target;
+    if(target===taskInput)return;
+    if(target&&typeof target.closest==='function'){
+      if(target.closest('#addBtn'))return;
+      if(composer&&composer.contains(target)&&target.closest('#taskInput'))return;
+    }
+    commitTaskInput();
+  });
+}
 $$('.nav-btn').forEach(btn=>btn.onclick=()=>{const view=btn.dataset.view;if(view==='today'){currentView='today';render();return}if(view==='sprint'){currentView='sprint';render();return}currentView='all';render()});
 if(archiveBtn){archiveBtn.addEventListener('click',()=>{currentView='archive';render()})}
 
