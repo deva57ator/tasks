@@ -522,7 +522,13 @@ function addTask(title){
     const exists=projects.some(p=>p&&p.id===currentProjectId);
     if(exists)assignedProject=currentProjectId;
   }
-  const task={id:uid(),title,done:false,children:[],collapsed:false,due:null,project:assignedProject,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:null};
+  let dueDate=null;
+  if(currentView==='today'){
+    const today=new Date();
+    today.setHours(0,0,0,0);
+    dueDate=today.toISOString();
+  }
+  const task={id:uid(),title,done:false,children:[],collapsed:false,due:dueDate,project:assignedProject,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:null};
   tasks.unshift(task);
   Store.write(tasks);
   if(isServerMode())queueTaskCreate(task);
