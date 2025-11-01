@@ -22,7 +22,7 @@ function parseBody(schema, payload) {
   }
 }
 
-router.post('/request-code', (req, res, next) => {
+const handleRequestCode = (req, res, next) => {
   try {
     const { email } = parseBody(requestSchema, req.body);
     const issued = authService.requestLoginCode(email);
@@ -40,7 +40,10 @@ router.post('/request-code', (req, res, next) => {
   } catch (err) {
     return next(err);
   }
-});
+};
+
+router.post('/request-code', handleRequestCode);
+router.post('/request', handleRequestCode);
 
 router.post('/verify-code', (req, res, next) => {
   try {
