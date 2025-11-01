@@ -8,33 +8,31 @@ on:
 jobs:
   deploy-stg:
     runs-on: ubuntu-latest
-
     env:
       SSH_HOST: ${{ secrets.DEPLOY_HOST }}
       SSH_USER: ${{ secrets.DEPLOY_USER }}
       SSH_PORT: ${{ secrets.DEPLOY_PORT }}
-      PATH_STG:  ${{ secrets.DEPLOY_PATH_STG }}      # напр. /srv/tasks-stg
-      WEB_STG:   ${{ secrets.DEPLOY_WEB_PATH_STG }}  # напр. /var/www/tasks-stg
+      PATH_STG:  ${{ secrets.DEPLOY_PATH_STG }}      # /srv/tasks-stg
+      WEB_STG:   ${{ secrets.DEPLOY_WEB_PATH_STG }}  # /var/www/tasks-stg
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup SSH agent (SSH_KEY)
+      - name: SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
-          ssh-private-key: |
-            ${{ secrets.SSH_KEY }}
+          ssh-private-key: ${{ secrets.SSH_KEY }}
 
-      - name: Add host key (known_hosts)
+      - name: Add host key
         run: |
           : "${SSH_PORT:=22}"
           mkdir -p ~/.ssh
           ssh-keyscan -p "${SSH_PORT}" -H "${SSH_HOST}" >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      # === API → STG ===
-      - name: Copy API to STG (/srv/tasks-stg)
+      # ===== API → STG =====
+      - name: Rsync API tree
         run: |
           : "${SSH_PORT:=22}"
           rsync -av --delete -e "ssh -p ${SSH_PORT}" \
@@ -42,24 +40,19 @@ jobs:
             ./ "${SSH_USER}@${SSH_HOST}:${PATH_STG}-tmp/"
           ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "set -eu
             DEPLOY_PATH='${PATH_STG}'
-            rm -rf \"\$DEPLOY_PATH/src\"
-            mv \"${PATH_STG}-tmp/apps/api/src\" \"\$DEPLOY_PATH/src\"
-            # симлинк корневого node_modules → чтобы src находил зависимости
-            mkdir -p \"\$DEPLOY_PATH/apps/api\"
-            ln -sfn \"\$DEPLOY_PATH/apps/api/node_modules\" \"\$DEPLOY_PATH/node_modules\"
+            rm -rf \"\$DEPLOY_PATH/apps/api\"
+            install -d \"\$DEPLOY_PATH/apps\"
+            mv \"${PATH_STG}-tmp/apps/api\" \"\$DEPLOY_PATH/apps/\"
             rm -rf \"${PATH_STG}-tmp\"
-          " 
+            # shim, чтобы systemd ExecStart=/usr/bin/node src/server.js работал с новым деревом
+            install -d \"\$DEPLOY_PATH/src\"
+            cat >\"\$DEPLOY_PATH/src/server.js\" <<'JS'
+            // shim: запускаем реальный сервер из apps/api
+            require('../apps/api/src/server');
+            JS
+          "
 
-      # === WEB → STG ===
-      - name: Copy WEB to STG webroot (/var/www/tasks-stg)
-        run: |
-          : "${SSH_PORT:=22}"
-          rsync -av --delete -e "ssh -p ${SSH_PORT}" \
-          apps/web/ "${SSH_USER}@${SSH_HOST}:${WEB_STG}/"
-
-
-      # === deps, migrate, restart ===
-      - name: Install deps, migrate, restart STG
+      - name: Install deps, migrate, restart
         run: |
           : "${SSH_PORT:=22}"
           ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "set -eu
@@ -68,21 +61,25 @@ jobs:
             npm run migrate
             sudo -n systemctl daemon-reload || true
             sudo -n systemctl restart tasks-stg
-            # подождать старт и сделать 5 попыток health-чека локально
+            # локальный health с ретраями (даём времени подняться)
             for i in 1 2 3 4 5; do
               sleep 2
               if curl -fsS http://127.0.0.1:3102/api/health >/dev/null; then exit 0; fi
             done
-            # если локальный health так и не поднялся — показать логи и упасть
             systemctl status --no-pager tasks-stg || true
             journalctl -u tasks-stg -n 80 --no-pager || true
             exit 1
           "
 
-      # === внешний health ===
-      - name: Health check STG
+      # ===== WEB → STG =====
+      - name: Rsync WEB
         run: |
-          # 3 попытки через Nginx с паузами
+          : "${SSH_PORT:=22}"
+          rsync -av --delete -e "ssh -p ${SSH_PORT}" \
+            apps/web/ "${SSH_USER}@${SSH_HOST}:${WEB_STG}/"
+
+      - name: External health (via Nginx)
+        run: |
           for i in 1 2 3; do
             if curl -fsS https://parkhomenko.space/tasks-stg/api/health >/dev/null; then exit 0; fi
             sleep 2
