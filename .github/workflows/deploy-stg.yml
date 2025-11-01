@@ -32,7 +32,6 @@ jobs:
           ssh-keyscan -p "${SSH_PORT}" -H "${SSH_HOST}" >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      # ===== API → STG =====
       - name: Copy API to STG (/srv/tasks-stg)
         shell: bash
         run: |
@@ -40,22 +39,27 @@ jobs:
           rsync -av --delete -e "ssh -p ${SSH_PORT}" \
             --filter='merge infra/rsync/api.filter' \
             ./ "${SSH_USER}@${SSH_HOST}:${PATH_STG}-tmp/"
-          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" 'bash -seu <<'\''EOSH'\''
-            DEPLOY_PATH="${PATH_STG}"
-            rm -rf "$DEPLOY_PATH/apps/api"
-            install -d "$DEPLOY_PATH/apps"
-            mv "'"'"${PATH_STG}"'"'-tmp/apps/api" "$DEPLOY_PATH/apps/"
-            rm -rf "'"'"${PATH_STG}"'"'-tmp"
+      
+          # Всё, что ниже — выполняется на сервере в одном bash-сеансе.
+          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" DEPLOY_PATH="${PATH_STG}" bash -se <<'EOSH'
+          set -euo pipefail
+      
+          # Перекладываем дерево
+          rm -rf "$DEPLOY_PATH/apps/api"
+          install -d "$DEPLOY_PATH/apps"
+          mv "${DEPLOY_PATH}-tmp/apps/api" "$DEPLOY_PATH/apps/"
+          rm -rf "${DEPLOY_PATH}-tmp"
+      
+          # Шим для systemd: /srv/.../src/server.js → apps/api/src/server
+          install -d "$DEPLOY_PATH/src"
+          cat >"$DEPLOY_PATH/src/server.js" <<'JS'
+          require('../apps/api/src/server');
+          JS
+      
+          # Зависимости из корня: node_modules → apps/api/node_modules
+          ln -sfn "$DEPLOY_PATH/apps/api/node_modules" "$DEPLOY_PATH/node_modules"
+          EOSH
 
-            # shim для systemd
-            install -d "$DEPLOY_PATH/src"
-            cat >"$DEPLOY_PATH/src/server.js" <<'JS'
-require('../apps/api/src/server');
-JS
-
-            # зависимости видны из корня
-            ln -sfn "$DEPLOY_PATH/apps/api/node_modules" "$DEPLOY_PATH/node_modules"
-EOSH'
 
       - name: Install deps, migrate, restart
         shell: bash
