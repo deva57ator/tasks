@@ -32,6 +32,7 @@ jobs:
             ${{ secrets.SSH_KEY }}
 
       - name: Add host key (known_hosts)
+        shell: bash
         run: |
           : "${SSH_PORT:=22}"
           mkdir -p ~/.ssh
@@ -40,30 +41,39 @@ jobs:
 
       # (опционально) smoke STG перед промоутом — если не ок, роняем job
       - name: Pre-check STG health
+        shell: bash
         run: |
           curl -fsS https://parkhomenko.space/tasks-stg/api/health >/dev/null
 
       # === API → PROD ===
       - name: Copy API to PROD (/srv/tasks-prod)
+        shell: bash
         run: |
           : "${SSH_PORT:=22}"
           rsync -av --delete -e "ssh -p ${SSH_PORT}" \
             --filter='merge infra/rsync/api.filter' \
             ./ "${SSH_USER}@${SSH_HOST}:${PATH_PROD}-tmp/"
 
-          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "set -eu
-            DEPLOY_PATH='${PATH_PROD}'
-            rm -rf \"\$DEPLOY_PATH/apps/api\"
-            install -d \"\$DEPLOY_PATH/apps\"
-            mv \"${PATH_PROD}-tmp/apps/api\" \"\$DEPLOY_PATH/apps/\"
-            rm -rf \"${PATH_PROD}-tmp\"
-            install -d \"\$DEPLOY_PATH/src\"
-            printf "require('../apps/api/src/server')\n" >\"\$DEPLOY_PATH/src/server.js\"
-            ln -sfn \"\$DEPLOY_PATH/apps/api/node_modules\" \"\$DEPLOY_PATH/node_modules\"
-          "
+          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" 'bash -seu <<'\'EOSH'\'
+            DEPLOY_PATH="${PATH_PROD}"
+            rm -rf "$DEPLOY_PATH/apps/api"
+            install -d "$DEPLOY_PATH/apps"
+            mv "'"'"${PATH_PROD}"'"'"-tmp/apps/api" "$DEPLOY_PATH/apps/"
+            rm -rf "'"'"${PATH_PROD}"'"'"-tmp"
+
+            # shim для systemd
+            install -d "$DEPLOY_PATH/src"
+            cat >"$DEPLOY_PATH/src/server.js" <<'JS'
+require('../apps/api/src/server');
+JS
+
+            # зависимости видны из корня
+            ln -sfn "$DEPLOY_PATH/apps/api/node_modules" "$DEPLOY_PATH/node_modules"
+EOSH'
 
       # === WEB → PROD ===
       - name: Copy WEB to PROD webroot (/var/www/tasks-prod)
+        shell: bash
         run: |
           : "${SSH_PORT:=22}"
           rsync -av --delete -e "ssh -p ${SSH_PORT}" \
@@ -72,46 +82,29 @@ jobs:
 
       # === deps, migrate, restart ===
       - name: Install deps, migrate, restart PROD
+        shell: bash
         run: |
           : "${SSH_PORT:=22}"
-          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "set -eu
-            DEPLOY_PATH='${PATH_PROD}'
-            SERVICE='tasks-prod'
-            LOCAL_HEALTH_URL='http://127.0.0.1:3101/api/health'
-            cd \"\$DEPLOY_PATH/apps/api\"
+          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" 'bash -seu <<'\'EOSH'\'
+            cd "'"'"${PATH_PROD}"'"'"/apps/api"
             npm ci --omit=dev --no-audit --no-fund || npm install --omit=dev --no-audit --no-fund
-            ln -sfn \"\$DEPLOY_PATH/apps/api/node_modules\" \"\$DEPLOY_PATH/node_modules\"
             npm run migrate
             sudo -n systemctl daemon-reload || true
-            sudo -n systemctl restart \"\$SERVICE\"
-            success=0
+            sudo -n systemctl restart tasks-prod
             for i in 1 2 3 4 5; do
               sleep 2
-              if curl -fsS \"\$LOCAL_HEALTH_URL\" >/dev/null; then
-                success=1
-                break
-              fi
+              curl -fsS http://127.0.0.1:3101/api/health >/dev/null && exit 0 || true
             done
-            if [ \"\$success\" -ne 1 ]; then
-              systemctl status --no-pager \"\$SERVICE\" || true
-              journalctl -u \"\$SERVICE\" -n 100 --no-pager || true
-              exit 1
-            fi
-          "
+            systemctl status --no-pager tasks-prod || true
+            journalctl -u tasks-prod -n 100 --no-pager || true
+            exit 1
+EOSH'
 
       - name: Health check PROD
+        shell: bash
         run: |
-          success=0
           for i in 1 2 3; do
-            if curl -fsS https://parkhomenko.space/tasks/api/health >/dev/null; then
-              success=1
-              break
-            fi
+            curl -fsS https://parkhomenko.space/tasks/api/health >/dev/null && exit 0 || true
             sleep 2
           done
-          if [ "$success" -ne 1 ]; then
-            : "${SSH_PORT:=22}"
-            ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "systemctl status --no-pager tasks-prod || true" || true
-            ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "journalctl -u tasks-prod -n 100 --no-pager || true" || true
-            exit 22
-          fi
+          exit 22
