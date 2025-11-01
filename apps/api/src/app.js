@@ -18,6 +18,8 @@ const statsRouter = require('./routes/stats');
 
 function createApp() {
   const app = express();
+  const basePath = config.basePath;
+  const withBasePath = (route) => `${basePath}${route}`;
   if (config.trustProxy) {
     app.set('trust proxy', 1);
   }
@@ -38,17 +40,17 @@ function createApp() {
   app.use(cors);
   app.use(rateLimit);
 
-  app.use('/api/health', healthRouter);
-  app.use('/api/auth', authRouter);
+  app.use(withBasePath('/health'), healthRouter);
+  app.use(withBasePath('/auth'), authRouter);
 
   app.use(auth);
 
-  app.use('/api/projects', projectsRouter);
-  app.use('/api/tasks', tasksRouter);
-  app.use('/api/archive', archiveRouter);
-  app.use('/api/workday', workdayRouter);
-  app.use('/api/import', importRouter);
-  app.use('/api/stats', statsRouter);
+  app.use(withBasePath('/projects'), projectsRouter);
+  app.use(withBasePath('/tasks'), tasksRouter);
+  app.use(withBasePath('/archive'), archiveRouter);
+  app.use(withBasePath('/workday'), workdayRouter);
+  app.use(withBasePath('/import'), importRouter);
+  app.use(withBasePath('/stats'), statsRouter);
 
   app.use(errorHandler);
 
