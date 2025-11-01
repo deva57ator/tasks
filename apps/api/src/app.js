@@ -8,6 +8,7 @@ const cors = require('./middleware/cors');
 const config = require('./config');
 
 const healthRouter = require('./routes/health');
+const authRouter = require('./routes/auth');
 const projectsRouter = require('./routes/projects');
 const tasksRouter = require('./routes/tasks');
 const archiveRouter = require('./routes/archive');
@@ -38,6 +39,7 @@ function createApp() {
   app.use(rateLimit);
 
   app.use('/api/health', healthRouter);
+  app.use('/api/auth', authRouter);
 
   app.use(auth);
 

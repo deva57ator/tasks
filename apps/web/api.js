@@ -39,11 +39,6 @@ function getApiBaseUrl() {
   return base.endsWith('/') ? base.slice(0, -1) : base;
 }
 
-function getApiKey() {
-  const settings = getApiSettings();
-  return typeof settings.apiKey === 'string' ? settings.apiKey.trim() : '';
-}
-
 async function fetchWithTimeout(url, init, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -57,10 +52,6 @@ async function fetchWithTimeout(url, init, timeoutMs) {
 
 async function performRequest(path, { method = 'GET', body, headers = {}, timeout = DEFAULT_TIMEOUT, retries = 2, cacheKey, cacheTtl } = {}) {
   const baseUrl = getApiBaseUrl();
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    throw new ApiError('API ключ не задан');
-  }
 
   if (cacheKey) {
     const cached = responseCache.get(cacheKey);
@@ -77,9 +68,9 @@ async function performRequest(path, { method = 'GET', body, headers = {}, timeou
     method,
     headers: {
       Accept: 'application/json',
-      'X-API-Key': apiKey,
       ...headers
-    }
+    },
+    credentials: 'include'
   };
 
   if (body !== undefined) {
@@ -174,6 +165,30 @@ export function apiRequest(path, options) {
   return performRequest(path, options);
 }
 
+export function requestLoginCode(email) {
+  return performRequest('/auth/request-code', {
+    method: 'POST',
+    body: { email },
+    retries: 0
+  });
+}
+
+export function verifyLoginCode(email, code) {
+  return performRequest('/auth/verify-code', {
+    method: 'POST',
+    body: { email, code },
+    retries: 0
+  });
+}
+
+export function fetchSession() {
+  return performRequest('/auth/session', { method: 'GET', retries: 0 });
+}
+
+export function logout() {
+  return performRequest('/auth/logout', { method: 'POST', retries: 0 });
+}
+
 export function runServerAction(fn, { onSuccess, onError, silent = false } = {}) {
   const promise = Promise.resolve().then(fn);
   promise
@@ -220,4 +235,4 @@ export function normalizeTaskPatch(patch) {
   return payload;
 }
 
-export { ApiError, getApiBaseUrl, getApiKey };
+export { ApiError, getApiBaseUrl };
