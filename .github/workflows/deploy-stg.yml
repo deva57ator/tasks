@@ -1,9 +1,14 @@
-name: Deploy STG (auto on push)
+name: Deploy STG (auto on push / manual)
 
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Коммит/ветка/тег для деплоя (по умолчанию — текущий main)"
+        required: false
+        default: ""
 
 jobs:
   deploy-stg:
@@ -18,6 +23,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || 'main' }}
 
       - name: SSH agent
         uses: webfactory/ssh-agent@v0.9.0
@@ -32,7 +39,7 @@ jobs:
           ssh-keyscan -p "${SSH_PORT}" -H "${SSH_HOST}" >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      # ===== API → STG =====
+      # === API → STG ===
       - name: Copy API to STG (/srv/tasks-stg)
         shell: bash
         run: |
@@ -40,43 +47,50 @@ jobs:
           rsync -av --delete -e "ssh -p ${SSH_PORT}" \
             --filter='merge infra/rsync/api.filter' \
             ./ "${SSH_USER}@${SSH_HOST}:${PATH_STG}-tmp/"
-          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" 'bash -seu <<'\''EOSH'\''
-            DEPLOY_PATH="${PATH_STG}"
-            rm -rf "$DEPLOY_PATH/apps/api"
-            install -d "$DEPLOY_PATH/apps"
-            mv "'"'"${PATH_STG}"'"'-tmp/apps/api" "$DEPLOY_PATH/apps/"
-            rm -rf "'"'"${PATH_STG}"'"'-tmp"
 
-            # shim для systemd
-            install -d "$DEPLOY_PATH/src"
-            cat >"$DEPLOY_PATH/src/server.js" <<'JS'
-require('../apps/api/src/server');
-JS
+          # Всё ниже выполняется удалённо в одном bash-сеансе
+          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" DEPLOY_PATH="${PATH_STG}" bash -seu <<'EOSH'
+          set -euo pipefail
 
-            # зависимости видны из корня
-            ln -sfn "$DEPLOY_PATH/apps/api/node_modules" "$DEPLOY_PATH/node_modules"
-EOSH'
+          # Перекладываем дерево
+          rm -rf "$DEPLOY_PATH/apps/api"
+          install -d "$DEPLOY_PATH/apps"
+          mv "${DEPLOY_PATH}-tmp/apps/api" "$DEPLOY_PATH/apps/"
+          rm -rf "${DEPLOY_PATH}-tmp"
+
+          # Шим для systemd: /srv/.../src/server.js → apps/api/src/server
+          install -d "$DEPLOY_PATH/src"
+          cat >"$DEPLOY_PATH/src/server.js" <<'JS'
+          require('../apps/api/src/server');
+          JS
+
+          # Зависимости из корня: node_modules → apps/api/node_modules
+          ln -sfn "$DEPLOY_PATH/apps/api/node_modules" "$DEPLOY_PATH/node_modules"
+          EOSH
 
       - name: Install deps, migrate, restart
         shell: bash
         run: |
           : "${SSH_PORT:=22}"
-          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" 'bash -seu <<'\''EOSH'\''
-            cd "'"'"${PATH_STG}"'"'/apps/api"
-            npm ci --omit=dev --no-audit --no-fund || npm install --omit=dev --no-audit --no-fund
-            npm run migrate
-            sudo -n systemctl daemon-reload || true
-            sudo -n systemctl restart tasks-stg
-            for i in 1 2 3 4 5; do
-              sleep 2
-              curl -fsS http://127.0.0.1:3102/api/health >/dev/null && exit 0 || true
-            done
-            systemctl status --no-pager tasks-stg || true
-            journalctl -u tasks-stg -n 100 --no-pager || true
-            exit 1
-EOSH'
+          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" DEPLOY_PATH="${PATH_STG}" bash -seu <<'EOSH'
+          set -euo pipefail
+          cd "$DEPLOY_PATH/apps/api"
+          npm ci --omit=dev --no-audit --no-fund || npm install --omit=dev --no-audit --no-fund
+          npm run migrate
+          sudo -n systemctl daemon-reload || true
+          sudo -n systemctl restart tasks-stg
 
-      # ===== WEB → STG =====
+          # Ретраи локального health
+          for i in 1 2 3 4 5; do
+            sleep 2
+            curl -fsS http://127.0.0.1:3102/api/health >/dev/null && exit 0 || true
+          done
+          systemctl status --no-pager tasks-stg || true
+          journalctl -u tasks-stg -n 100 --no-pager || true
+          exit 1
+          EOSH
+
+      # === WEB → STG ===
       - name: Rsync WEB
         shell: bash
         run: |
