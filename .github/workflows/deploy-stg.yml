@@ -44,31 +44,37 @@ jobs:
             install -d \"\$DEPLOY_PATH/apps\"
             mv \"${PATH_STG}-tmp/apps/api\" \"\$DEPLOY_PATH/apps/\"
             rm -rf \"${PATH_STG}-tmp\"
-            # shim, чтобы systemd ExecStart=/usr/bin/node src/server.js работал с новым деревом
             install -d \"\$DEPLOY_PATH/src\"
-            cat >\"\$DEPLOY_PATH/src/server.js\" <<'JS'
-            // shim: запускаем реальный сервер из apps/api
-            require('../apps/api/src/server');
-            JS
+            printf "require('../apps/api/src/server')\n" >\"\$DEPLOY_PATH/src/server.js\"
+            ln -sfn \"\$DEPLOY_PATH/apps/api/node_modules\" \"\$DEPLOY_PATH/node_modules\"
           "
 
       - name: Install deps, migrate, restart
         run: |
           : "${SSH_PORT:=22}"
           ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "set -eu
-            cd '${PATH_STG}/apps/api'
+            DEPLOY_PATH='${PATH_STG}'
+            SERVICE='tasks-stg'
+            LOCAL_HEALTH_URL='http://127.0.0.1:3102/api/health'
+            cd \"\$DEPLOY_PATH/apps/api\"
             npm ci --omit=dev --no-audit --no-fund || npm install --omit=dev --no-audit --no-fund
+            ln -sfn \"\$DEPLOY_PATH/apps/api/node_modules\" \"\$DEPLOY_PATH/node_modules\"
             npm run migrate
             sudo -n systemctl daemon-reload || true
-            sudo -n systemctl restart tasks-stg
-            # локальный health с ретраями (даём времени подняться)
+            sudo -n systemctl restart \"\$SERVICE\"
+            success=0
             for i in 1 2 3 4 5; do
               sleep 2
-              if curl -fsS http://127.0.0.1:3102/api/health >/dev/null; then exit 0; fi
+              if curl -fsS \"\$LOCAL_HEALTH_URL\" >/dev/null; then
+                success=1
+                break
+              fi
             done
-            systemctl status --no-pager tasks-stg || true
-            journalctl -u tasks-stg -n 80 --no-pager || true
-            exit 1
+            if [ \"\$success\" -ne 1 ]; then
+              systemctl status --no-pager \"\$SERVICE\" || true
+              journalctl -u \"\$SERVICE\" -n 100 --no-pager || true
+              exit 1
+            fi
           "
 
       # ===== WEB → STG =====
@@ -80,8 +86,17 @@ jobs:
 
       - name: External health (via Nginx)
         run: |
+          success=0
           for i in 1 2 3; do
-            if curl -fsS https://parkhomenko.space/tasks-stg/api/health >/dev/null; then exit 0; fi
+            if curl -fsS https://parkhomenko.space/tasks-stg/api/health >/dev/null; then
+              success=1
+              break
+            fi
             sleep 2
           done
-          exit 22
+          if [ "$success" -ne 1 ]; then
+            : "${SSH_PORT:=22}"
+            ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "systemctl status --no-pager tasks-stg || true" || true
+            ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "journalctl -u tasks-stg -n 100 --no-pager || true" || true
+            exit 22
+          fi
