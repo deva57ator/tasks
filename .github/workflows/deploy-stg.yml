@@ -40,12 +40,10 @@ jobs:
           rsync -av --delete -e "ssh -p ${SSH_PORT}" \
             --filter='merge infra/rsync/api.filter' \
             ./ "${SSH_USER}@${SSH_HOST}:${PATH_STG}-tmp/"
-
           ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "set -eu
             DEPLOY_PATH='${PATH_STG}'
-            rm -rf \"\$DEPLOY_PATH/apps/api\"
-            install -d \"\$DEPLOY_PATH/apps\"
-            mv \"${PATH_STG}-tmp/apps/api\" \"\$DEPLOY_PATH/apps/\"
+            rm -rf \"\$DEPLOY_PATH/src\"
+            mv \"${PATH_STG}-tmp/apps/api/src\" \"\$DEPLOY_PATH/src\"
             rm -rf \"${PATH_STG}-tmp\"
           "
 
