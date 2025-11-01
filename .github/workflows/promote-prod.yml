@@ -57,6 +57,9 @@ jobs:
             install -d \"\$DEPLOY_PATH/apps\"
             mv \"${PATH_PROD}-tmp/apps/api\" \"\$DEPLOY_PATH/apps/\"
             rm -rf \"${PATH_PROD}-tmp\"
+            install -d \"\$DEPLOY_PATH/src\"
+            printf "require('../apps/api/src/server')\n" >\"\$DEPLOY_PATH/src/server.js\"
+            ln -sfn \"\$DEPLOY_PATH/apps/api/node_modules\" \"\$DEPLOY_PATH/node_modules\"
           "
 
       # === WEB → PROD ===
@@ -72,18 +75,43 @@ jobs:
         run: |
           : "${SSH_PORT:=22}"
           ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "set -eu
-            cd '${PATH_PROD}/apps/api'
-            if [ -f package-lock.json ]; then
-              npm ci --omit=dev --no-audit --no-fund
-            else
-              npm install --omit=dev --no-audit --no-fund
-            fi
+            DEPLOY_PATH='${PATH_PROD}'
+            SERVICE='tasks-prod'
+            LOCAL_HEALTH_URL='http://127.0.0.1:3101/api/health'
+            cd \"\$DEPLOY_PATH/apps/api\"
+            npm ci --omit=dev --no-audit --no-fund || npm install --omit=dev --no-audit --no-fund
+            ln -sfn \"\$DEPLOY_PATH/apps/api/node_modules\" \"\$DEPLOY_PATH/node_modules\"
             npm run migrate
             sudo -n systemctl daemon-reload || true
-            sudo -n systemctl restart tasks-prod
-            systemctl status --no-pager tasks-prod | tail -n +1 || true
+            sudo -n systemctl restart \"\$SERVICE\"
+            success=0
+            for i in 1 2 3 4 5; do
+              sleep 2
+              if curl -fsS \"\$LOCAL_HEALTH_URL\" >/dev/null; then
+                success=1
+                break
+              fi
+            done
+            if [ \"\$success\" -ne 1 ]; then
+              systemctl status --no-pager \"\$SERVICE\" || true
+              journalctl -u \"\$SERVICE\" -n 100 --no-pager || true
+              exit 1
+            fi
           "
 
       - name: Health check PROD
         run: |
-          curl -fsS https://parkhomenko.space/tasks/api/health >/dev/null
+          success=0
+          for i in 1 2 3; do
+            if curl -fsS https://parkhomenko.space/tasks/api/health >/dev/null; then
+              success=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$success" -ne 1 ]; then
+            : "${SSH_PORT:=22}"
+            ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "systemctl status --no-pager tasks-prod || true" || true
+            ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "journalctl -u tasks-prod -n 100 --no-pager || true" || true
+            exit 22
+          fi

@@ -1,10 +1,20 @@
 const pinoHttp = require('pino-http');
 const logger = require('../lib/logger');
+const config = require('../config');
+
+const healthPath = `${config.basePath || ''}/health`;
+
+function isHealthRequest(url = '') {
+  if (!url) {
+    return false;
+  }
+  return url === healthPath || url.startsWith(`${healthPath}?`) || url.startsWith(`${healthPath}/`);
+}
 
 const requestLogger = pinoHttp({
   logger,
   autoLogging: {
-    ignore: (req) => req.url.includes('/api/health')
+    ignore: (req) => isHealthRequest(req.url)
   },
   customSuccessMessage: function () {
     return 'request completed';
