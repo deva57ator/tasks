@@ -1,8 +1,20 @@
 const express = require('express');
+const { z } = require('zod');
 const workdays = require('../services/workdays');
 const tasks = require('../services/tasks');
 const archive = require('../services/archive');
 const { nowIso } = require('../lib/time');
+const validate = require('../middleware/validate');
+
+const workdayPayloadSchema = z.object({
+  workday: z.object({
+    id: z.string().trim().min(1)
+  }).passthrough()
+});
+
+const workdayCloseSchema = workdayPayloadSchema.extend({
+  completedTaskIds: z.array(z.string().trim().min(1)).optional()
+});
 
 const router = express.Router();
 
@@ -15,12 +27,9 @@ router.get('/current', async (req, res, next) => {
   }
 });
 
-router.post('/sync', async (req, res, next) => {
+router.post('/sync', validate(workdayPayloadSchema), async (req, res, next) => {
   try {
     const payload = req.body || {};
-    if (!payload.workday || !payload.workday.id) {
-      return res.status(400).json({ error: { code: 'validation_error', message: 'workday.id is required' } });
-    }
     const workdayRecord = await workdays.upsert({
       ...payload.workday,
       closedAt: payload.workday.closedAt || null
@@ -31,12 +40,9 @@ router.post('/sync', async (req, res, next) => {
   }
 });
 
-router.post('/close', async (req, res, next) => {
+router.post('/close', validate(workdayCloseSchema), async (req, res, next) => {
   try {
     const payload = req.body || {};
-    if (!payload.workday || !payload.workday.id) {
-      return res.status(400).json({ error: { code: 'validation_error', message: 'workday.id is required' } });
-    }
     const closedAt = payload.workday.closedAt || nowIso();
     const workdayRecord = await workdays.upsert({
       ...payload.workday,

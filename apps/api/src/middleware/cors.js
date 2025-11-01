@@ -7,6 +7,7 @@ function cors(req, res, next) {
   res.set('Access-Control-Allow-Origin', config.corsOrigin);
   res.set('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type,X-API-Key');
+  res.set('Vary', 'Origin');
   if (req.method === 'OPTIONS') {
     return res.status(204).send('');
   }

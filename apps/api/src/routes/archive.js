@@ -1,13 +1,19 @@
 const express = require('express');
+const { z } = require('zod');
 const archive = require('../services/archive');
-const { parseLimit, parseOffset } = require('../lib/pagination');
+const validate = require('../middleware/validate');
+
+const paginationSchema = z.object({
+  limit: z.coerce.number().int().min(0).max(200).optional(),
+  offset: z.coerce.number().int().min(0).optional()
+});
 
 const router = express.Router();
 
-router.get('/', async (req, res, next) => {
+router.get('/', validate(paginationSchema, 'query'), async (req, res, next) => {
   try {
-    const limit = parseLimit(req.query.limit);
-    const offset = parseOffset(req.query.offset);
+    const limit = req.query.limit;
+    const offset = req.query.offset ?? 0;
     const result = await archive.list({ limit, offset });
     res.json(result);
   } catch (err) {

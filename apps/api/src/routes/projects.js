@@ -1,13 +1,29 @@
 const express = require('express');
+const { z } = require('zod');
 const projects = require('../services/projects');
-const { parseLimit, parseOffset } = require('../lib/pagination');
+const validate = require('../middleware/validate');
+const { NotFoundError } = require('../lib/errors');
+
+const paginationSchema = z.object({
+  limit: z.coerce.number().int().min(0).max(200).optional(),
+  offset: z.coerce.number().int().min(0).optional()
+});
+
+const projectPayloadSchema = z.object({
+  title: z.string().trim().min(1, 'title is required'),
+  emoji: z.string().trim().max(4).optional().nullable()
+});
+
+const projectUpdateSchema = projectPayloadSchema.partial().refine((data) => Object.keys(data).length > 0, {
+  message: 'At least one field must be provided'
+});
 
 const router = express.Router();
 
-router.get('/', async (req, res, next) => {
+router.get('/', validate(paginationSchema, 'query'), async (req, res, next) => {
   try {
-    const limit = parseLimit(req.query.limit);
-    const offset = parseOffset(req.query.offset);
+    const limit = req.query.limit;
+    const offset = req.query.offset ?? 0;
     const result = await projects.list({ limit, offset });
     res.json(result);
   } catch (err) {
@@ -15,11 +31,8 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-router.post('/', async (req, res, next) => {
+router.post('/', validate(projectPayloadSchema), async (req, res, next) => {
   try {
-    if (!req.body || !req.body.title) {
-      return res.status(400).json({ error: { code: 'validation_error', message: 'title is required' } });
-    }
     const created = await projects.create(req.body);
     res.status(201).json(created);
   } catch (err) {
@@ -27,11 +40,11 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-router.put('/:id', async (req, res, next) => {
+router.put('/:id', validate(projectUpdateSchema), async (req, res, next) => {
   try {
     const updated = await projects.update(req.params.id, req.body || {});
     if (!updated) {
-      return res.status(404).json({ error: { code: 'not_found', message: 'Project not found' } });
+      throw new NotFoundError('Project not found');
     }
     res.json(updated);
   } catch (err) {

@@ -1,12 +1,13 @@
 const config = require('../config');
+const { UnauthorizedError, ConfigError } = require('../lib/errors');
 
-function authMiddleware(req, res, next) {
+function authMiddleware(req, _res, next) {
   if (!config.apiKey) {
-    return res.status(500).json({ error: { code: 'config_error', message: 'API key is not configured' } });
+    return next(new ConfigError('API key is not configured'));
   }
   const headerKey = req.headers['x-api-key'];
   if (!headerKey || headerKey !== config.apiKey) {
-    return res.status(401).json({ error: { code: 'unauthorized', message: 'Invalid API key' } });
+    return next(new UnauthorizedError('Invalid API key'));
   }
   return next();
 }

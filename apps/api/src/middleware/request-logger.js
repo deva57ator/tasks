@@ -1,12 +1,22 @@
+const pinoHttp = require('pino-http');
 const logger = require('../lib/logger');
 
-function requestLogger(req, res, next) {
-  const started = Date.now();
-  res.on('finish', () => {
-    const ms = Date.now() - started;
-    logger.info(`${req.method} ${req.originalUrl || req.url} ${res.statusCode} ${ms}ms`);
-  });
-  next();
-}
+const requestLogger = pinoHttp({
+  logger,
+  autoLogging: {
+    ignore: (req) => req.url.includes('/api/health')
+  },
+  customSuccessMessage: function () {
+    return 'request completed';
+  },
+  customErrorMessage: function () {
+    return 'request failed';
+  },
+  customLogLevel: function (req, res, err) {
+    if (res.statusCode >= 500 || err) return 'error';
+    if (res.statusCode >= 400) return 'warn';
+    return 'info';
+  }
+});
 
 module.exports = requestLogger;
