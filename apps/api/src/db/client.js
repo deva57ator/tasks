@@ -1,118 +1,113 @@
-const { execFile } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const Database = require('better-sqlite3');
 const config = require('../config');
+const logger = require('../lib/logger');
 
-const SQLITE_BIN = 'sqlite3';
-let initialized = false;
+let dbInstance;
 
-function ensureDir(filePath) {
+function ensureDirectory(filePath) {
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
 }
 
-async function ensureInitialized() {
-  if (initialized) return;
-  ensureDir(config.dbPath);
-  await exec(['-cmd', 'PRAGMA journal_mode=WAL;', config.dbPath, 'SELECT 1;']);
-  initialized = true;
-}
-
-function exec(args, input) {
-  return new Promise((resolve, reject) => {
-    execFile(SQLITE_BIN, args, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
-      if (err) {
-        err.stderr = stderr;
-        return reject(err);
-      }
-      resolve(stdout);
-    }).stdin?.end(input);
+function createDatabase() {
+  ensureDirectory(config.dbPath);
+  const database = new Database(config.dbPath, {
+    fileMustExist: false,
+    timeout: config.dbBusyTimeoutMs
   });
+  database.pragma('journal_mode = WAL');
+  database.pragma('foreign_keys = ON');
+  database.pragma(`busy_timeout = ${config.dbBusyTimeoutMs}`);
+  return database;
 }
 
-function formatValue(value) {
-  if (value === null || value === undefined) return 'NULL';
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value)) return 'NULL';
-    return String(value);
+function getDb() {
+  if (!dbInstance) {
+    dbInstance = createDatabase();
+    logger.debug({ dbPath: config.dbPath }, 'SQLite connection opened');
   }
-  if (typeof value === 'boolean') {
-    return value ? '1' : '0';
-  }
-  if (value instanceof Date) {
-    return `'${value.toISOString()}'`;
-  }
-  if (typeof value === 'object') {
-    return `'${escapeString(JSON.stringify(value))}'`;
-  }
-  return `'${escapeString(String(value))}'`;
+  return dbInstance;
 }
 
-function escapeString(value) {
-  return value.replace(/'/g, "''");
+function run(sql, params = []) {
+  const statement = getDb().prepare(sql);
+  statement.run(...normalizeParams(params));
 }
 
-function bindParams(sql, params = []) {
-  let index = 0;
-  return sql.replace(/\?/g, () => {
-    if (index >= params.length) {
-      throw new Error('Not enough parameters for SQL statement');
-    }
-    const val = formatValue(params[index]);
-    index += 1;
-    return val;
+function get(sql, params = []) {
+  const statement = getDb().prepare(sql);
+  return statement.get(...normalizeParams(params)) || null;
+}
+
+function all(sql, params = []) {
+  const statement = getDb().prepare(sql);
+  return statement.all(...normalizeParams(params));
+}
+
+function normalizeParams(params) {
+  if (!Array.isArray(params) && params && typeof params === 'object') {
+    return [params];
+  }
+  return Array.isArray(params) ? params : [];
+}
+
+async function transaction(handler) {
+  const database = getDb();
+  await Promise.resolve().then(() => {
+    database.exec('BEGIN IMMEDIATE');
   });
-}
 
-async function run(sql, params = []) {
-  await ensureInitialized();
-  const statement = `PRAGMA foreign_keys=ON; ${bindParams(sql, params)}`;
-  await exec([config.dbPath, statement]);
-}
-
-async function get(sql, params = []) {
-  await ensureInitialized();
-  const statement = bindParams(sql, params);
-  const output = await exec(['-json', config.dbPath, `PRAGMA foreign_keys=ON; ${statement}`]);
-  const parsed = output ? JSON.parse(output) : [];
-  return parsed[0] || null;
-}
-
-async function all(sql, params = []) {
-  await ensureInitialized();
-  const statement = bindParams(sql, params);
-  const output = await exec(['-json', config.dbPath, `PRAGMA foreign_keys=ON; ${statement}`]);
-  return output ? JSON.parse(output) : [];
-}
-
-async function transaction(builder) {
-  await ensureInitialized();
-  const statements = [];
-  await builder({
+  const txContext = {
     run: (sql, params = []) => {
-      statements.push(bindParams(sql, params));
+      database.prepare(sql).run(...normalizeParams(params));
+    },
+    get: (sql, params = []) => {
+      return database.prepare(sql).get(...normalizeParams(params)) || null;
+    },
+    all: (sql, params = []) => {
+      return database.prepare(sql).all(...normalizeParams(params));
     }
-  });
-  if (!statements.length) return;
-  const body = statements.join('; ');
-  const combined = `PRAGMA foreign_keys=ON; BEGIN IMMEDIATE; ${body}; COMMIT;`;
-  await exec([config.dbPath, combined]);
+  };
+
+  try {
+    await handler(txContext);
+    database.exec('COMMIT');
+  } catch (err) {
+    try {
+      database.exec('ROLLBACK');
+    } catch (rollbackErr) {
+      logger.error({ err: rollbackErr }, 'Failed to rollback transaction');
+    }
+    throw err;
+  }
 }
 
-async function runScript(filePath) {
-  await ensureInitialized();
-  const full = path.resolve(filePath);
-  await exec(['-cmd', 'PRAGMA foreign_keys=ON;', config.dbPath, `.read ${full}`]);
+function runScript(filePath) {
+  const fullPath = path.resolve(filePath);
+  const sql = fs.readFileSync(fullPath, 'utf8');
+  if (!sql.trim()) return;
+  getDb().exec(sql);
 }
+
+process.on('exit', () => {
+  if (dbInstance) {
+    try {
+      dbInstance.close();
+      logger.debug('SQLite connection closed');
+    } catch (err) {
+      logger.warn({ err }, 'Failed to close SQLite connection');
+    }
+  }
+});
 
 module.exports = {
-  run,
-  get,
-  all,
+  run: async (sql, params = []) => run(sql, params),
+  get: async (sql, params = []) => get(sql, params),
+  all: async (sql, params = []) => all(sql, params),
   transaction,
-  bindParams,
-  formatValue,
   runScript
 };

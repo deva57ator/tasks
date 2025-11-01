@@ -6,9 +6,18 @@ After=network.target
 Type=simple
 WorkingDirectory=/srv/tasks-prod/apps/api
 EnvironmentFile=/etc/tasks-prod.env
+Environment=NODE_ENV=production
+Environment=PORT=3101
+Environment=HOST=127.0.0.1
+Environment=REQUEST_TIMEOUT_MS=15000
+ExecStartPre=/usr/bin/env node scripts/migrate.js
 ExecStart=/usr/bin/node src/server.js
-Restart=always
+ExecStartPost=/bin/sh -c 'sleep 2 && curl -fsS http://127.0.0.1:3101/api/health > /dev/null'
+Restart=on-failure
 RestartSec=5
+KillMode=process
+TimeoutStopSec=30
+RuntimeDirectory=tasks-prod
 StandardOutput=journal
 StandardError=journal
 

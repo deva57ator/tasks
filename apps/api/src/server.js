@@ -6,13 +6,21 @@ const logger = require('./lib/logger');
 async function start() {
   const app = createApp();
   const server = http.createServer(app);
+  server.on('error', (error) => {
+    logger.error({ err: error }, 'HTTP server error');
+  });
+
   server.listen(config.port, config.host, () => {
-    logger.info(`Server listening on http://${config.host}:${config.port}`);
+    logger.info({ host: config.host, port: config.port }, 'Server listening');
   });
 
   const shutdown = () => {
     logger.info('Shutting down server...');
-    server.close(() => {
+    server.close((err) => {
+      if (err) {
+        logger.error({ err }, 'Error while closing HTTP server');
+        process.exit(1);
+      }
       process.exit(0);
     });
   };
@@ -22,6 +30,6 @@ async function start() {
 }
 
 start().catch((err) => {
-  logger.error('Failed to start server', err);
+  logger.fatal({ err }, 'Failed to start server');
   process.exit(1);
 });
