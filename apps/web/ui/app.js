@@ -61,6 +61,19 @@ function setApiSettings(next) {
   persistApiSettings(apiSettings);
 }
 
+const DEFAULT_PROJECT_EMOJI = '📁';
+const SPRINT_UNASSIGNED_KEY = '__unassigned__';
+
+let tasks = [];
+let projects = [];
+let archivedTasks = [];
+let workdayState = null;
+let currentView = 'all';
+let currentProjectId = null;
+let selectedTaskId = null;
+let pendingEditId = null;
+const sprintVisibleProjects = new Map();
+
 function runServerAction(fn,{onSuccess,onError:customOnError,silent=false}={}){return runServerActionCore(fn,{onSuccess,onError(err){if(!silent)handleApiError(err);if(typeof customOnError==='function')customOnError(err);},silent:true});}
 onStorageModeChange(mode=>{storageMode=mode});
 onApiSettingsChange(next=>{apiSettings=next});
@@ -84,6 +97,7 @@ const WorkdayUI={
   closeAction:document.getElementById('workdayDialogDone'),
   title:document.getElementById('workdayDialogTitle')
 };
+const ApiSettingsDialog={overlay:document.getElementById('apiSettingsOverlay'),dialog:document.getElementById('apiSettingsDialog'),form:document.getElementById('apiSettingsForm'),input:document.getElementById('apiSettingsBase'),error:document.getElementById('apiSettingsError'),cancel:document.getElementById('apiSettingsCancel'),close:document.getElementById('apiSettingsClose')};
 
 const WORKDAY_REFRESH_INTERVAL=60000;
 
@@ -113,11 +127,13 @@ let lastWorkdaySyncPayload=null;
 
 function handleApiError(err,fallback){if(err&&err.status===401){handleAuthUnauthorized({message:'Сессия истекла, запросите новый код.'});toast('Сессия истекла. Войдите снова.');return;}const message=err&&err.message?err.message:fallback||'Ошибка при работе с API';console.error(err);toast(message)}
 
+function setApiSettingsError(message){if(!ApiSettingsDialog.error)return;ApiSettingsDialog.error.textContent=message||'';if(ApiSettingsDialog.input){if(message){ApiSettingsDialog.input.setAttribute('aria-invalid','true')}else{ApiSettingsDialog.input.removeAttribute('aria-invalid')}}}
 
+function openApiSettingsDialog(){if(!ApiSettingsDialog.overlay)return;const settings=getApiSettings();if(ApiSettingsDialog.input){ApiSettingsDialog.input.value=settings?.baseUrl||'';setTimeout(()=>{try{ApiSettingsDialog.input.focus({preventScroll:true})}catch{ApiSettingsDialog.input.focus()}},60);}setApiSettingsError('');ApiSettingsDialog.overlay.classList.add('is-open');ApiSettingsDialog.overlay.setAttribute('aria-hidden','false');document.body.classList.add('api-settings-open')}
 
+function closeApiSettingsDialog(){if(!ApiSettingsDialog.overlay)return;ApiSettingsDialog.overlay.classList.remove('is-open');ApiSettingsDialog.overlay.setAttribute('aria-hidden','true');document.body.classList.remove('api-settings-open');setApiSettingsError('')}
 
-
-
+async function submitApiSettingsForm(event){event?.preventDefault?.();if(!ApiSettingsDialog.input){closeApiSettingsDialog();return}const rawValue=ApiSettingsDialog.input.value||'';const trimmed=rawValue.trim();if(!trimmed){setApiSettingsError('Укажите базовый URL API');ApiSettingsDialog.input.focus();return}const valid=/^(https?:\/\/|\/.+)/i.test(trimmed);if(!valid){setApiSettingsError('Используйте абсолютный URL или путь, например /tasks/api');ApiSettingsDialog.input.focus();return}let normalized=trimmed;while(normalized.length>1&&normalized.endsWith('/')){normalized=normalized.slice(0,-1)}setApiSettings({baseUrl:normalized});setApiSettingsError('');closeApiSettingsDialog();toast('Настройки API сохранены');if(isServerMode()){try{await refreshDataForCurrentMode({silent:true})}catch(err){handleApiError(err)}}}
 
 function normalizeTaskTree(list,parentId=null){if(!Array.isArray(list))return[];const normalized=[];for(const item of list){if(!item||typeof item!=='object')continue;const node={id:typeof item.id==='string'?item.id:uid(),title:typeof item.title==='string'?item.title:'',done:item.done===true,due:typeof item.due==='string'&&item.due?item.due:null,project:typeof item.project==='string'&&item.project?item.project:null,notes:typeof item.notes==='string'?item.notes:'',timeSpent:Number.isFinite(Number(item.timeSpent))?Math.max(0,Number(item.timeSpent)):0,parentId:parentId,children:normalizeTaskTree(item.children||[],typeof item.id==='string'?item.id:null),collapsed:item.collapsed===true,timerActive:false,timerStart:null};normalized.push(node)}return normalized}
 
@@ -126,6 +142,9 @@ function ensureTaskParentIds(list,parentId=null){if(!Array.isArray(list))return;
 function normalizeProjectPayload(project){return{id:project.id,title:project.title||'',emoji:typeof project.emoji==='string'&&project.emoji.trim()?project.emoji.trim():null}}
 
 function normalizeArchivePayload(items){if(!Array.isArray(items))return[];return items.map(entry=>entry&&entry.payload?entry.payload:entry).filter(Boolean)}
+
+function normalizeProjectsList(list,{persist=false}={}){if(!Array.isArray(list)){if(persist)ProjectsStore.write([]);return [];}const normalized=[];const seenIds=new Set();let changed=false;for(const item of list){if(!item||typeof item!=='object'){changed=true;continue;}let id=typeof item.id==='string'&&item.id.trim()?item.id.trim():uid();if(seenIds.has(id)){id=uid();changed=true;}seenIds.add(id);const titleRaw=typeof item.title==='string'?item.title:'';const title=titleRaw.trim()||'Без названия';const emoji=typeof item.emoji==='string'&&item.emoji.trim()?item.emoji.trim():null;normalized.push({id,title,emoji});if(id!==item.id||title!==item.title||emoji!==(typeof item.emoji==='string'?item.emoji.trim()||null:null)){changed=true;}}
+if(changed){list.splice(0,list.length,...normalized);}if(persist){ProjectsStore.write(list);}return list}
 
 function updateStorageToggle({loading=false}={}){const btn=document.getElementById('storageToggle');if(!btn)return;btn.dataset.mode=isServerMode()?'server':'local';btn.classList.toggle('is-loading',loading);if(loading){btn.textContent='…';btn.setAttribute('aria-busy','true')}else{btn.textContent=isServerMode()?'API':'LS';btn.removeAttribute('aria-busy')}const label=isServerMode()?'Режим: серверный API':'Режим: localStorage';btn.title=label;btn.setAttribute('aria-label',loading?`${label}. Загрузка…`:label)}
 function updateAuthControls(state){const logout=document.getElementById('logoutBtn');const settingsLogout=document.getElementById('apiSettingsLogout');const isAuthed=state&&state.status==='authenticated';const email=state&&state.user&&state.user.email?state.user.email:'';if(logout){logout.disabled=!isAuthed;logout.setAttribute('aria-disabled',isAuthed?'false':'true');logout.classList.toggle('is-disabled',!isAuthed);logout.title=isAuthed&&email?`Выйти (${email})`:'Выйти';logout.setAttribute('aria-label',logout.title)}if(settingsLogout){settingsLogout.disabled=!isAuthed;settingsLogout.setAttribute('aria-disabled',isAuthed?'false':'true');settingsLogout.classList.toggle('is-disabled',!isAuthed)}}
