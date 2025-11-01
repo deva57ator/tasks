@@ -16,6 +16,68 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div class="auth-overlay" id="authOverlay" aria-hidden="true">
+    <div class="auth-panel" id="authPanel" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+      <button
+        type="button"
+        class="auth-theme-toggle"
+        id="authThemeToggle"
+        aria-label="Переключить тему"
+        title="Переключить тему"
+      ></button>
+      <div class="auth-content">
+        <div class="auth-logo">Tasks</div>
+        <div class="auth-step" id="authStepEmail" data-step="email">
+          <h1 class="auth-title" id="authTitle">Вход</h1>
+          <p class="auth-description">Доступ доступен только для e-mail <strong>deva57ator@gmail.com</strong>.</p>
+          <form class="auth-form" id="authEmailForm" novalidate>
+            <label class="auth-field">
+              <span class="auth-label">E-mail</span>
+              <input
+                type="email"
+                class="auth-input"
+                id="authEmailInput"
+                placeholder="deva57ator@gmail.com"
+                autocomplete="email"
+                required
+              />
+            </label>
+            <div class="auth-error" id="authEmailError" role="alert" aria-live="polite"></div>
+            <button type="submit" class="auth-primary">Получить код</button>
+          </form>
+        </div>
+        <div class="auth-step" id="authStepCode" data-step="code" aria-hidden="true">
+          <h1 class="auth-title">Введите код</h1>
+          <p class="auth-description" id="authCodeMessage">
+            На почту <span class="auth-email" id="authEmailDisplay"></span> отправлен одноразовый код.
+          </p>
+          <form class="auth-form" id="authCodeForm" novalidate>
+            <label class="auth-field">
+              <span class="auth-label">Код</span>
+              <input
+                type="text"
+                inputmode="numeric"
+                pattern="[0-9]*"
+                maxlength="12"
+                class="auth-input"
+                id="authCodeInput"
+                autocomplete="one-time-code"
+                required
+              />
+            </label>
+            <div class="auth-error" id="authCodeError" role="alert" aria-live="polite"></div>
+            <button type="submit" class="auth-primary">Войти</button>
+          </form>
+          <div class="auth-actions">
+            <button type="button" class="auth-secondary" id="authResendBtn">Выслать код ещё раз</button>
+            <button type="button" class="auth-link" id="authChangeEmailBtn">Изменить e-mail</button>
+          </div>
+          <div class="auth-hint" id="authDebugHint"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <aside class="sidebar">
     <div>
       <h2>Отображения</h2>
@@ -92,6 +154,13 @@
             id="apiSettingsBtn"
             aria-label="Настройки API"
             title="Настройки API"
+          ></button>
+          <button
+            type="button"
+            class="icon-btn logout-btn"
+            id="logoutBtn"
+            aria-label="Выйти"
+            title="Выйти"
           ></button>
           <button
             type="button"
@@ -200,14 +269,10 @@
     <div class="api-settings-dialog" id="apiSettingsDialog" role="dialog" aria-modal="true" aria-labelledby="apiSettingsTitle">
       <button type="button" class="api-settings-close" id="apiSettingsClose" aria-label="Закрыть окно">×</button>
       <div class="api-settings-header">
-        <div class="api-settings-title" id="apiSettingsTitle">Настройки API</div>
-        <div class="api-settings-description">Укажите ключ и базовый URL для запросов.</div>
+        <div class="api-settings-title" id="apiSettingsTitle">Подключение</div>
+        <div class="api-settings-description">Укажите базовый URL API и управляйте сессией.</div>
       </div>
       <form class="api-settings-form" id="apiSettingsForm">
-        <label class="api-settings-field">
-          <span class="api-settings-label">API ключ</span>
-          <input type="text" class="api-settings-input" id="apiSettingsKey" placeholder="Введите ключ" autocomplete="off" />
-        </label>
         <label class="api-settings-field">
           <span class="api-settings-label">Base URL API</span>
           <input type="text" class="api-settings-input" id="apiSettingsBase" placeholder="/tasks/api" autocomplete="off" />
@@ -218,6 +283,9 @@
           <button type="submit" class="api-settings-primary" id="apiSettingsSave">Сохранить</button>
         </div>
       </form>
+      <div class="api-settings-footer">
+        <button type="button" class="api-settings-logout" id="apiSettingsLogout">Выйти из аккаунта</button>
+      </div>
     </div>
   </div>
 

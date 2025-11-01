@@ -17,7 +17,16 @@ import {
   onStorageModeChange,
   onApiSettingsChange
 } from '../state.js';
-import { apiRequest, runServerAction as runServerActionCore, mapTaskForServer, normalizeTaskPatch, getApiBaseUrl, getApiKey } from '../api.js';
+import { apiRequest, runServerAction as runServerActionCore, mapTaskForServer, normalizeTaskPatch, getApiBaseUrl } from '../api.js';
+import {
+  initAuth,
+  ensureAuthenticated,
+  handleUnauthorized as handleAuthUnauthorized,
+  onAuthStateChange,
+  getAuthState,
+  performLogout,
+  syncTheme as syncAuthTheme
+} from '../auth.js';
 import { $, $$, uid } from '../utils/dom.js';
 
 let storageMode = getStorageMode();
@@ -55,6 +64,7 @@ function setApiSettings(next) {
 function runServerAction(fn,{onSuccess,onError:customOnError,silent=false}={}){return runServerActionCore(fn,{onSuccess,onError(err){if(!silent)handleApiError(err);if(typeof customOnError==='function')customOnError(err);},silent:true});}
 onStorageModeChange(mode=>{storageMode=mode});
 onApiSettingsChange(next=>{apiSettings=next});
+onAuthStateChange(state=>{updateAuthControls(state);if(state&&state.status==='authenticated'&&isServerMode()){refreshDataForCurrentMode({silent:true})}});
 const WorkdayUI={
   bar:document.getElementById('workdayBar'),
   done:document.getElementById('workdayDone'),
@@ -101,7 +111,7 @@ let lastWorkdaySyncPayload=null;
 
 
 
-function handleApiError(err,fallback){const message=err&&err.message?err.message:fallback||'Ошибка при работе с API';console.error(err);toast(message)}
+function handleApiError(err,fallback){if(err&&err.status===401){handleAuthUnauthorized({message:'Сессия истекла, запросите новый код.'});toast('Сессия истекла. Войдите снова.');return;}const message=err&&err.message?err.message:fallback||'Ошибка при работе с API';console.error(err);toast(message)}
 
 
 
@@ -118,18 +128,19 @@ function normalizeProjectPayload(project){return{id:project.id,title:project.tit
 function normalizeArchivePayload(items){if(!Array.isArray(items))return[];return items.map(entry=>entry&&entry.payload?entry.payload:entry).filter(Boolean)}
 
 function updateStorageToggle({loading=false}={}){const btn=document.getElementById('storageToggle');if(!btn)return;btn.dataset.mode=isServerMode()?'server':'local';btn.classList.toggle('is-loading',loading);if(loading){btn.textContent='…';btn.setAttribute('aria-busy','true')}else{btn.textContent=isServerMode()?'API':'LS';btn.removeAttribute('aria-busy')}const label=isServerMode()?'Режим: серверный API':'Режим: localStorage';btn.title=label;btn.setAttribute('aria-label',loading?`${label}. Загрузка…`:label)}
+function updateAuthControls(state){const logout=document.getElementById('logoutBtn');const settingsLogout=document.getElementById('apiSettingsLogout');const isAuthed=state&&state.status==='authenticated';const email=state&&state.user&&state.user.email?state.user.email:'';if(logout){logout.disabled=!isAuthed;logout.setAttribute('aria-disabled',isAuthed?'false':'true');logout.classList.toggle('is-disabled',!isAuthed);logout.title=isAuthed&&email?`Выйти (${email})`:'Выйти';logout.setAttribute('aria-label',logout.title)}if(settingsLogout){settingsLogout.disabled=!isAuthed;settingsLogout.setAttribute('aria-disabled',isAuthed?'false':'true');settingsLogout.classList.toggle('is-disabled',!isAuthed)}}
 
 function finalizeDataLoad(){tasks=migrate(tasks);ensureTaskParentIds(tasks,null);normalizeProjectsList(projects,{persist:false});archivedTasks=normalizeArchiveList(archivedTasks,{persist:false});pendingServerCreates.clear();renderProjects();render();updateWorkdayUI();ensureWorkdayRefreshLoop();dataInitialized=true}
 
 async function loadDataFromLocal(){tasks=Store.read();tasks=migrate(tasks);ensureTaskParentIds(tasks,null);projects=ProjectsStore.read();if(!Array.isArray(projects))projects=[];normalizeProjectsList(projects,{persist:!isServerMode()});archivedTasks=normalizeArchiveList(ArchiveStore.read(),{persist:!isServerMode()});workdayState=WorkdayStore.read();if(workdayState&&(!workdayState.id||typeof workdayState.start!=='number'||typeof workdayState.end!=='number'))workdayState=null;finalizeDataLoad();updateStorageToggle()}
 
-async function loadDataFromServer({silent=false}={}){if(isDataLoading)return;isDataLoading=true;updateStorageToggle({loading:true});try{const [tasksPayload,projectsPayload,archivePayload,workdayPayload]=await Promise.all([apiRequest('/tasks'),apiRequest(`/projects?limit=${API_DEFAULT_LIMIT}`),apiRequest(`/archive?limit=${API_DEFAULT_LIMIT}`),apiRequest('/workday/current')]);const serverTasks=Array.isArray(tasksPayload?.items)?tasksPayload.items:Array.isArray(tasksPayload)?tasksPayload:[];tasks=normalizeTaskTree(serverTasks,null);projects=normalizeProjectsList(projectsPayload&&Array.isArray(projectsPayload.items)?projectsPayload.items:[],{persist:false});const archiveItems=normalizeArchivePayload(archivePayload&&Array.isArray(archivePayload.items)?archivePayload.items:[]);archivedTasks=normalizeArchiveList(archiveItems,{persist:false});const serverWorkday=workdayPayload&&workdayPayload.workday?workdayPayload.workday:null;workdayState=hydrateWorkdayStateFromServer(serverWorkday);persistLocalWorkdayState(workdayState);finalizeDataLoad()}catch(err){if(!silent)handleApiError(err,'Не удалось загрузить данные с сервера');storageMode=STORAGE_MODES.LOCAL;applyStorageMode(storageMode);updateStorageToggle();await loadDataFromLocal()}finally{isDataLoading=false;updateStorageToggle({loading:false})}}
+async function loadDataFromServer({silent=false}={}){if(isDataLoading)return;isDataLoading=true;updateStorageToggle({loading:true});try{const [tasksPayload,projectsPayload,archivePayload,workdayPayload]=await Promise.all([apiRequest('/tasks'),apiRequest(`/projects?limit=${API_DEFAULT_LIMIT}`),apiRequest(`/archive?limit=${API_DEFAULT_LIMIT}`),apiRequest('/workday/current')]);const serverTasks=Array.isArray(tasksPayload?.items)?tasksPayload.items:Array.isArray(tasksPayload)?tasksPayload:[];tasks=normalizeTaskTree(serverTasks,null);projects=normalizeProjectsList(projectsPayload&&Array.isArray(projectsPayload.items)?projectsPayload.items:[],{persist:false});const archiveItems=normalizeArchivePayload(archivePayload&&Array.isArray(archivePayload.items)?archivePayload.items:[]);archivedTasks=normalizeArchiveList(archiveItems,{persist:false});const serverWorkday=workdayPayload&&workdayPayload.workday?workdayPayload.workday:null;workdayState=hydrateWorkdayStateFromServer(serverWorkday);persistLocalWorkdayState(workdayState);finalizeDataLoad()}catch(err){if(err&&err.status===401){if(!silent)handleApiError(err,'Не удалось загрузить данные с сервера')}else{if(!silent)handleApiError(err,'Не удалось загрузить данные с сервера');storageMode=STORAGE_MODES.LOCAL;applyStorageMode(storageMode);updateStorageToggle();await loadDataFromLocal()}}finally{isDataLoading=false;updateStorageToggle({loading:false})}}
 
-async function refreshDataForCurrentMode(options={}){if(isServerMode())return loadDataFromServer(options);return loadDataFromLocal()}
+async function refreshDataForCurrentMode(options={}){if(isServerMode()){const auth=getAuthState();if(!auth||auth.status!=='authenticated'){return loadDataFromLocal();}return loadDataFromServer(options)}return loadDataFromLocal()}
 
 function flushPendingTaskUpdates(){for(const [id,entry]of pendingTaskUpdates.entries()){if(entry&&entry.timer)clearTimeout(entry.timer);if(entry&&entry.patch){runServerAction(()=>apiRequest(`/tasks/${encodeURIComponent(id)}`,{method:'PUT',body:entry.patch}),{silent:true,onError:()=>refreshDataForCurrentMode({silent:true})})}}pendingTaskUpdates.clear()}
 
-function ensureApiCredentials(){const key=getApiKey();if(key)return true;const input=prompt('Введите API ключ','');if(input===null)return false;const trimmed=input.trim();if(!trimmed){toast('API ключ обязателен для работы с сервером');return false}setApiSettings({apiKey:trimmed});return true}
+async function ensureServerAccess(){const state=getAuthState();if(state&&state.status==='authenticated')return true;await ensureAuthenticated();const nextState=getAuthState();return !!(nextState&&nextState.status==='authenticated')}
 
 async function setStorageModeAndReload(mode,{silent=false}={}){const nextMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:STORAGE_MODES.LOCAL;if(storageMode===nextMode&&!silent)return;storageMode=nextMode;applyStorageMode(storageMode);updateStorageToggle();flushPendingTaskUpdates();flushPendingWorkdaySync();await refreshDataForCurrentMode({silent})}
 
@@ -711,7 +722,7 @@ function startEdit(row,t){
   })
 }
 
-function applyTheme(mode){const dark=mode==='dark';document.body.classList.toggle('theme-dark',dark);const btn=$('#themeToggle');if(btn){const label=dark?'Переключить на светлую тему':'Переключить на тёмную тему';btn.dataset.mode=dark?'dark':'light';btn.setAttribute('aria-pressed',String(dark));btn.setAttribute('aria-label',label);btn.title=label}}
+function applyTheme(mode){const dark=mode==='dark';document.body.classList.toggle('theme-dark',dark);const btn=$('#themeToggle');if(btn){const label=dark?'Переключить на светлую тему':'Переключить на тёмную тему';btn.dataset.mode=dark?'dark':'light';btn.setAttribute('aria-pressed',String(dark));btn.setAttribute('aria-label',label);btn.title=label}syncAuthTheme(mode)}
 const themeToggle=$('#themeToggle');
 function toggleTheme(){const dark=!document.body.classList.contains('theme-dark');applyTheme(dark?'dark':'light');ThemeStore.write(dark?'dark':'light')}
 if(themeToggle){themeToggle.addEventListener('click',toggleTheme)}
@@ -803,14 +814,17 @@ $$('.nav-btn').forEach(btn=>btn.onclick=()=>{const view=btn.dataset.view;if(view
 if(archiveBtn){archiveBtn.addEventListener('click',()=>{currentView='archive';render()})}
 
 const storageToggleBtn=document.getElementById('storageToggle');
-if(storageToggleBtn){storageToggleBtn.addEventListener('click',async()=>{if(isDataLoading)return;if(isServerMode()){await setStorageModeAndReload(STORAGE_MODES.LOCAL);toast('Режим: localStorage')}else{if(!ensureApiCredentials())return;await setStorageModeAndReload(STORAGE_MODES.SERVER);toast('Режим: API')}})}
+if(storageToggleBtn){storageToggleBtn.addEventListener('click',async()=>{if(isDataLoading)return;if(isServerMode()){await setStorageModeAndReload(STORAGE_MODES.LOCAL);toast('Режим: localStorage')}else{if(!(await ensureServerAccess()))return;await setStorageModeAndReload(STORAGE_MODES.SERVER);toast('Режим: API')}})}
+
+const logoutBtn=document.getElementById('logoutBtn');
+if(logoutBtn){logoutBtn.addEventListener('click',async()=>{if(isDataLoading)return;await performLogout();await setStorageModeAndReload(STORAGE_MODES.LOCAL,{silent:true});toast('Вы вышли из аккаунта')})}
 
 const apiSettingsBtn=document.getElementById('apiSettingsBtn');
 if(apiSettingsBtn){apiSettingsBtn.addEventListener('click',()=>openApiSettingsDialog());}
 if(ApiSettingsDialog.close){ApiSettingsDialog.close.addEventListener('click',()=>closeApiSettingsDialog());}
 if(ApiSettingsDialog.cancel){ApiSettingsDialog.cancel.addEventListener('click',()=>closeApiSettingsDialog());}
 if(ApiSettingsDialog.overlay){ApiSettingsDialog.overlay.addEventListener('click',e=>{if(e.target===ApiSettingsDialog.overlay)closeApiSettingsDialog()});}
-if(ApiSettingsDialog.form){ApiSettingsDialog.form.addEventListener('submit',submitApiSettingsForm);}
+if(ApiSettingsDialog.form){ApiSettingsDialog.form.addEventListener('submit',submitApiSettingsForm);}const apiSettingsLogout=document.getElementById('apiSettingsLogout');if(apiSettingsLogout){apiSettingsLogout.addEventListener('click',async e=>{e.preventDefault();await performLogout();closeApiSettingsDialog();await setStorageModeAndReload(STORAGE_MODES.LOCAL,{silent:true});toast('Вы вышли из аккаунта')})}
 
 if(WorkdayUI.button){WorkdayUI.button.addEventListener('click',()=>{if(WorkdayUI.button.disabled)return;openWorkdayDialog()})}
 if(WorkdayUI.closeBtn)WorkdayUI.closeBtn.addEventListener('click',()=>closeWorkdayDialog());
@@ -1329,4 +1343,4 @@ window.addEventListener('click',e=>{if(Due.el.style.display==='block'&&!Due.el.c
   syncMode();
 })();
 
-(function(){applyTheme(ThemeStore.read());initCalendar();updateStorageToggle();refreshDataForCurrentMode()})();
+(async function(){const theme=ThemeStore.read();applyTheme(theme);await initAuth({onToggleTheme:toggleTheme,initialTheme:theme});updateAuthControls(getAuthState());initCalendar();updateStorageToggle();await refreshDataForCurrentMode()})();

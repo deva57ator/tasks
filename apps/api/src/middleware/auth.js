@@ -1,14 +1,18 @@
-const config = require('../config');
-const { UnauthorizedError, ConfigError } = require('../lib/errors');
+const { UnauthorizedError } = require('../lib/errors');
+const authService = require('../services/auth');
 
-function authMiddleware(req, _res, next) {
-  if (!config.apiKey) {
-    return next(new ConfigError('API key is not configured'));
+function authMiddleware(req, res, next) {
+  const sessionId = authService.parseSessionIdFromRequest(req);
+  if (!sessionId) {
+    return next(new UnauthorizedError('Authentication required'));
   }
-  const headerKey = req.headers['x-api-key'];
-  if (!headerKey || headerKey !== config.apiKey) {
-    return next(new UnauthorizedError('Invalid API key'));
+  const session = authService.touchSession(sessionId);
+  if (!session) {
+    authService.clearSessionCookie(res);
+    return next(new UnauthorizedError('Authentication required'));
   }
+  authService.attachSessionCookie(res, session);
+  req.user = { email: session.email };
   return next();
 }
 
