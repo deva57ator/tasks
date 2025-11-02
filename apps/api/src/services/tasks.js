@@ -39,14 +39,33 @@ function coerceBoolean(value) {
   if (typeof value === 'string') {
     return value === 'true' || value === '1';
   }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return undefined;
+    return value !== 0;
+  }
   return undefined;
+}
+
+function normalizeProjectId(raw) {
+  if (raw === null || raw === undefined) {
+    return null;
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    return trimmed === '' ? null : trimmed;
+  }
+  if (typeof raw === 'number') {
+    if (!Number.isFinite(raw)) return null;
+    return String(raw);
+  }
+  return null;
 }
 
 async function list(filters = {}, options = {}) {
   const rows = await fetchAllRows();
   const { roots } = buildTaskTree(rows);
   const normalizedFilters = {
-    projectId: filters.projectId || null,
+    projectId: normalizeProjectId(filters.projectId),
     done: filters.done !== undefined ? coerceBoolean(filters.done) : undefined,
     dueFrom: filters.dueFrom || null,
     dueTo: filters.dueTo || null
