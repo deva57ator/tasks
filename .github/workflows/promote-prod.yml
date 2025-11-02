@@ -84,6 +84,8 @@ jobs:
             systemctl status --no-pager tasks-prod | tail -n +1 || true
           "
 
-      - name: Health check PROD
+      - name: Health check (PROD)
+        shell: bash
         run: |
-          curl -fsS https://parkhomenko.space/tasks/api/health >/dev/null
+          curl -fsS -H 'Cookie: tasks_env=prod' 'https://parkhomenko.space/api/health' >/dev/null
+
