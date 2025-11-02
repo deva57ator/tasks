@@ -74,6 +74,7 @@ jobs:
             systemctl status --no-pager tasks-stg | tail -n +1 || true
           "
 
-      - name: Health check
-        run: curl -fsS -H 'Cookie: tasks_env=stg' https://parkhomenko.space/api/health >/dev/null
-
+      - name: Health check (STG)
+        shell: bash
+        run: |
+          curl -fsS -H 'Cookie: tasks_env=stg' 'https://parkhomenko.space/api/health' >/dev/null
