@@ -1,115 +1,83 @@
-name: Deploy STG (auto on push / manual)
+name: Deploy — staging (tasks)
 
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:
-    inputs:
-      ref:
-        description: "Коммит/ветка/тег для деплоя (по умолчанию — текущий main)"
-        required: false
-        default: ""
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-stg
+  cancel-in-progress: false
 
 jobs:
   deploy-stg:
     runs-on: ubuntu-latest
+    environment: staging
+
     env:
-      SSH_HOST: ${{ secrets.DEPLOY_HOST }}
-      SSH_USER: ${{ secrets.DEPLOY_USER }}
-      SSH_PORT: ${{ secrets.DEPLOY_PORT }}
-      PATH_STG:  ${{ secrets.DEPLOY_PATH_STG }}      # /srv/tasks-stg
-      WEB_STG:   ${{ secrets.DEPLOY_WEB_PATH_STG }}  # /var/www/tasks-stg
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_PORT: ${{ secrets.SSH_PORT }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref != '' && inputs.ref || 'main' }}
 
-      - name: Verify lock (apps/api)
-        shell: bash
-        run: |
-          cd apps/api
-          npm ci --omit=dev --ignore-scripts --no-audit --no-fund
-
-      - name: SSH agent
+      - name: Setup SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
-          ssh-private-key: ${{ secrets.SSH_KEY }}
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - name: Add host key
-        shell: bash
+      - name: Add host to known_hosts
         run: |
-          : "${SSH_PORT:=22}"
           mkdir -p ~/.ssh
-          ssh-keyscan -p "${SSH_PORT}" -H "${SSH_HOST}" >> ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
+          chmod 700 ~/.ssh
+          ssh-keyscan -p "${SSH_PORT:-22}" "$SSH_HOST" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
 
-      # === API → STG ===
-      - name: Copy API to STG (/srv/tasks-stg)
-        shell: bash
+      - name: Rsync API → /srv/tasks-stg
         run: |
-          : "${SSH_PORT:=22}"
-          rsync -av --delete -e "ssh -p ${SSH_PORT}" \
-            --filter='merge infra/rsync/api.filter' \
-            ./ "${SSH_USER}@${SSH_HOST}:${PATH_STG}-tmp/"
+          rsync -az --delete \
+            -e "ssh -p ${SSH_PORT:-22}" \
+            --filter="merge infra/rsync/api.filter" \
+            ./ "${SSH_USER}@${SSH_HOST}:/srv/tasks-stg/"
 
-          # Всё ниже выполняется удалённо в одном bash-сеансе
-          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" DEPLOY_PATH="${PATH_STG}" bash -seu <<'EOSH'
-          set -euo pipefail
-
-          # Перекладываем дерево
-          rm -rf "$DEPLOY_PATH/apps/api"
-          install -d "$DEPLOY_PATH/apps"
-          mv "${DEPLOY_PATH}-tmp/apps/api" "$DEPLOY_PATH/apps/"
-          rm -rf "${DEPLOY_PATH}-tmp"
-
-          # Шим для systemd: /srv/.../src/server.js → apps/api/src/server
-          install -d "$DEPLOY_PATH/src"
-          cat >"$DEPLOY_PATH/src/server.js" <<'JS'
-          require('../apps/api/src/server');
-          JS
-
-          # Зависимости из корня: node_modules → apps/api/node_modules
-          ln -sfn "$DEPLOY_PATH/apps/api/node_modules" "$DEPLOY_PATH/node_modules"
-          EOSH
-
-      - name: Install deps, migrate, restart
-        shell: bash
+      - name: Rsync WEB (static) → /var/www/tasks-stg
         run: |
-          : "${SSH_PORT:=22}"
-          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" DEPLOY_PATH="${PATH_STG}" bash -seu <<'EOSH'
-          set -euo pipefail
-          cd "$DEPLOY_PATH/apps/api"
-          rm -rf node_modules
-          npm ci --omit=dev --no-audit --no-fund
-          npm run migrate
-          sudo -n systemctl daemon-reload || true
-          sudo -n systemctl restart tasks-stg
+          rsync -az --delete \
+            -e "ssh -p ${SSH_PORT:-22}" \
+            --filter="merge infra/rsync/web.filter" \
+            ./ "${SSH_USER}@${SSH_HOST}:/var/www/tasks-stg/"
 
-          # Ретраи локального health
-          for i in 1 2 3 4 5; do
-            sleep 2
-            curl -fsS http://127.0.0.1:3102/api/health >/dev/null && exit 0 || true
-          done
-          systemctl status --no-pager tasks-stg || true
-          journalctl -u tasks-stg -n 100 --no-pager || true
-          exit 1
-          EOSH
-
-      # === WEB → STG ===
-      - name: Rsync WEB
-        shell: bash
+      - name: Install deps (API) + migrate (stg, Node 20 via nvm)
         run: |
-          : "${SSH_PORT:=22}"
-          rsync -av --delete -e "ssh -p ${SSH_PORT}" \
-            apps/web/ "${SSH_USER}@${SSH_HOST}:${WEB_STG}/"
+          ssh -p "${SSH_PORT:-22}" "${SSH_USER}@${SSH_HOST}" 'bash -leo pipefail << "REMOTE"
+          set -Eeuo pipefail
 
-      - name: External health (via Nginx)
-        shell: bash
+          export NVM_DIR="$HOME/.nvm"
+          [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+          nvm use 20 >/dev/null
+
+          cd /srv/tasks-stg/apps/api
+
+          # предпочтительно ci, если lock совпадает; fallback на install
+          (npm ci --omit=dev) || npm install --omit=dev
+
+          # прогон миграций с окружением
+          set -a
+          [ -f /etc/tasks-stg.env ] && . /etc/tasks-stg.env
+          set +a
+
+          npm run migrate --if-present
+          REMOTE'
+
+      - name: Restart systemd service (tasks-stg)
         run: |
-          for i in 1 2 3; do
-            curl -fsS https://parkhomenko.space/tasks-stg/api/health >/dev/null && exit 0 || true
-            sleep 2
-          done
-          exit 22
+          ssh -p "${SSH_PORT:-22}" "${SSH_USER}@${SSH_HOST}" '
+            sudo systemctl daemon-reload || true
+            sudo systemctl restart tasks-stg
+          '
+
+      - name: Health check (https://parkhomenko.space/tasks-stg/api/health)
+        run: |
+          curl -fsS https://parkhomenko.space/tasks-stg/api/health | jq .
