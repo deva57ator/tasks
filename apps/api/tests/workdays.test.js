@@ -19,6 +19,8 @@ Module._load = function mockDotenv(request, parent, isMain) {
 const db = require('../src/db/client');
 const workdays = require('../src/services/workdays');
 const tasks = require('../src/services/tasks');
+const projects = require('../src/services/projects');
+const { flattenTasks } = require('../src/lib/task-utils');
 
 const migrationPath = path.join(__dirname, '..', 'migrations/001_init.sql');
 
@@ -124,4 +126,19 @@ test('falls back to stored summary when payload information is incomplete', asyn
 
   assert.equal(record.summaryTimeMs, 4321);
   assert.equal(record.summaryDone, 3);
+});
+
+test('task listing accepts numeric project identifiers', async () => {
+  await projects.create({ id: '0', title: 'Inbox' });
+  await projects.create({ id: 'alpha', title: 'Alpha' });
+
+  const matching = await tasks.create({ title: 'First task', project: '0' });
+  await tasks.create({ title: 'Second task', project: 'alpha' });
+
+  const { items, total } = await tasks.list({ projectId: 0 });
+
+  assert.equal(total, 1);
+  const flat = flattenTasks(items);
+  assert.equal(flat.length, 1);
+  assert.equal(flat[0].id, matching.id);
 });
