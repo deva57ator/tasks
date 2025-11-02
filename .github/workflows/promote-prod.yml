@@ -38,11 +38,6 @@ jobs:
           ssh-keyscan -p "${SSH_PORT}" -H "${SSH_HOST}" >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      # (опционально) smoke STG перед промоутом — если не ок, роняем job
-      - name: Pre-check STG health
-        run: |
-          curl -fsS https://parkhomenko.space/tasks-stg/api/health >/dev/null
-
       # === API → PROD ===
       - name: Copy API to PROD (/srv/tasks-prod)
         run: |
