@@ -32,15 +32,6 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -p "${SSH_PORT}" -H "${SSH_HOST}" >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-
-      - name: Prepare dirs on STG host
-        run: |
-          : "${SSH_PORT:=22}"
-          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "set -eu
-            sudo install -d -o ${SSH_USER} -g ${SSH_USER} '${PATH_STG}'
-            sudo install -d -o ${SSH_USER} -g ${SSH_USER} '${PATH_STG}/apps'
-            sudo install -d -o ${SSH_USER} -g ${SSH_USER} '${WEB_STG}'
-          "
         
       # === API → STG ===
       - name: Copy API to STG (/srv/tasks-stg)
