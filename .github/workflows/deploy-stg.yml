@@ -32,30 +32,33 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -p "${SSH_PORT}" -H "${SSH_HOST}" >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-        
+
       # === API → STG ===
-      - name: Copy API to STG (/srv/tasks-stg)
+      - name: Copy API to STG (/srv/tasks-stg/_tmp → /srv/tasks-stg/apps/api)
         run: |
           : "${SSH_PORT:=22}"
+          # Копируем в ВНУТРЕННИЙ tmp внутри PATH_STG (прав у deploy достаточно)
           rsync -av --delete -e "ssh -p ${SSH_PORT}" \
             --filter='merge infra/rsync/api.filter' \
-            ./ "${SSH_USER}@${SSH_HOST}:${PATH_STG}-tmp/"
+            ./ "${SSH_USER}@${SSH_HOST}:${PATH_STG}/_tmp/"
 
+          # Перекладываем из _tmp на место и очищаем _tmp
           ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "set -eu
             DEPLOY_PATH='${PATH_STG}'
+            mkdir -p \"\$DEPLOY_PATH/apps\"
             rm -rf \"\$DEPLOY_PATH/apps/api\"
-            install -d \"\$DEPLOY_PATH/apps\"
-            mv \"${PATH_STG}-tmp/apps/api\" \"\$DEPLOY_PATH/apps/\"
-            rm -rf \"${PATH_STG}-tmp\"
+            mv \"\$DEPLOY_PATH/_tmp/apps/api\" \"\$DEPLOY_PATH/apps/\"
+            rm -rf \"\$DEPLOY_PATH/_tmp\"/*
           "
 
       # === WEB → STG ===
       - name: Copy WEB to STG webroot (/var/www/tasks-stg)
         run: |
           : "${SSH_PORT:=22}"
+          # Убедимся, что каталог есть (без sudo)
+          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "mkdir -p '${WEB_STG}'"
           rsync -av --delete -e "ssh -p ${SSH_PORT}" \
-          apps/web/ "${SSH_USER}@${SSH_HOST}:${WEB_STG}/"
-
+            apps/web/ "${SSH_USER}@${SSH_HOST}:${WEB_STG}/"
 
       # === deps, migrate, restart ===
       - name: Install deps, migrate, restart STG
@@ -69,6 +72,7 @@ jobs:
               npm install --omit=dev --no-audit --no-fund
             fi
             npm run migrate
+            # Ожидается, что у пользователя deploy настроен NOPASSWD для systemctl
             sudo -n systemctl daemon-reload || true
             sudo -n systemctl restart tasks-stg
             systemctl status --no-pager tasks-stg | tail -n +1 || true
