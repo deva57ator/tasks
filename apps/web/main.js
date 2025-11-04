@@ -1,10 +1,6 @@
 const StorageModeStore={key:'mini-task-tracker:storage-mode',read(){return localStorage.getItem(this.key)||'local'},write(mode){localStorage.setItem(this.key,mode)}};
 const STORAGE_MODES={LOCAL:'local',SERVER:'server'};
-const API_SETTINGS_STORAGE_KEY='mini-task-tracker:api-settings';
-
 const DEFAULT_API_BASE='/api';
-
-try{localStorage.removeItem(API_SETTINGS_STORAGE_KEY);}catch{}
 
 let storageMode=StorageModeStore.read();
 if(storageMode!==STORAGE_MODES.SERVER)storageMode=STORAGE_MODES.LOCAL;
@@ -171,9 +167,7 @@ let workdaySyncTimer=null;
 let workdaySyncInFlight=false;
 let lastWorkdaySyncPayload=null;
 
-function getApiBaseUrl(){return DEFAULT_API_BASE}
-
-async function apiRequest(path,{method='GET',body,headers}={}){const base=getApiBaseUrl();const url=base+path;const init={method,headers:{Accept:'application/json',...(headers||{})}};if(body!==undefined){init.body=typeof body==='string'?body:JSON.stringify(body);if(!init.headers['Content-Type'])init.headers['Content-Type']='application/json'}let response;try{response=await fetch(url,init)}catch(err){throw new Error('Нет соединения с API')}if(!response.ok){let message=`Ошибка API (${response.status})`;try{const errBody=await response.json();if(errBody&&errBody.error&&errBody.error.message)message=errBody.error.message}catch{}throw new Error(message)}if(response.status===204)return null;const text=await response.text();if(!text)return null;try{return JSON.parse(text)}catch{return null}}
+async function apiRequest(path,{method='GET',body}={}){const url=`${DEFAULT_API_BASE}${path}`;const init={method};if(body!==undefined){init.body=typeof body==='string'?body:JSON.stringify(body);init.headers={'Content-Type':'application/json'}}let response;try{response=await fetch(url,init)}catch(err){throw new Error('Нет соединения с API')}if(!response.ok){let message=`Ошибка API (${response.status})`;try{const errBody=await response.json();if(errBody&&errBody.error&&errBody.error.message)message=errBody.error.message}catch{}throw new Error(message)}if(response.status===204)return null;const text=await response.text();if(!text)return null;try{return JSON.parse(text)}catch{return null}}
 
 function handleApiError(err,fallback){const message=err&&err.message?err.message:fallback||'Ошибка при работе с API';console.error(err);toast(message)}
 
@@ -203,9 +197,7 @@ async function refreshDataForCurrentMode(options={}){if(isServerMode())return lo
 
 function flushPendingTaskUpdates(){for(const [id,entry]of pendingTaskUpdates.entries()){if(entry&&entry.timer)clearTimeout(entry.timer);if(entry&&entry.patch){runServerAction(()=>apiRequest(`/tasks/${encodeURIComponent(id)}`,{method:'PUT',body:entry.patch}),{silent:true,onError:()=>refreshDataForCurrentMode({silent:true})})}}pendingTaskUpdates.clear()}
 
-function ensureApiCredentials(){return true}
-
-async function setStorageModeAndReload(mode,{silent=false}={}){const nextMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:STORAGE_MODES.LOCAL;if(storageMode===nextMode&&!silent)return;storageMode=nextMode;StorageModeStore.write(storageMode);updateStorageToggle();flushPendingTaskUpdates();flushPendingWorkdaySync();await refreshDataForCurrentMode({silent})}
+async function setStorageModeAndReload(mode,{silent=false,forceReload=false,skipToggleUpdate=false}={}){const nextMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:STORAGE_MODES.LOCAL;const changed=storageMode!==nextMode;storageMode=nextMode;StorageModeStore.write(storageMode);if(!skipToggleUpdate)updateStorageToggle();flushPendingTaskUpdates();flushPendingWorkdaySync();if(!changed&&!forceReload)return;await refreshDataForCurrentMode({silent})}
 
 function handleServerTaskWrite(){afterTasksPersisted()}
 function handleServerProjectsWrite(data){if(Array.isArray(data)){projects=data}}
@@ -872,7 +864,7 @@ $$('.nav-btn').forEach(btn=>btn.onclick=()=>{const view=btn.dataset.view;if(view
 if(archiveBtn){archiveBtn.addEventListener('click',()=>{currentView='archive';render()})}
 
 const storageToggleBtn=document.getElementById('storageToggle');
-if(storageToggleBtn){storageToggleBtn.addEventListener('click',async()=>{if(isDataLoading)return;if(isServerMode()){await setStorageModeAndReload(STORAGE_MODES.LOCAL);toast('Режим: localStorage')}else{if(!ensureApiCredentials())return;await setStorageModeAndReload(STORAGE_MODES.SERVER);toast('Режим: API')}})}
+if(storageToggleBtn){storageToggleBtn.addEventListener('click',async()=>{if(isDataLoading)return;if(isServerMode()){await setStorageModeAndReload(STORAGE_MODES.LOCAL,{forceReload:true});toast('Режим: localStorage');return}storageMode=STORAGE_MODES.SERVER;StorageModeStore.write(storageMode);updateStorageToggle({loading:true});try{const healthResponse=await fetch(`${DEFAULT_API_BASE}/health`);if(!healthResponse.ok)throw new Error('API недоступен');await setStorageModeAndReload(STORAGE_MODES.SERVER,{forceReload:true,skipToggleUpdate:true});toast('Режим: API')}catch(err){storageMode=STORAGE_MODES.LOCAL;StorageModeStore.write(storageMode);await setStorageModeAndReload(STORAGE_MODES.LOCAL,{silent:true,forceReload:true,skipToggleUpdate:true});toast('API недоступен')}finally{updateStorageToggle({loading:false})}})}
 
 if(WorkdayUI.button){WorkdayUI.button.addEventListener('click',()=>{if(WorkdayUI.button.disabled)return;openWorkdayDialog()})}
 if(WorkdayUI.closeBtn)WorkdayUI.closeBtn.addEventListener('click',()=>closeWorkdayDialog());
