@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "Коммит/ветка/тег для промоута (по умолчанию — main)"
+        description: "Коммит/ветка/тег для промоута (по умолчанию — текущий main)"
         required: false
         default: ""
 
@@ -35,14 +35,24 @@ jobs:
         run: |
           : "${SSH_PORT:=22}"
           mkdir -p ~/.ssh
+          # Если у домена есть AAAA, принудим IPv4 (AddressFamily=inet ниже)
           ssh-keyscan -p "${SSH_PORT}" -H "${SSH_HOST}" >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
+
+      - name: Test SSH connectivity (verbose)
+        run: |
+          : "${SSH_PORT:=22}"
+          ssh -vvv -o AddressFamily=inet \
+              -o ServerAliveInterval=30 -o ServerAliveCountMax=2 \
+              -o ConnectTimeout=15 -p "${SSH_PORT}" \
+              "${SSH_USER}@${SSH_HOST}" "echo ok"
 
       # === API → PROD ===
       - name: Copy API to PROD (/srv/tasks-prod/apps/api)
         run: |
           : "${SSH_PORT:=22}"
-          rsync -av --delete -e "ssh -p ${SSH_PORT}" \
+          rsync -av --delete \
+            -e "ssh -p ${SSH_PORT} -o AddressFamily=inet -o ServerAliveInterval=30 -o ServerAliveCountMax=2 -o ConnectTimeout=15" \
             --filter='merge infra/rsync/api.filter' \
             ./apps/api/ "${SSH_USER}@${SSH_HOST}:${PATH_PROD}/apps/api/"
 
@@ -50,14 +60,18 @@ jobs:
       - name: Copy WEB to PROD webroot (/var/www/tasks-prod)
         run: |
           : "${SSH_PORT:=22}"
-          rsync -av --delete -e "ssh -p ${SSH_PORT}" \
+          rsync -av --delete \
+            -e "ssh -p ${SSH_PORT} -o AddressFamily=inet -o ServerAliveInterval=30 -o ServerAliveCountMax=2 -o ConnectTimeout=15" \
             apps/web/ "${SSH_USER}@${SSH_HOST}:${WEB_PROD}/"
 
       # === deps, migrate, restart ===
       - name: Install deps, migrate, restart PROD
         run: |
           : "${SSH_PORT:=22}"
-          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "set -eu
+          ssh -o AddressFamily=inet \
+              -o ServerAliveInterval=30 -o ServerAliveCountMax=2 \
+              -o ConnectTimeout=15 -p "${SSH_PORT}" \
+              "${SSH_USER}@${SSH_HOST}" "set -eu
             cd '${PATH_PROD}/apps/api'
             if [ -f package-lock.json ]; then
               npm ci --omit=dev --no-audit --no-fund
