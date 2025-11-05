@@ -89,7 +89,43 @@ function persistLocalWorkdayState(state,{mode}={}){
   }
 }
 const ArchiveStore={key:'mini-task-tracker:archive:v1',read(){try{const raw=JSON.parse(localStorage.getItem(this.key));if(!Array.isArray(raw))return[];return raw.filter(item=>item&&typeof item==='object')}catch{return[]}},write(d){if(isServerMode()){handleServerArchiveWrite(d);return}localStorage.setItem(this.key,JSON.stringify(d))}};
-const ActiveTimersStore={key:'mini-task-tracker:active-timers:v1',read(){try{const raw=JSON.parse(localStorage.getItem(this.key));if(!raw||typeof raw!=='object')return{};const normalized={};for(const [taskId,entry]of Object.entries(raw)){if(typeof taskId!=='string'||!taskId)continue;const start=Number(entry&&entry.start);if(!Number.isFinite(start))continue;const base=Number(entry&&entry.base);normalized[taskId]={start:Math.max(0,start),base:Number.isFinite(base)&&base>=0?Math.max(0,base):0}}return normalized}catch{return{}}},write(data){try{if(!data||typeof data!=='object'||!Object.keys(data).length){localStorage.removeItem(this.key);return}localStorage.setItem(this.key,JSON.stringify(data))}catch{}}};
+const ActiveTimersStore={
+  key:'mini-task-tracker:active-timers:v1',
+  serverKey:'mini-task-tracker:active-timers:v1:server',
+  getKey(mode=storageMode){return mode===STORAGE_MODES.SERVER?this.serverKey:this.key},
+  read({mode}={}){
+    const targetMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:STORAGE_MODES.LOCAL;
+    const key=this.getKey(targetMode);
+    try{
+      const raw=localStorage.getItem(key);
+      if(!raw)return{};
+      const parsed=JSON.parse(raw);
+      if(!parsed||typeof parsed!=='object')return{};
+      const normalized={};
+      for(const [taskId,entry]of Object.entries(parsed)){
+        if(typeof taskId!=='string'||!taskId)continue;
+        const start=Number(entry&&entry.start);
+        if(!Number.isFinite(start))continue;
+        const base=Number(entry&&entry.base);
+        normalized[taskId]={start:Math.max(0,start),base:Number.isFinite(base)&&base>=0?Math.max(0,base):0};
+      }
+      return normalized;
+    }catch{
+      return{};
+    }
+  },
+  write(data,{mode}={}){
+    const targetMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:STORAGE_MODES.LOCAL;
+    const key=this.getKey(targetMode);
+    try{
+      if(!data||typeof data!=='object'||!Object.keys(data).length){
+        localStorage.removeItem(key);
+        return;
+      }
+      localStorage.setItem(key,JSON.stringify(data));
+    }catch{}
+  }
+};
 
 let tasks=Store.read();
 let archivedTasks=ArchiveStore.read();
@@ -101,7 +137,7 @@ let activeEditId=null;
 let activeInputEl=null;
 let projects=ProjectsStore.read();
 if(!Array.isArray(projects))projects=[];
-let activeTimersState=ActiveTimersStore.read();
+let activeTimersState=ActiveTimersStore.read({mode:storageMode});
 const DEFAULT_PROJECT_EMOJI='📁';
 const SPRINT_UNASSIGNED_KEY='__none__';
 let sprintVisibleProjects=new Map();
@@ -160,7 +196,7 @@ const MONTH_NAMES=['Январь','Февраль','Март','Апрель','М
 const TIME_UPDATE_INTERVAL=1000;
 
 function ensureActiveTimersState(){if(!activeTimersState||typeof activeTimersState!=='object')activeTimersState={}}
-function persistActiveTimersState(){ensureActiveTimersState();ActiveTimersStore.write(activeTimersState)}
+function persistActiveTimersState(){ensureActiveTimersState();ActiveTimersStore.write(activeTimersState,{mode:storageMode})}
 function setActiveTimerState(taskId,{start,base}={}){if(typeof taskId!=='string'||!taskId)return;const normalizedStart=Number(start);if(!Number.isFinite(normalizedStart))return;const normalizedBase=Number(base);ensureActiveTimersState();activeTimersState[taskId]={start:Math.max(0,normalizedStart),base:Number.isFinite(normalizedBase)&&normalizedBase>=0?Math.max(0,normalizedBase):0};persistActiveTimersState()}
 function removeActiveTimerState(taskId){if(!activeTimersState||typeof activeTimersState!=='object')return;if(!(taskId in activeTimersState))return;delete activeTimersState[taskId];persistActiveTimersState()}
 
@@ -204,7 +240,11 @@ async function refreshDataForCurrentMode(options={}){if(isServerMode())return lo
 
 function flushPendingTaskUpdates(){for(const [id,entry]of pendingTaskUpdates.entries()){if(entry&&entry.timer)clearTimeout(entry.timer);if(entry&&entry.patch){runServerAction(()=>apiRequest(`/tasks/${encodeURIComponent(id)}`,{method:'PUT',body:entry.patch}),{silent:true,onError:()=>refreshDataForCurrentMode({silent:true})})}}pendingTaskUpdates.clear()}
 
-async function setStorageModeAndReload(mode,{silent=false,forceReload=false,skipToggleUpdate=false}={}){const nextMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:STORAGE_MODES.LOCAL;const changed=storageMode!==nextMode;storageMode=nextMode;StorageModeStore.write(storageMode);if(!skipToggleUpdate)updateStorageToggle();flushPendingTaskUpdates();flushPendingWorkdaySync();if(!changed&&!forceReload)return;await refreshDataForCurrentMode({silent})}
+function collectActiveTimerTasks(list=tasks,acc=[]){if(!Array.isArray(list))return acc;for(const item of list){if(!item)continue;if(item.timerActive)acc.push(item);if(Array.isArray(item.children)&&item.children.length)collectActiveTimerTasks(item.children,acc)}return acc}
+
+function finalizeActiveTimersBeforeModeChange(mode=storageMode){const targetMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:STORAGE_MODES.LOCAL;const activeTasks=collectActiveTimerTasks();if(!activeTasks.length)return false;for(const task of activeTasks){stopTaskTimer(task,{silent:true})}Store.write(tasks);if(targetMode===STORAGE_MODES.SERVER){for(const task of activeTasks){if(task&&task.id)queueTaskUpdate(task.id,{timeSpent:task.timeSpent})}}syncTimerLoop();return true}
+
+async function setStorageModeAndReload(mode,{silent=false,forceReload=false,skipToggleUpdate=false}={}){const nextMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:STORAGE_MODES.LOCAL;const prevMode=storageMode;const changed=prevMode!==nextMode;if(changed)finalizeActiveTimersBeforeModeChange(prevMode);storageMode=nextMode;StorageModeStore.write(storageMode);if(!skipToggleUpdate)updateStorageToggle();if(changed){activeTimersState=ActiveTimersStore.read({mode:storageMode});ensureActiveTimersState()}flushPendingTaskUpdates();flushPendingWorkdaySync();if(!changed&&!forceReload)return;await refreshDataForCurrentMode({silent})}
 
 function handleServerTaskWrite(){afterTasksPersisted()}
 function handleServerProjectsWrite(data){if(Array.isArray(data)){projects=data}}
@@ -327,7 +367,7 @@ tasks=migrate(tasks);
 ensureTaskParentIds(tasks,null);
 
 function findTask(id,list=tasks){for(const t of list){if(t.id===id) return t;const r=findTask(id,t.children||[]);if(r) return r}return null}
-function restoreActiveTimersFromStore(){activeTimersState=ActiveTimersStore.read();ensureActiveTimersState();let changed=false;if(!Object.keys(activeTimersState).length){return}
+function restoreActiveTimersFromStore(){activeTimersState=ActiveTimersStore.read({mode:storageMode});ensureActiveTimersState();let changed=false;if(!Object.keys(activeTimersState).length){return}
   for(const [taskId,entry]of Object.entries(activeTimersState)){const task=findTask(taskId);const start=Number(entry&&entry.start);if(!task||!Number.isFinite(start)){delete activeTimersState[taskId];changed=true;continue}const normalizedStart=Math.max(0,start);const storedBase=Number(entry&&entry.base);const normalizedStoredBase=Number.isFinite(storedBase)&&storedBase>=0?Math.max(0,storedBase):0;const currentBase=Number.isFinite(task.timeSpent)?Math.max(0,task.timeSpent):0;const finalBase=Math.max(currentBase,normalizedStoredBase);if(task.timerActive!==true||typeof task.timerStart!=='number'||task.timerStart!==normalizedStart){task.timerActive=true;task.timerStart=normalizedStart;changed=true}if(currentBase!==finalBase){task.timeSpent=finalBase;changed=true}if(finalBase!==normalizedStoredBase){activeTimersState[taskId]={start:normalizedStart,base:finalBase};changed=true}}
   if(changed)persistActiveTimersState()}
 function findArchivedTask(id,list=archivedTasks){if(!Array.isArray(list))return null;for(const item of list){if(item&&item.id===id)return item;const nested=findArchivedTask(id,item?.children||[]);if(nested)return nested}return null}
@@ -874,7 +914,7 @@ $$('.nav-btn').forEach(btn=>btn.onclick=()=>{const view=btn.dataset.view;if(view
 if(archiveBtn){archiveBtn.addEventListener('click',()=>{currentView='archive';render()})}
 
 const storageToggleBtn=document.getElementById('storageToggle');
-if(storageToggleBtn){storageToggleBtn.addEventListener('click',async()=>{if(isDataLoading)return;if(isServerMode()){await setStorageModeAndReload(STORAGE_MODES.LOCAL,{forceReload:true});toast('Режим: localStorage');return}storageMode=STORAGE_MODES.SERVER;StorageModeStore.write(storageMode);updateStorageToggle({loading:true});try{const healthResponse=await fetch(`${DEFAULT_API_BASE}/health`);if(!healthResponse.ok)throw new Error('API недоступен');await setStorageModeAndReload(STORAGE_MODES.SERVER,{forceReload:true,skipToggleUpdate:true});toast('Режим: API')}catch(err){storageMode=STORAGE_MODES.LOCAL;StorageModeStore.write(storageMode);await setStorageModeAndReload(STORAGE_MODES.LOCAL,{silent:true,forceReload:true,skipToggleUpdate:true});toast('API недоступен')}finally{updateStorageToggle({loading:false})}})}
+if(storageToggleBtn){storageToggleBtn.addEventListener('click',async()=>{if(isDataLoading)return;const switchingToServer=!isServerMode();updateStorageToggle({loading:true});try{if(!switchingToServer){await setStorageModeAndReload(STORAGE_MODES.LOCAL,{forceReload:true,skipToggleUpdate:true});toast('Режим: localStorage');return}const healthResponse=await fetch(`${DEFAULT_API_BASE}/health`);if(!healthResponse.ok)throw new Error('API недоступен');await setStorageModeAndReload(STORAGE_MODES.SERVER,{forceReload:true,skipToggleUpdate:true});toast('Режим: API')}catch(err){console.error(err);if(switchingToServer){await setStorageModeAndReload(STORAGE_MODES.LOCAL,{silent:true,forceReload:true,skipToggleUpdate:true});toast('API недоступен')}}finally{updateStorageToggle({loading:false})}})}
 
 if(WorkdayUI.button){WorkdayUI.button.addEventListener('click',()=>{if(WorkdayUI.button.disabled)return;openWorkdayDialog()})}
 if(WorkdayUI.closeBtn)WorkdayUI.closeBtn.addEventListener('click',()=>closeWorkdayDialog());
