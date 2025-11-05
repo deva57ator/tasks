@@ -103,6 +103,35 @@ test('uses manual statistics when workday was closed manually', async () => {
   assert.equal(record.summaryDone, 2);
 });
 
+test('getCurrent returns manually closed workday before scheduled end', async () => {
+  const now = Date.now();
+  const payload = {
+    id: 'day-2b',
+    start: now - 1000,
+    end: now + 3600000,
+    baseline: {},
+    completed: {},
+    manualClosedStats: { timeMs: 12345, doneCount: 3 },
+    closedManually: true
+  };
+
+  await workdays.upsert({
+    id: 'day-2b',
+    startTs: payload.start,
+    endTs: payload.end,
+    summaryTimeMs: 12345,
+    summaryDone: 3,
+    payload,
+    closedAt: now
+  });
+
+  const current = await workdays.getCurrent();
+  assert.ok(current, 'expected manually closed workday to be returned');
+  assert.equal(current.id, 'day-2b');
+  assert.equal(current.summaryTimeMs, 12345);
+  assert.equal(current.summaryDone, 3);
+});
+
 test('falls back to stored summary when payload information is incomplete', async () => {
   const payload = {
     id: 'day-3',
@@ -126,6 +155,80 @@ test('falls back to stored summary when payload information is incomplete', asyn
 
   assert.equal(record.summaryTimeMs, 4321);
   assert.equal(record.summaryDone, 3);
+});
+
+test('getCurrent ignores closed workday once end time has passed', async () => {
+  const now = Date.now();
+  const payload = {
+    id: 'day-4',
+    start: now - 7200000,
+    end: now - 3600000,
+    baseline: {},
+    completed: {},
+    manualClosedStats: { timeMs: 2000, doneCount: 1 },
+    closedManually: true
+  };
+
+  await workdays.upsert({
+    id: 'day-4',
+    startTs: payload.start,
+    endTs: payload.end,
+    summaryTimeMs: 2000,
+    summaryDone: 1,
+    payload,
+    closedAt: now - 1800000
+  });
+
+  const current = await workdays.getCurrent();
+  assert.equal(current, null);
+});
+
+test('finalizes stale workday automatically at scheduled end', async () => {
+  const now = Date.now();
+  const start = now - 10 * 3600000;
+  const end = now - 3600000;
+  const baseTime = 60000;
+  const finalTime = 180000;
+
+  const task = await tasks.create({ title: 'Carryover task', timeSpent: baseTime });
+  await tasks.update(task.id, { timeSpent: finalTime, done: true });
+
+  const payload = {
+    id: 'day-auto',
+    start,
+    end,
+    baseline: {
+      [task.id]: baseTime
+    },
+    completed: {
+      [task.id]: end - 1000
+    },
+    manualClosedStats: { timeMs: 0, doneCount: 0 },
+    closedManually: false
+  };
+
+  await workdays.upsert({
+    id: 'day-auto',
+    startTs: start,
+    endTs: end,
+    summaryTimeMs: 0,
+    summaryDone: 0,
+    payload,
+    closedAt: null
+  });
+
+  const current = await workdays.getCurrent();
+  assert.equal(current, null);
+
+  const stored = await workdays.getById('day-auto');
+  assert.ok(stored);
+  assert.equal(stored.summaryTimeMs, finalTime - baseTime);
+  assert.equal(stored.summaryDone, 1);
+  assert.equal(stored.closedAt, end);
+  assert.ok(stored.payload);
+  assert.equal(stored.payload.locked, true);
+  assert.equal(stored.payload.closedManually, false);
+  assert.deepEqual(stored.payload.manualClosedStats, { timeMs: finalTime - baseTime, doneCount: 1 });
 });
 
 test('task listing accepts numeric project identifiers', async () => {

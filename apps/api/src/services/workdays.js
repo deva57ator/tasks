@@ -105,7 +105,16 @@ async function hydrateWorkday(row) {
   let summaryTimeMs = manual.timeMs;
   let summaryDone = manual.doneCount;
 
-  if (payload.closedManually !== true) {
+  let includeDelta = payload.closedManually !== true;
+  if (includeDelta) {
+    const closedAtTs = Number.isFinite(Number(mapped.closedAt)) ? Number(mapped.closedAt) : null;
+    const endTs = Number.isFinite(Number(mapped.endTs)) ? Number(mapped.endTs) : null;
+    if (closedAtTs !== null && (endTs === null || closedAtTs >= endTs)) {
+      includeDelta = false;
+    }
+  }
+
+  if (includeDelta) {
     const delta = await computeWorkdayDelta(payload);
     summaryTimeMs += delta.timeMs;
     summaryDone += delta.doneCount;
@@ -116,12 +125,69 @@ async function hydrateWorkday(row) {
   return mapped;
 }
 
+async function finalizeExpiredWorkdays(nowTs = Date.now()) {
+  const staleRows = await db.all(
+    'SELECT * FROM workdays WHERE closedAt IS NULL AND endTs IS NOT NULL AND endTs <= ?',
+    [nowTs]
+  );
+
+  for (const row of staleRows) {
+    const hydrated = await hydrateWorkday(row);
+    if (!hydrated) continue;
+
+    const finalTime = Math.max(0, Math.round(coerceNumber(hydrated.summaryTimeMs)) || 0);
+    const finalDone = Math.max(0, Math.round(coerceNumber(hydrated.summaryDone)) || 0);
+    const closedAtValue = Number.isFinite(Number(row.endTs)) ? Number(row.endTs) : nowTs;
+    const timestamp = nowIso();
+
+    let payload = null;
+    if (hydrated.payload && typeof hydrated.payload === 'object') {
+      const basePayload = hydrated.payload;
+      const manualStats = {
+        timeMs: finalTime,
+        doneCount: finalDone
+      };
+
+      payload = {
+        ...basePayload,
+        manualClosedStats: manualStats,
+        finalTimeMs: finalTime,
+        finalDoneCount: finalDone,
+        closedManually: basePayload.closedManually === true,
+        locked: true,
+        closedAt: closedAtValue
+      };
+      if (payload.closedManually !== true) {
+        payload.closedManually = false;
+      }
+    }
+
+    await db.run(
+      'UPDATE workdays SET summaryTimeMs = ?, summaryDone = ?, payload = ?, closedAt = ?, updatedAt = ? WHERE id = ?',
+      [
+        finalTime,
+        finalDone,
+        payload ? JSON.stringify(payload) : null,
+        closedAtValue,
+        timestamp,
+        row.id
+      ]
+    );
+  }
+}
+
 async function getCurrent() {
-  const row = await db.get('SELECT * FROM workdays WHERE closedAt IS NULL ORDER BY startTs DESC LIMIT 1');
+  const nowTs = Date.now();
+  await finalizeExpiredWorkdays(nowTs);
+  const row = await db.get(
+    'SELECT * FROM workdays WHERE closedAt IS NULL OR (endTs IS NOT NULL AND endTs > ?) ORDER BY startTs DESC LIMIT 1',
+    [nowTs]
+  );
   return row ? hydrateWorkday(row) : null;
 }
 
 async function getById(id) {
+  await finalizeExpiredWorkdays(Date.now());
   const row = await db.get('SELECT * FROM workdays WHERE id = ?', [id]);
   return row ? hydrateWorkday(row) : null;
 }
@@ -152,6 +218,7 @@ async function importCurrent(state) {
 
 module.exports = {
   getCurrent,
+  getById,
   upsert,
   importCurrent,
   mapWorkday: mapWorkdayRow
