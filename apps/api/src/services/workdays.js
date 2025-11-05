@@ -117,7 +117,11 @@ async function hydrateWorkday(row) {
 }
 
 async function getCurrent() {
-  const row = await db.get('SELECT * FROM workdays WHERE closedAt IS NULL ORDER BY startTs DESC LIMIT 1');
+  const nowTs = Date.now();
+  const row = await db.get(
+    'SELECT * FROM workdays WHERE closedAt IS NULL OR (endTs IS NOT NULL AND endTs > ?) ORDER BY startTs DESC LIMIT 1',
+    [nowTs]
+  );
   return row ? hydrateWorkday(row) : null;
 }
 

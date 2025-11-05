@@ -103,6 +103,35 @@ test('uses manual statistics when workday was closed manually', async () => {
   assert.equal(record.summaryDone, 2);
 });
 
+test('getCurrent returns manually closed workday before scheduled end', async () => {
+  const now = Date.now();
+  const payload = {
+    id: 'day-2b',
+    start: now - 1000,
+    end: now + 3600000,
+    baseline: {},
+    completed: {},
+    manualClosedStats: { timeMs: 12345, doneCount: 3 },
+    closedManually: true
+  };
+
+  await workdays.upsert({
+    id: 'day-2b',
+    startTs: payload.start,
+    endTs: payload.end,
+    summaryTimeMs: 12345,
+    summaryDone: 3,
+    payload,
+    closedAt: now
+  });
+
+  const current = await workdays.getCurrent();
+  assert.ok(current, 'expected manually closed workday to be returned');
+  assert.equal(current.id, 'day-2b');
+  assert.equal(current.summaryTimeMs, 12345);
+  assert.equal(current.summaryDone, 3);
+});
+
 test('falls back to stored summary when payload information is incomplete', async () => {
   const payload = {
     id: 'day-3',
@@ -126,6 +155,32 @@ test('falls back to stored summary when payload information is incomplete', asyn
 
   assert.equal(record.summaryTimeMs, 4321);
   assert.equal(record.summaryDone, 3);
+});
+
+test('getCurrent ignores closed workday once end time has passed', async () => {
+  const now = Date.now();
+  const payload = {
+    id: 'day-4',
+    start: now - 7200000,
+    end: now - 3600000,
+    baseline: {},
+    completed: {},
+    manualClosedStats: { timeMs: 2000, doneCount: 1 },
+    closedManually: true
+  };
+
+  await workdays.upsert({
+    id: 'day-4',
+    startTs: payload.start,
+    endTs: payload.end,
+    summaryTimeMs: 2000,
+    summaryDone: 1,
+    payload,
+    closedAt: now - 1800000
+  });
+
+  const current = await workdays.getCurrent();
+  assert.equal(current, null);
 });
 
 test('task listing accepts numeric project identifiers', async () => {
