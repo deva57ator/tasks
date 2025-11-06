@@ -81,4 +81,4 @@ jobs:
       - name: Health check (STG)
         shell: bash
         run: |
-          curl -fsS -H 'Cookie: tasks_env=stg' 'https://parkhomenko.space/api/health' >/dev/null
+          curl -fsS 'https://parkhomenko.space/tasks-stg/api/health' >/dev/null
