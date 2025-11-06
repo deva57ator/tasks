@@ -1,6 +1,8 @@
 const StorageModeStore={key:'mini-task-tracker:storage-mode',read(){return localStorage.getItem(this.key)||'local'},write(mode){localStorage.setItem(this.key,mode)}};
 const STORAGE_MODES={LOCAL:'local',SERVER:'server'};
-const DEFAULT_API_BASE='/api';
+const API_PREFIX=location.pathname.startsWith('/tasks-stg/')?'/tasks-stg':'/tasks';
+const API_BASE=`${API_PREFIX}/api`;
+const api=path=>`${API_BASE}${path}`;
 
 let storageMode=StorageModeStore.read();
 if(storageMode!==STORAGE_MODES.SERVER)storageMode=STORAGE_MODES.LOCAL;
@@ -210,7 +212,7 @@ let workdaySyncTimer=null;
 let workdaySyncInFlight=false;
 let lastWorkdaySyncPayload=null;
 
-async function apiRequest(path,{method='GET',body}={}){const url=`${DEFAULT_API_BASE}${path}`;const init={method};if(body!==undefined){init.body=typeof body==='string'?body:JSON.stringify(body);init.headers={'Content-Type':'application/json'}}let response;try{response=await fetch(url,init)}catch(err){throw new Error('Нет соединения с API')}if(!response.ok){let message=`Ошибка API (${response.status})`;try{const errBody=await response.json();if(errBody&&errBody.error&&errBody.error.message)message=errBody.error.message}catch{}throw new Error(message)}if(response.status===204)return null;const text=await response.text();if(!text)return null;try{return JSON.parse(text)}catch{return null}}
+async function apiRequest(path,{method='GET',body}={}){const url=api(path);const init={method};if(body!==undefined){init.body=typeof body==='string'?body:JSON.stringify(body);init.headers={'Content-Type':'application/json'}}let response;try{response=await fetch(url,init)}catch(err){throw new Error('Нет соединения с API')}if(!response.ok){let message=`Ошибка API (${response.status})`;try{const errBody=await response.json();if(errBody&&errBody.error&&errBody.error.message)message=errBody.error.message}catch{}throw new Error(message)}if(response.status===204)return null;const text=await response.text();if(!text)return null;try{return JSON.parse(text)}catch{return null}}
 
 function handleApiError(err,fallback){const message=err&&err.message?err.message:fallback||'Ошибка при работе с API';console.error(err);toast(message)}
 
@@ -914,7 +916,7 @@ $$('.nav-btn').forEach(btn=>btn.onclick=()=>{const view=btn.dataset.view;if(view
 if(archiveBtn){archiveBtn.addEventListener('click',()=>{currentView='archive';render()})}
 
 const storageToggleBtn=document.getElementById('storageToggle');
-if(storageToggleBtn){storageToggleBtn.addEventListener('click',async()=>{if(isDataLoading)return;const switchingToServer=!isServerMode();updateStorageToggle({loading:true});try{if(!switchingToServer){await setStorageModeAndReload(STORAGE_MODES.LOCAL,{forceReload:true,skipToggleUpdate:true});toast('Режим: localStorage');return}const healthResponse=await fetch(`${DEFAULT_API_BASE}/health`);if(!healthResponse.ok)throw new Error('API недоступен');await setStorageModeAndReload(STORAGE_MODES.SERVER,{forceReload:true,skipToggleUpdate:true});toast('Режим: API')}catch(err){console.error(err);if(switchingToServer){await setStorageModeAndReload(STORAGE_MODES.LOCAL,{silent:true,forceReload:true,skipToggleUpdate:true});toast('API недоступен')}}finally{updateStorageToggle({loading:false})}})}
+if(storageToggleBtn){storageToggleBtn.addEventListener('click',async()=>{if(isDataLoading)return;const switchingToServer=!isServerMode();updateStorageToggle({loading:true});try{if(!switchingToServer){await setStorageModeAndReload(STORAGE_MODES.LOCAL,{forceReload:true,skipToggleUpdate:true});toast('Режим: localStorage');return}const healthResponse=await fetch(api('/health'));if(!healthResponse.ok)throw new Error('API недоступен');await setStorageModeAndReload(STORAGE_MODES.SERVER,{forceReload:true,skipToggleUpdate:true});toast('Режим: API')}catch(err){console.error(err);if(switchingToServer){await setStorageModeAndReload(STORAGE_MODES.LOCAL,{silent:true,forceReload:true,skipToggleUpdate:true});toast('API недоступен')}}finally{updateStorageToggle({loading:false})}})}
 
 if(WorkdayUI.button){WorkdayUI.button.addEventListener('click',()=>{if(WorkdayUI.button.disabled)return;openWorkdayDialog()})}
 if(WorkdayUI.closeBtn)WorkdayUI.closeBtn.addEventListener('click',()=>closeWorkdayDialog());
