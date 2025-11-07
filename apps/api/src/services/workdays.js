@@ -1,5 +1,6 @@
 const db = require('../db/client');
 const { nowIso } = require('../lib/time');
+const logger = require('../lib/logger');
 
 function coerceNumber(value) {
   if (typeof value === 'number') {
@@ -125,60 +126,122 @@ async function hydrateWorkday(row) {
   return mapped;
 }
 
+async function finalizeWorkdayRow(row, closedAtValue) {
+  const hydrated = await hydrateWorkday(row);
+  if (!hydrated) return;
+
+  const finalTime = Math.max(0, Math.round(coerceNumber(hydrated.summaryTimeMs)) || 0);
+  const finalDone = Math.max(0, Math.round(coerceNumber(hydrated.summaryDone)) || 0);
+  const timestamp = nowIso();
+
+  let payload = null;
+  if (hydrated.payload && typeof hydrated.payload === 'object') {
+    const basePayload = hydrated.payload;
+    const manualStats = {
+      timeMs: finalTime,
+      doneCount: finalDone
+    };
+
+    payload = {
+      ...basePayload,
+      manualClosedStats: manualStats,
+      finalTimeMs: finalTime,
+      finalDoneCount: finalDone,
+      closedManually: basePayload.closedManually === true,
+      locked: true,
+      closedAt: closedAtValue
+    };
+    if (payload.closedManually !== true) {
+      payload.closedManually = false;
+    }
+  }
+
+  await db.run(
+    'UPDATE workdays SET summaryTimeMs = ?, summaryDone = ?, payload = ?, closedAt = ?, updatedAt = ? WHERE id = ?',
+    [
+      finalTime,
+      finalDone,
+      payload ? JSON.stringify(payload) : null,
+      closedAtValue,
+      timestamp,
+      row.id
+    ]
+  );
+}
+
 async function finalizeExpiredWorkdays(nowTs = Date.now()) {
   const staleRows = await db.all(
     'SELECT * FROM workdays WHERE closedAt IS NULL AND endTs IS NOT NULL AND endTs <= ?',
     [nowTs]
   );
 
+  if (!staleRows.length) {
+    return;
+  }
+
+  const closedIds = [];
   for (const row of staleRows) {
-    const hydrated = await hydrateWorkday(row);
-    if (!hydrated) continue;
-
-    const finalTime = Math.max(0, Math.round(coerceNumber(hydrated.summaryTimeMs)) || 0);
-    const finalDone = Math.max(0, Math.round(coerceNumber(hydrated.summaryDone)) || 0);
     const closedAtValue = Number.isFinite(Number(row.endTs)) ? Number(row.endTs) : nowTs;
-    const timestamp = nowIso();
+    await finalizeWorkdayRow(row, closedAtValue);
+    closedIds.push(row.id);
+  }
 
-    let payload = null;
-    if (hydrated.payload && typeof hydrated.payload === 'object') {
-      const basePayload = hydrated.payload;
-      const manualStats = {
-        timeMs: finalTime,
-        doneCount: finalDone
-      };
+  const backlogOpenDays = await countBacklogOpenDays(nowTs);
+  logger.info('workdays.finalizeExpired', { closedIds, backlogOpenDays });
+}
 
-      payload = {
-        ...basePayload,
-        manualClosedStats: manualStats,
-        finalTimeMs: finalTime,
-        finalDoneCount: finalDone,
-        closedManually: basePayload.closedManually === true,
-        locked: true,
-        closedAt: closedAtValue
-      };
-      if (payload.closedManually !== true) {
-        payload.closedManually = false;
-      }
+async function countBacklogOpenDays(nowTs = Date.now()) {
+  const row = await db.get(
+    'SELECT COUNT(*) AS count FROM workdays WHERE closedAt IS NULL AND endTs IS NOT NULL AND endTs <= ?',
+    [nowTs]
+  );
+  return row ? Number(row.count) || 0 : 0;
+}
+
+async function ensureSingleOpenWorkday(preferredOpenId = null) {
+  const nowTs = Date.now();
+  await finalizeExpiredWorkdays(nowTs);
+
+  const rows = await db.all(
+    'SELECT * FROM workdays WHERE closedAt IS NULL ORDER BY startTs DESC, createdAt DESC'
+  );
+
+  if (!rows.length) {
+    return;
+  }
+
+  let keep = null;
+  if (preferredOpenId) {
+    keep = rows.find((row) => row.id === preferredOpenId) || null;
+  }
+  if (!keep) {
+    keep = rows[0];
+  }
+
+  const closedIds = [];
+  for (const row of rows) {
+    if (row.id === keep.id) {
+      continue;
     }
+    const closedAtValue = Number.isFinite(Number(row.endTs)) ? Number(row.endTs) : nowTs;
+    await finalizeWorkdayRow(row, closedAtValue);
+    closedIds.push(row.id);
+  }
 
-    await db.run(
-      'UPDATE workdays SET summaryTimeMs = ?, summaryDone = ?, payload = ?, closedAt = ?, updatedAt = ? WHERE id = ?',
-      [
-        finalTime,
-        finalDone,
-        payload ? JSON.stringify(payload) : null,
-        closedAtValue,
-        timestamp,
-        row.id
-      ]
-    );
+  if (closedIds.length) {
+    const backlogOpenDays = await countBacklogOpenDays(nowTs);
+    logger.info('workdays.ensureSingleOpenWorkday', { keptId: keep.id, closedIds, backlogOpenDays });
   }
 }
 
+async function getLatestUpdateMarker() {
+  const row = await db.get('SELECT MAX(updatedAt) AS updatedAt FROM workdays');
+  return row && row.updatedAt ? row.updatedAt : null;
+}
+
 async function getCurrent() {
+  await ensureSingleOpenWorkday();
   const nowTs = Date.now();
-  await finalizeExpiredWorkdays(nowTs);
   const row = await db.get(
     'SELECT * FROM workdays WHERE closedAt IS NULL OR (endTs IS NOT NULL AND endTs > ?) ORDER BY startTs DESC LIMIT 1',
     [nowTs]
@@ -208,6 +271,8 @@ async function upsert(workday) {
       timestamp
     ]
   );
+  const keepOpenId = workday && (workday.closedAt === undefined || workday.closedAt === null) ? workday.id : null;
+  await ensureSingleOpenWorkday(keepOpenId);
   return getById(workday.id);
 }
 
@@ -221,5 +286,8 @@ module.exports = {
   getById,
   upsert,
   importCurrent,
-  mapWorkday: mapWorkdayRow
+  mapWorkday: mapWorkdayRow,
+  countBacklogOpenDays,
+  ensureSingleOpenWorkday,
+  getLatestUpdateMarker
 };

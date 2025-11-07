@@ -22,10 +22,16 @@ const tasks = require('../src/services/tasks');
 const projects = require('../src/services/projects');
 const { flattenTasks } = require('../src/lib/task-utils');
 
-const migrationPath = path.join(__dirname, '..', 'migrations/001_init.sql');
+const migrationsDir = path.join(__dirname, '..', 'migrations');
+const migrationFiles = fs
+  .readdirSync(migrationsDir)
+  .filter((file) => file.endsWith('.sql'))
+  .sort();
 
 test.before(async () => {
-  await db.runScript(migrationPath);
+  for (const file of migrationFiles) {
+    await db.runScript(path.join(migrationsDir, file));
+  }
 });
 
 test.afterEach(async () => {
@@ -229,6 +235,94 @@ test('finalizes stale workday automatically at scheduled end', async () => {
   assert.equal(stored.payload.locked, true);
   assert.equal(stored.payload.closedManually, false);
   assert.deepEqual(stored.payload.manualClosedStats, { timeMs: finalTime - baseTime, doneCount: 1 });
+});
+
+test('upsert automatically closes older open workdays', async () => {
+  const now = Date.now();
+  const timestamp = new Date().toISOString();
+
+  await db.run(
+    'INSERT INTO workdays (id, startTs, endTs, summaryTimeMs, summaryDone, payload, closedAt, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    ['legacy-1', now - 5 * 3600000, now - 4 * 3600000, 0, 0, null, null, timestamp, timestamp]
+  );
+  await db.run(
+    'INSERT INTO workdays (id, startTs, endTs, summaryTimeMs, summaryDone, payload, closedAt, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    ['legacy-2', now - 3 * 3600000, now - 2 * 3600000, 0, 0, null, null, timestamp, timestamp]
+  );
+
+  const current = await workdays.upsert({
+    id: 'current-day',
+    startTs: now - 3600000,
+    endTs: now + 3600000,
+    summaryTimeMs: 0,
+    summaryDone: 0,
+    payload: null,
+    closedAt: null
+  });
+
+  assert.ok(current);
+  assert.equal(current.id, 'current-day');
+  assert.equal(current.closedAt, null);
+
+  const legacyRows = await db.all('SELECT id, closedAt FROM workdays WHERE id IN (?, ?)', ['legacy-1', 'legacy-2']);
+  assert.equal(legacyRows.length, 2);
+  for (const row of legacyRows) {
+    assert.notEqual(row.closedAt, null);
+  }
+
+  const backlog = await workdays.countBacklogOpenDays();
+  assert.equal(backlog, 0);
+});
+
+test('countBacklogOpenDays highlights stale workdays', async () => {
+  const now = Date.now();
+  const timestamp = new Date().toISOString();
+
+  await db.run(
+    'INSERT INTO workdays (id, startTs, endTs, summaryTimeMs, summaryDone, payload, closedAt, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    ['backlog-1', now - 7200000, now - 3600000, 0, 0, null, null, timestamp, timestamp]
+  );
+
+  const backlogBefore = await workdays.countBacklogOpenDays(now);
+  assert.equal(backlogBefore, 1);
+
+  await workdays.ensureSingleOpenWorkday();
+
+  const backlogAfter = await workdays.countBacklogOpenDays();
+  assert.equal(backlogAfter, 0);
+});
+
+test('getLatestUpdateMarker changes when workdays mutate', async () => {
+  const now = Date.now();
+  const payload = { id: 'marker-test' };
+
+  await workdays.upsert({
+    id: 'marker-test',
+    startTs: now,
+    endTs: now + 3600000,
+    summaryTimeMs: 0,
+    summaryDone: 0,
+    payload,
+    closedAt: null
+  });
+
+  const markerBefore = await workdays.getLatestUpdateMarker();
+  assert.ok(markerBefore);
+
+  const closed = await workdays.upsert({
+    id: 'marker-test',
+    startTs: now,
+    endTs: now + 3600000,
+    summaryTimeMs: 0,
+    summaryDone: 0,
+    payload,
+    closedAt: now + 1800000
+  });
+
+  assert.ok(closed.closedAt);
+  const markerAfter = await workdays.getLatestUpdateMarker();
+  assert.ok(markerAfter);
+  assert.notEqual(markerAfter, markerBefore);
 });
 
 test('task listing accepts numeric project identifiers', async () => {

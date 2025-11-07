@@ -8,7 +8,18 @@ const router = express.Router();
 
 router.get('/current', async (req, res, next) => {
   try {
-    const current = await workdays.getCurrent();
+    const [current, marker] = await Promise.all([
+      workdays.getCurrent(),
+      workdays.getLatestUpdateMarker()
+    ]);
+    res.set('Cache-Control', 'no-store');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    const etagSource = marker || 'empty';
+    const etagValue = marker
+      ? `"${Buffer.from(String(etagSource)).toString('base64')}"`
+      : '"empty"';
+    res.set('ETag', etagValue);
     res.json({ workday: current });
   } catch (err) {
     next(err);
