@@ -274,6 +274,38 @@ test('upsert automatically closes older open workdays', async () => {
   assert.equal(backlog, 0);
 });
 
+test('getCurrent prefers open workday when duplicates share start time', async () => {
+  const now = Date.now();
+  const start = now - 1000;
+  const end = now + 3600000;
+  const timestamp = new Date().toISOString();
+
+  await db.run(
+    'INSERT INTO workdays (id, startTs, endTs, summaryTimeMs, summaryDone, payload, closedAt, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    ['duplicate-old', start, end, 0, 0, null, null, timestamp, timestamp]
+  );
+
+  await workdays.upsert({
+    id: 'duplicate-new',
+    startTs: start,
+    endTs: end,
+    summaryTimeMs: 0,
+    summaryDone: 0,
+    payload: null,
+    closedAt: null
+  });
+
+  const current = await workdays.getCurrent();
+
+  assert.ok(current);
+  assert.equal(current.id, 'duplicate-new');
+  assert.equal(current.closedAt, null);
+
+  const oldRow = await workdays.getById('duplicate-old');
+  assert.ok(oldRow);
+  assert.notEqual(oldRow.closedAt, null);
+});
+
 test('countBacklogOpenDays highlights stale workdays', async () => {
   const now = Date.now();
   const timestamp = new Date().toISOString();
