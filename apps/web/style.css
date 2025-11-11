@@ -120,7 +120,9 @@ body.theme-dark .api-settings-error{color:#ff8c8c}
 body.api-settings-open{overflow:hidden}
 .workday-overlay{position:fixed;inset:0;background:rgba(15,17,21,.52);backdrop-filter:blur(6px);opacity:0;pointer-events:none;transition:opacity .22s ease;z-index:13000;display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px;box-sizing:border-box}
 .workday-overlay.is-open{opacity:1;pointer-events:auto}
-.workday-dialog{position:relative;background:var(--sidebar-bg);color:var(--text);border-radius:22px;padding:28px;max-width:560px;width:100%;border:1px solid var(--toast-border);box-shadow:0 26px 48px rgba(15,17,21,.18);display:flex;flex-direction:column;gap:22px}
+.workday-fireworks{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;opacity:0;transition:opacity .3s ease}
+.workday-fireworks.is-active{opacity:1}
+.workday-dialog{position:relative;z-index:1;background:var(--sidebar-bg);color:var(--text);border-radius:22px;padding:28px;max-width:560px;width:100%;border:1px solid var(--toast-border);box-shadow:0 26px 48px rgba(15,17,21,.18);display:flex;flex-direction:column;gap:22px}
 .workday-dialog-header{display:flex;flex-direction:column;gap:6px}
 .workday-dialog-title{font-size:22px;font-weight:800}
 .workday-dialog-range{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}

@@ -172,6 +172,7 @@ const WorkdayUI={
   time:document.getElementById('workdayTime'),
   button:document.getElementById('workdayFinishBtn'),
   overlay:document.getElementById('workdayOverlay'),
+  fireworksCanvas:document.getElementById('workdayFireworks'),
   range:document.getElementById('workdayDialogRange'),
   summaryTime:document.getElementById('workdaySummaryTime'),
   summaryDone:document.getElementById('workdaySummaryDone'),
@@ -354,6 +355,153 @@ const confettiState=new WeakMap();
 function ensureTaskCanvas(row){let canvas=row.querySelector('.task-confetti');if(!canvas){canvas=document.createElement('canvas');canvas.className='task-confetti';row.appendChild(canvas)}return canvas}
 function spawnTaskConfetti(rowEl,checkboxEl){if(!rowEl||!checkboxEl)return;if(!isConfettiEnabled()||isMotionReduced())return;const rect=rowEl.getBoundingClientRect();if(!rect.width||!rect.height)return;const canvas=ensureTaskCanvas(rowEl);const ctx=canvas.getContext('2d');if(!ctx)return;const dpr=window.devicePixelRatio||1;const width=Math.round(rect.width*dpr);const height=Math.round(rect.height*dpr);if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;canvas.style.width=rect.width+'px';canvas.style.height=rect.height+'px'}const checkboxRect=checkboxEl.getBoundingClientRect();const originX=(checkboxRect.left-rect.left+checkboxRect.width/2)*dpr;const originY=(checkboxRect.top-rect.top+checkboxRect.height/2)*dpr;const style=getComputedStyle(rowEl);const paletteVars=['--confetti-1','--confetti-2','--confetti-3','--confetti-4','--confetti-5','--confetti-6'];let palette=paletteVars.map(name=>style.getPropertyValue(name).trim()).filter(Boolean);if(!palette.length){palette=['#2ecc71','#3498db','#9b59b6','#f1c40f','#e67e22','#e74c3c'];}const duration=0.85;const gravity=900*dpr;const particleCount=26;const particles=[];for(let i=0;i<particleCount;i++){const angle=(Math.random()*Math.PI/1.2)-(Math.PI/2.4);const speed=(260+Math.random()*160)*dpr;particles.push({x:originX,y:originY,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,life:0,ttl:duration,color:palette[i%palette.length],size:(6+Math.random()*6)*dpr,shape:Math.random()>0.5?'square':'circle',rotation:Math.random()*Math.PI*2,vr:(Math.random()*4-2)})}
 const state=confettiState.get(rowEl);if(state&&state.cancel){state.cancel()}let rafId=0;const start=performance.now();let prev=start;ctx.clearRect(0,0,canvas.width,canvas.height);const draw=now=>{const dt=(now-prev)/1000;prev=now;const elapsed=(now-start)/1000;ctx.clearRect(0,0,canvas.width,canvas.height);let active=false;for(const p of particles){p.life=elapsed;const t=Math.min(1,elapsed/p.ttl);if(t>=1)continue;active=true;p.vy+=gravity*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;const alpha=1-t;ctx.save();ctx.globalAlpha=Math.max(0,alpha);ctx.translate(p.x,p.y);p.rotation+=p.vr*dt;ctx.rotate(p.rotation);ctx.fillStyle=p.color.trim()||'#fff';if(p.shape==='circle'){ctx.beginPath();ctx.arc(0,0,p.size/2,0,Math.PI*2);ctx.fill()}else{ctx.fillRect(-p.size/2,-p.size/2,p.size,p.size)}ctx.restore()}if(active){rafId=requestAnimationFrame(draw)}else{ctx.clearRect(0,0,canvas.width,canvas.height);confettiState.delete(rowEl)}};rafId=requestAnimationFrame(draw);confettiState.set(rowEl,{cancel(){if(rafId)cancelAnimationFrame(rafId);ctx.clearRect(0,0,canvas.width,canvas.height);confettiState.delete(rowEl)}})}
+
+let workdayFireworksController=null;
+function createWorkdayFireworks(canvas){
+  if(!canvas)return null;
+  const ctx=canvas.getContext('2d');
+  if(!ctx)return null;
+  const particles=[];
+  const palette=['#ff7b00','#ffd166','#f46036','#5dd9c1','#4cc9f0','#b5179e'];
+  const spawnInterval=680;
+  const gravity=60;
+  let width=0;
+  let height=0;
+  let dpr=window.devicePixelRatio||1;
+  let rafId=0;
+  let running=false;
+  let lastSpawn=0;
+  let lastTime=0;
+  function resize(){
+    const overlay=WorkdayUI.overlay||canvas.parentElement;
+    const rect=overlay?overlay.getBoundingClientRect():canvas.getBoundingClientRect();
+    width=rect.width;
+    height=rect.height;
+    dpr=window.devicePixelRatio||1;
+    const scaledWidth=Math.max(1,Math.round(width*dpr));
+    const scaledHeight=Math.max(1,Math.round(height*dpr));
+    if(canvas.width!==scaledWidth||canvas.height!==scaledHeight){
+      canvas.width=scaledWidth;
+      canvas.height=scaledHeight;
+    }
+    canvas.style.width=`${Math.max(0,width)}px`;
+    canvas.style.height=`${Math.max(0,height)}px`;
+  }
+  function clearCanvas(){
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.globalAlpha=1;
+    ctx.globalCompositeOperation='source-over';
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+  }
+  function spawnFirework(){
+    if(width<=0||height<=0)return;
+    const x=width*(0.2+Math.random()*0.6);
+    const y=height*(0.15+Math.random()*0.45);
+    const color=palette[Math.floor(Math.random()*palette.length)];
+    const count=28+Math.floor(Math.random()*24);
+    const baseSpeed=90+Math.random()*150;
+    const ttl=1.4+Math.random()*0.6;
+    for(let i=0;i<count;i++){
+      const angle=Math.random()*Math.PI*2;
+      const speed=baseSpeed*(0.55+Math.random()*0.45);
+      particles.push({
+        x,
+        y,
+        vx:Math.cos(angle)*speed,
+        vy:Math.sin(angle)*speed,
+        life:0,
+        ttl,
+        size:1.6+Math.random()*1.8,
+        color,
+        sparkle:Math.random()>0.6
+      });
+    }
+  }
+  function step(now){
+    if(!running)return;
+    if(!lastTime)lastTime=now;
+    const dt=Math.min(0.05,(now-lastTime)/1000);
+    lastTime=now;
+    if(now-lastSpawn>spawnInterval){
+      spawnFirework();
+      lastSpawn=now;
+    }
+    const overlay=WorkdayUI.overlay||canvas.parentElement;
+    if(overlay){
+      const rect=overlay.getBoundingClientRect();
+      if(rect.width!==width||rect.height!==height){
+        resize();
+      }
+    }
+    clearCanvas();
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.globalCompositeOperation='lighter';
+    const next=[];
+    for(const particle of particles){
+      const life=particle.life+dt;
+      if(life>=particle.ttl)continue;
+      particle.life=life;
+      particle.vy+=gravity*dt;
+      particle.x+=particle.vx*dt;
+      particle.y+=particle.vy*dt;
+      const progress=particle.life/particle.ttl;
+      const fadeStart=0.65;
+      const alpha=progress<fadeStart?1:Math.max(0,1-(progress-fadeStart)/(1-fadeStart));
+      const size=particle.size*(1-progress*0.45);
+      ctx.globalAlpha=alpha*(particle.sparkle?0.4+Math.random()*0.6:1);
+      ctx.fillStyle=particle.color;
+      ctx.beginPath();
+      ctx.arc(particle.x,particle.y,Math.max(0.4,size),0,Math.PI*2);
+      ctx.fill();
+      next.push(particle);
+    }
+    particles.length=0;
+    particles.push(...next);
+    ctx.globalAlpha=1;
+    ctx.globalCompositeOperation='source-over';
+    rafId=requestAnimationFrame(step);
+  }
+  return{
+    start(){
+      if(running)return;
+      if(!canvas.isConnected){
+        canvas.classList.remove('is-active');
+        return;
+      }
+      if(isMotionReduced()){
+        canvas.classList.remove('is-active');
+        clearCanvas();
+        return;
+      }
+      running=true;
+      particles.length=0;
+      lastSpawn=0;
+      lastTime=0;
+      resize();
+      clearCanvas();
+      canvas.classList.add('is-active');
+      window.addEventListener('resize',resize);
+      rafId=requestAnimationFrame(step);
+    },
+    stop(){
+      if(running){
+        running=false;
+        window.removeEventListener('resize',resize);
+        if(rafId)cancelAnimationFrame(rafId);
+        rafId=0;
+        lastSpawn=0;
+        lastTime=0;
+        particles.length=0;
+      }
+      clearCanvas();
+      canvas.classList.remove('is-active');
+    }
+  };
+}
+
+function ensureWorkdayFireworks(){if(!WorkdayUI.fireworksCanvas)return null;if(!workdayFireworksController){workdayFireworksController=createWorkdayFireworks(WorkdayUI.fireworksCanvas);}return workdayFireworksController;}
+function startWorkdayFireworks(){const controller=ensureWorkdayFireworks();if(!controller)return;controller.start();}
+function stopWorkdayFireworks(){const controller=ensureWorkdayFireworks();if(!controller)return;controller.stop();}
 function animateCheckboxBounce(el){if(!el||isMotionReduced())return;el.classList.remove('is-bouncing');void el.offsetWidth;el.classList.add('is-bouncing')}
 
 function handleTaskCompletionEffects(taskId,{completed=false,undone=false}={}){if(undone){sessionCompletedCount=Math.max(0,sessionCompletedCount-1);return}if(!completed)return;const base=600+sessionCompletedCount*250;sessionCompletedCount=Math.min(sessionCompletedCount+1,Number.MAX_SAFE_INTEGER);if(isSoundEnabled()){try{playTaskCompleteBell(base)}catch{}}
@@ -447,12 +595,12 @@ function updateWorkdayDialogContent(){if(!WorkdayUI.overlay)return;const now=Dat
   WorkdayUI.pendingList.style.display=pending.length?'flex':'none';
 }
   if(WorkdayUI.postponeBtn)WorkdayUI.postponeBtn.disabled=!pending.length;
-  return pending
+  return{pending,activeNow,manuallyClosed}
 }
 
-function openWorkdayDialog(){if(!WorkdayUI.overlay)return;const pending=updateWorkdayDialogContent();WorkdayUI.overlay.classList.add('is-open');WorkdayUI.overlay.setAttribute('aria-hidden','false');document.body.classList.add('workday-dialog-open');if(WorkdayUI.postponeBtn)WorkdayUI.postponeBtn.disabled=!pending.length;setTimeout(()=>{if(WorkdayUI.postponeBtn&&!WorkdayUI.postponeBtn.disabled){try{WorkdayUI.postponeBtn.focus({preventScroll:true})}catch{WorkdayUI.postponeBtn.focus()}}},80)}
+function openWorkdayDialog(){if(!WorkdayUI.overlay)return;const state=updateWorkdayDialogContent()||{};const pending=Array.isArray(state.pending)?state.pending:[];WorkdayUI.overlay.classList.add('is-open');WorkdayUI.overlay.setAttribute('aria-hidden','false');document.body.classList.add('workday-dialog-open');if(WorkdayUI.postponeBtn)WorkdayUI.postponeBtn.disabled=!pending.length;if(state.activeNow){requestAnimationFrame(()=>startWorkdayFireworks());}else{stopWorkdayFireworks();}setTimeout(()=>{if(WorkdayUI.postponeBtn&&!WorkdayUI.postponeBtn.disabled){try{WorkdayUI.postponeBtn.focus({preventScroll:true})}catch{WorkdayUI.postponeBtn.focus()}}},80)}
 
-function closeWorkdayDialog(){if(!WorkdayUI.overlay)return;WorkdayUI.overlay.classList.remove('is-open');WorkdayUI.overlay.setAttribute('aria-hidden','true');document.body.classList.remove('workday-dialog-open')}
+function closeWorkdayDialog(){if(!WorkdayUI.overlay)return;WorkdayUI.overlay.classList.remove('is-open');WorkdayUI.overlay.setAttribute('aria-hidden','true');document.body.classList.remove('workday-dialog-open');stopWorkdayFireworks()}
 
 function postponePendingTasks(){if(!workdayState)return;const pending=collectWorkdayPendingTasks(workdayState);if(!pending.length){toast('Все задачи уже перенесены');return}const nextDay=new Date(workdayState.start);nextDay.setDate(nextDay.getDate()+1);nextDay.setHours(0,0,0,0);const nextIso=nextDay.toISOString();let changed=false;const updatedIds=[];for(const item of pending){const task=findTask(item.id);if(!task)continue;task.due=nextIso;changed=true;if(isServerMode())updatedIds.push(task.id)}if(changed){Store.write(tasks);if(updatedIds.length){updatedIds.forEach(id=>queueTaskUpdate(id,{due:nextIso}))}render();toast('Дедлайны перенесены на следующий день');updateWorkdayDialogContent()}}
 function finishWorkdayAndArchive(){
