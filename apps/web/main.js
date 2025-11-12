@@ -183,7 +183,6 @@ const WorkdayUI={
   emptyState:document.getElementById('workdayDialogEmpty'),
   postponeBtn:document.getElementById('workdayPostponeBtn'),
   closeBtn:document.getElementById('workdayDialogClose'),
-  reopenBtn:document.getElementById('workdayReopenBtn'),
   closeAction:document.getElementById('workdayDialogDone'),
   title:document.getElementById('workdayDialogTitle')
 };
@@ -596,16 +595,10 @@ function updateWorkdayDialogContent(){if(!WorkdayUI.overlay)return;const now=Dat
   WorkdayUI.pendingList.style.display=pending.length?'flex':'none';
 }
   if(WorkdayUI.postponeBtn)WorkdayUI.postponeBtn.disabled=!pending.length;
-  if(WorkdayUI.reopenBtn){
-    const shouldShow=manuallyClosed;
-    WorkdayUI.reopenBtn.hidden=!shouldShow;
-    WorkdayUI.reopenBtn.setAttribute('aria-hidden',shouldShow?'false':'true');
-    WorkdayUI.reopenBtn.disabled=!shouldShow;
-  }
   return{pending,activeNow,manuallyClosed}
 }
 
-function openWorkdayDialog(){if(!WorkdayUI.overlay)return;const state=updateWorkdayDialogContent()||{};const pending=Array.isArray(state.pending)?state.pending:[];const manuallyClosed=!!state.manuallyClosed;WorkdayUI.overlay.classList.add('is-open');WorkdayUI.overlay.setAttribute('aria-hidden','false');document.body.classList.add('workday-dialog-open');if(WorkdayUI.postponeBtn)WorkdayUI.postponeBtn.disabled=!pending.length;if(state.activeNow){requestAnimationFrame(()=>startWorkdayFireworks());}else{stopWorkdayFireworks();}let focusTarget=null;if(manuallyClosed&&WorkdayUI.reopenBtn&&!WorkdayUI.reopenBtn.hidden&&!WorkdayUI.reopenBtn.disabled){focusTarget=WorkdayUI.reopenBtn;}else if(WorkdayUI.postponeBtn&&!WorkdayUI.postponeBtn.disabled){focusTarget=WorkdayUI.postponeBtn;}setTimeout(()=>{if(!focusTarget)return;try{focusTarget.focus({preventScroll:true})}catch{focusTarget.focus()}},80)}
+function openWorkdayDialog(){if(!WorkdayUI.overlay)return;const state=updateWorkdayDialogContent()||{};const pending=Array.isArray(state.pending)?state.pending:[];WorkdayUI.overlay.classList.add('is-open');WorkdayUI.overlay.setAttribute('aria-hidden','false');document.body.classList.add('workday-dialog-open');if(WorkdayUI.postponeBtn)WorkdayUI.postponeBtn.disabled=!pending.length;if(state.activeNow){requestAnimationFrame(()=>startWorkdayFireworks());}else{stopWorkdayFireworks();}let focusTarget=null;if(WorkdayUI.postponeBtn&&!WorkdayUI.postponeBtn.disabled){focusTarget=WorkdayUI.postponeBtn;}else if(WorkdayUI.closeAction){focusTarget=WorkdayUI.closeAction;}setTimeout(()=>{if(!focusTarget)return;try{focusTarget.focus({preventScroll:true})}catch{focusTarget.focus()}},80)}
 
 function closeWorkdayDialog(){if(!WorkdayUI.overlay)return;WorkdayUI.overlay.classList.remove('is-open');WorkdayUI.overlay.setAttribute('aria-hidden','true');document.body.classList.remove('workday-dialog-open');stopWorkdayFireworks()}
 
@@ -674,22 +667,6 @@ function finishWorkdayAndArchive(){
   render();
   updateWorkdayUI();
   if(normalizedArchived.length){toast('Выполненные задачи отправлены в архив')}else{toast('Рабочий день закрыт')}
-}
-
-function reopenCurrentWorkday(){
-  if(!workdayState||workdayState.closedManually!==true)return;
-  const now=Date.now();
-  ensureWorkdayState(now);
-  if(!workdayState||workdayState.closedManually!==true)return;
-  workdayState.closedManually=false;
-  workdayState.closedAt=null;
-  workdayState.locked=false;
-  WorkdayStore.write(workdayState);
-  const state=updateWorkdayDialogContent()||{};
-  updateWorkdayUI();
-  if(state.activeNow){startWorkdayFireworks();}else{stopWorkdayFireworks();}
-  toast('Рабочий день снова открыт');
-  if(WorkdayUI.closeAction){try{WorkdayUI.closeAction.focus({preventScroll:true})}catch{WorkdayUI.closeAction.focus();}}
 }
 
 let workdayRefreshTimer=null;
@@ -1092,7 +1069,6 @@ if(storageToggleBtn){storageToggleBtn.addEventListener('click',async()=>{if(isDa
 if(WorkdayUI.button){WorkdayUI.button.addEventListener('click',()=>{if(WorkdayUI.button.disabled)return;openWorkdayDialog()})}
 if(WorkdayUI.closeBtn)WorkdayUI.closeBtn.addEventListener('click',()=>closeWorkdayDialog());
 if(WorkdayUI.closeAction)WorkdayUI.closeAction.addEventListener('click',()=>finishWorkdayAndArchive());
-if(WorkdayUI.reopenBtn)WorkdayUI.reopenBtn.addEventListener('click',()=>reopenCurrentWorkday());
 if(WorkdayUI.overlay)WorkdayUI.overlay.addEventListener('click',e=>{if(e.target===WorkdayUI.overlay)closeWorkdayDialog()});
 if(WorkdayUI.postponeBtn)WorkdayUI.postponeBtn.addEventListener('click',()=>postponePendingTasks());
 
