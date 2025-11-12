@@ -209,6 +209,7 @@ body.view-sprint .composer{display:none}
 .task.done .task-title{color:var(--muted);text-decoration:line-through}
 .task-tags:empty{display:none}
 .due-tag{display:inline-flex;align-items:center;padding:1px 6px;border-radius:8px;background:var(--hover);font-size:11px;color:var(--muted);line-height:1.2}
+.due-tag.is-overdue{background:var(--timer-glow-strong);color:var(--timer-accent);font-weight:600}
 .due-tag.is-today{background:var(--today-bg);color:var(--today-text);font-weight:600}
 .proj-tag{display:inline-flex;align-items:center;padding:1px 6px;border-radius:8px;background:var(--hover);font-size:11px;color:var(--muted);line-height:1.2}
 .task-actions{display:flex;align-items:center;gap:6px;justify-content:flex-end;white-space:nowrap;justify-self:end;align-self:center}
