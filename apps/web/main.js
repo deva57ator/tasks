@@ -172,6 +172,7 @@ const WorkdayUI={
   time:document.getElementById('workdayTime'),
   button:document.getElementById('workdayFinishBtn'),
   overlay:document.getElementById('workdayOverlay'),
+  dialog:document.querySelector('.workday-dialog'),
   fireworksCanvas:document.getElementById('workdayFireworks'),
   range:document.getElementById('workdayDialogRange'),
   summaryTime:document.getElementById('workdaySummaryTime'),
@@ -363,9 +364,9 @@ function createWorkdayFireworks(canvas){
   const ctx=canvas.getContext('2d');
   if(!ctx)return null;
   const particles=[];
-  const palette=['#ff7b00','#ffd166','#f46036','#5dd9c1','#4cc9f0','#b5179e'];
-  const spawnInterval=680;
-  const gravity=60;
+  const palette=['#ff4d00','#ffb400','#ffe45e','#ff61b6','#7cffcb','#5ce1ff','#9c42ff','#ff355e'];
+  const spawnInterval=420;
+  const gravity=72;
   let width=0;
   let height=0;
   let dpr=window.devicePixelRatio||1;
@@ -394,17 +395,41 @@ function createWorkdayFireworks(canvas){
     ctx.globalCompositeOperation='source-over';
     ctx.clearRect(0,0,canvas.width,canvas.height);
   }
+  function pickSideSpawnX(){
+    const overlay=WorkdayUI.overlay||canvas.parentElement;
+    const dialog=WorkdayUI.dialog;
+    if(!overlay||!dialog)return null;
+    const overlayRect=overlay.getBoundingClientRect();
+    const dialogRect=dialog.getBoundingClientRect();
+    if(!overlayRect.width||!dialogRect.width)return null;
+    const padding=24;
+    const leftLimit=Math.max(0,dialogRect.left-overlayRect.left-padding);
+    const rightStart=Math.min(overlayRect.width,dialogRect.right-overlayRect.left+padding);
+    const minBand=40;
+    const ranges=[];
+    if(leftLimit>minBand){
+      ranges.push([0,leftLimit]);
+    }
+    if(overlayRect.width-rightStart>minBand){
+      ranges.push([rightStart,overlayRect.width]);
+    }
+    if(!ranges.length)return null;
+    const [minX,maxX]=ranges[Math.floor(Math.random()*ranges.length)];
+    const span=Math.max(1,maxX-minX);
+    return minX+Math.random()*span;
+  }
   function spawnFirework(){
     if(width<=0||height<=0)return;
-    const x=width*(0.2+Math.random()*0.6);
-    const y=height*(0.15+Math.random()*0.45);
+    const sideX=pickSideSpawnX();
+    const x=typeof sideX==='number'?sideX:(Math.random()<0.5?Math.random()*width*0.3:width*(0.7+Math.random()*0.3));
+    const y=height*(0.18+Math.random()*0.46);
     const color=palette[Math.floor(Math.random()*palette.length)];
-    const count=28+Math.floor(Math.random()*24);
-    const baseSpeed=90+Math.random()*150;
-    const ttl=1.4+Math.random()*0.6;
+    const count=36+Math.floor(Math.random()*28);
+    const baseSpeed=160+Math.random()*220;
+    const ttl=1.2+Math.random()*0.5;
     for(let i=0;i<count;i++){
       const angle=Math.random()*Math.PI*2;
-      const speed=baseSpeed*(0.55+Math.random()*0.45);
+      const speed=baseSpeed*(0.65+Math.random()*0.35);
       particles.push({
         x,
         y,
@@ -412,9 +437,9 @@ function createWorkdayFireworks(canvas){
         vy:Math.sin(angle)*speed,
         life:0,
         ttl,
-        size:1.6+Math.random()*1.8,
+        size:1.9+Math.random()*2.1,
         color,
-        sparkle:Math.random()>0.6
+        sparkle:Math.random()>0.35
       });
     }
   }
@@ -449,11 +474,14 @@ function createWorkdayFireworks(canvas){
       const fadeStart=0.65;
       const alpha=progress<fadeStart?1:Math.max(0,1-(progress-fadeStart)/(1-fadeStart));
       const size=particle.size*(1-progress*0.45);
-      ctx.globalAlpha=alpha*(particle.sparkle?0.4+Math.random()*0.6:1);
+      ctx.globalAlpha=alpha*(particle.sparkle?0.7+Math.random()*0.5:1);
+      ctx.shadowColor=particle.color;
+      ctx.shadowBlur=particle.sparkle?28:16;
       ctx.fillStyle=particle.color;
       ctx.beginPath();
       ctx.arc(particle.x,particle.y,Math.max(0.4,size),0,Math.PI*2);
       ctx.fill();
+      ctx.shadowBlur=0;
       next.push(particle);
     }
     particles.length=0;
