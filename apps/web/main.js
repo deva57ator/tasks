@@ -423,12 +423,13 @@ function createWorkdayFireworks(canvas){
     const x=typeof sideX==='number'?sideX:(Math.random()<0.5?Math.random()*width*0.3:width*(0.7+Math.random()*0.3));
     const y=height*(0.18+Math.random()*0.46);
     const color=palette[Math.floor(Math.random()*palette.length)];
-    const count=36+Math.floor(Math.random()*28);
-    const baseSpeed=160+Math.random()*220;
-    const ttl=1.2+Math.random()*0.5;
+    const count=24+Math.floor(Math.random()*18);
+    const baseSpeed=140+Math.random()*160;
+    const ttl=0.95+Math.random()*0.35;
     for(let i=0;i<count;i++){
       const angle=Math.random()*Math.PI*2;
       const speed=baseSpeed*(0.65+Math.random()*0.35);
+      const sparkle=Math.random()>0.45;
       particles.push({
         x,
         y,
@@ -436,9 +437,10 @@ function createWorkdayFireworks(canvas){
         vy:Math.sin(angle)*speed,
         life:0,
         ttl,
-        size:1.9+Math.random()*2.1,
+        size:1.5+Math.random()*1.6,
         color,
-        sparkle:Math.random()>0.35
+        sparkle,
+        sparkleScale:sparkle?0.72+Math.random()*0.22:1
       });
     }
   }
@@ -473,9 +475,9 @@ function createWorkdayFireworks(canvas){
       const fadeStart=0.65;
       const alpha=progress<fadeStart?1:Math.max(0,1-(progress-fadeStart)/(1-fadeStart));
       const size=particle.size*(1-progress*0.45);
-      ctx.globalAlpha=alpha*(particle.sparkle?0.7+Math.random()*0.5:1);
+      ctx.globalAlpha=alpha*(particle.sparkleScale||1);
       ctx.shadowColor=particle.color;
-      ctx.shadowBlur=particle.sparkle?28:16;
+      ctx.shadowBlur=particle.sparkle?18:10;
       ctx.fillStyle=particle.color;
       ctx.beginPath();
       ctx.arc(particle.x,particle.y,Math.max(0.4,size),0,Math.PI*2);
