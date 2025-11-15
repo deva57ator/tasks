@@ -191,6 +191,10 @@ const WorkdayUI={
 const WORKDAY_REFRESH_INTERVAL=60000;
 
 const $=s=>document.querySelector(s),$$=s=>Array.from(document.querySelectorAll(s));
+function escapeAttributeValue(value){return String(value).replace(/\\/g,'\\\\').replace(/"/g,'\\"');}
+function getTaskRowById(id){if(!id)return null;const safe=escapeAttributeValue(id);return document.querySelector(`.task[data-id="${safe}"]`)}
+const NON_TEXT_INPUT_TYPES=new Set(['button','submit','reset','checkbox','radio','range','color','file']);
+function isEditableShortcutTarget(target){if(!target)return false;const element=target instanceof Element?target:target.parentElement;if(!element)return false;if(element.isContentEditable)return true;const el=element.closest('input, textarea, select');if(!el)return false;if(el.tagName==='INPUT'){const type=(el.getAttribute('type')||'text').toLowerCase();return!NON_TEXT_INPUT_TYPES.has(type)}return true}
 const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
 function normalizeArchivedNode(node){if(!node||typeof node!=='object')return null;const normalized={id:typeof node.id==='string'&&node.id.trim()?node.id.trim():uid(),title:typeof node.title==='string'?node.title:'',done:true,due:typeof node.due==='string'&&node.due?node.due:null,project:typeof node.project==='string'&&node.project?node.project:null,notes:typeof node.notes==='string'?node.notes:'',timeSpent:typeof node.timeSpent==='number'&&isFinite(node.timeSpent)?Math.max(0,node.timeSpent):0,archivedAt:typeof node.archivedAt==='number'&&isFinite(node.archivedAt)?node.archivedAt:0,completedAt:typeof node.completedAt==='number'&&isFinite(node.completedAt)?node.completedAt:null,children:[]};if(Array.isArray(node.children)){const kids=[];for(const child of node.children){const normalizedChild=normalizeArchivedNode(child);if(normalizedChild)kids.push(normalizedChild)}normalized.children=kids}return normalized}
 function normalizeArchiveList(list,{persist=false}={}){if(!Array.isArray(list))return[];const normalizedArchive=[];let patched=false;for(const entry of list){const normalized=normalizeArchivedNode(entry);if(normalized){normalizedArchive.push(normalized);if(normalized!==entry)patched=true}else patched=true}if((patched||normalizedArchive.length!==list.length)&&persist){ArchiveStore.write(normalizedArchive)}return normalizedArchive}
@@ -1205,9 +1209,31 @@ function deleteProject(id){closeEmojiPicker();const idx=projects.findIndex(p=>p.
 if(projAdd&&projList){projAdd.addEventListener('click',()=>{closeEmojiPicker();const placeholder=projList.firstElementChild;if(placeholder&&placeholder.classList.contains('is-empty')){placeholder.remove()}const row=document.createElement('div');row.className='proj-item';const input=document.createElement('input');input.className='proj-input';input.placeholder='Название проекта…';row.appendChild(input);if(projList.firstChild){projList.prepend(row)}else{projList.appendChild(row)}input.focus();let saved=false;const finish=save=>{if(saved)return;saved=true;const v=(input.value||'').trim();if(save){if(!v){toast('Назови проект');input.focus();saved=false;return}const project={id:uid(),title:v,emoji:null};projects.unshift(project);ProjectsStore.write(projects);if(isServerMode())queueProjectCreate(project)}renderProjects()};input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();finish(true)}else if(e.key==='Escape'){e.preventDefault();finish(false)}});input.addEventListener('blur',()=>{if(!saved)finish(true)})})}
 
 document.addEventListener('keydown',e=>{
-  if(e.target&&(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.isContentEditable))return;
+  if(isEditableShortcutTarget(e.target))return;
   if(e.key==='Tab'&&selectedTaskId){e.preventDefault();addSubtask(selectedTaskId);return}
   if((e.key==='Backspace'||e.key==='Delete')&&selectedTaskId){e.preventDefault();handleDelete(selectedTaskId,{visibleOrder:getVisibleTaskIds()})}
+});
+
+document.addEventListener('keydown',e=>{
+  if(!selectedTaskId)return;
+  if(isEditableShortcutTarget(e.target))return;
+  if(e.metaKey||e.ctrlKey||e.altKey)return;
+  const row=getTaskRowById(selectedTaskId);
+  if(e.code==='KeyD'){
+    const anchor=row?row.querySelector('.due-btn'):null;
+    e.preventDefault();
+    openDuePicker(selectedTaskId,anchor||null);
+    return;
+  }
+  if(e.code==='KeyR'){
+    e.preventDefault();
+    toggleTaskTimer(selectedTaskId);
+    return;
+  }
+  if(e.code==='KeyC'){
+    e.preventDefault();
+    openNotesPanel(selectedTaskId);
+  }
 });
 
 if(!tasks.length&&!isServerMode()){const rootId=uid();const childId=uid();tasks=[{id:rootId,title:'Добавь несколько задач',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:null,children:[{id:childId,title:'Пример подзадачи',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:rootId,children:[]} ]},{id:uid(),title:'ПКМ по строке → «Редактировать»',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:null,children:[]},{id:uid(),title:'Отметь как выполненную — увидишь зачёркивание',done:true,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:null,children:[] }];ensureTaskParentIds(tasks,null);Store.write(tasks)}
