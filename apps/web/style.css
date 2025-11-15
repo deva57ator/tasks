@@ -219,6 +219,13 @@ body.view-sprint .composer{display:none}
 .ctx-submenu-item{padding:6px 12px;border-radius:7px;cursor:pointer;user-select:none;font-size:13px;line-height:1.25;font-weight:500;letter-spacing:.01em;transition:background .12s ease,color .12s ease}
 .ctx-submenu-item:hover,.ctx-submenu-item.is-submenu-open{background:var(--hover-strong)}
 .note-btn,.due-btn,.timer-btn{border:1px solid transparent;background:transparent;color:var(--text);padding:4px 6px;font-size:16px;line-height:1;cursor:pointer;border-radius:8px;opacity:0;display:inline-flex;align-items:center;justify-content:center;transition:opacity .12s ease,color .12s ease,background .12s ease,border-color .12s ease}
+.task-btn--timer,.task-btn--note,.task-btn--deadline{background-repeat:no-repeat;background-position:center;background-size:contain;overflow:hidden;text-indent:-9999px}
+body[data-theme="light"] .task-btn--timer{background-image:url("assets/icons/light/timer.svg")}
+body[data-theme="light"] .task-btn--note{background-image:url("assets/icons/light/note.svg")}
+body[data-theme="light"] .task-btn--deadline{background-image:url("assets/icons/light/calendar.svg")}
+body[data-theme="dark"] .task-btn--timer{background-image:url("assets/icons/dark/timer.svg")}
+body[data-theme="dark"] .task-btn--note{background-image:url("assets/icons/dark/note.svg")}
+body[data-theme="dark"] .task-btn--deadline{background-image:url("assets/icons/dark/calendar.svg")}
 .task:hover .note-btn,.note-btn:focus-visible,.task:hover .timer-btn,.timer-btn:focus-visible{opacity:1}
 .task.is-selected .note-btn,.task.is-selected .timer-btn{opacity:1}
 .note-btn[data-has-notes="true"]{opacity:1;color:var(--muted)}
