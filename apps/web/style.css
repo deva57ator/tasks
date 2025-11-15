@@ -218,8 +218,8 @@ body.view-sprint .composer{display:none}
 .ctx-submenu .ctx-submenu-item+.ctx-submenu-item{margin-top:2px}
 .ctx-submenu-item{padding:6px 12px;border-radius:7px;cursor:pointer;user-select:none;font-size:13px;line-height:1.25;font-weight:500;letter-spacing:.01em;transition:background .12s ease,color .12s ease}
 .ctx-submenu-item:hover,.ctx-submenu-item.is-submenu-open{background:var(--hover-strong)}
-.note-btn,.due-btn,.timer-btn{border:1px solid transparent;background:transparent;color:var(--text);padding:4px 6px;font-size:16px;line-height:1;cursor:pointer;border-radius:8px;opacity:0;display:inline-flex;align-items:center;justify-content:center;transition:opacity .12s ease,color .12s ease,background .12s ease,border-color .12s ease}
-.task-btn--timer,.task-btn--note,.task-btn--deadline{background-repeat:no-repeat;background-position:center;background-size:contain;overflow:hidden;text-indent:-9999px}
+.note-btn,.due-btn,.timer-btn{border:1px solid transparent;background-color:transparent;color:var(--text);padding:4px 6px;font-size:16px;line-height:1;cursor:pointer;border-radius:8px;opacity:0;display:inline-flex;align-items:center;justify-content:center;transition:opacity .12s ease,color .12s ease,background-color .12s ease,border-color .12s ease}
+.task-btn--timer,.task-btn--note,.task-btn--deadline{background-repeat:no-repeat;background-position:center;background-size:20px 20px;overflow:hidden;width:34px;height:34px;padding:0;font-size:0}
 body[data-theme="light"] .task-btn--timer{background-image:url("assets/icons/light/timer.svg")}
 body[data-theme="light"] .task-btn--note{background-image:url("assets/icons/light/note.svg")}
 body[data-theme="light"] .task-btn--deadline{background-image:url("assets/icons/light/calendar.svg")}
@@ -232,15 +232,15 @@ body[data-theme="dark"] .task-btn--deadline{background-image:url("assets/icons/d
 .timer-btn[data-active="true"]{opacity:1;color:var(--timer-accent);background-color:var(--timer-glow);box-shadow:0 4px 12px var(--timer-shadow);animation:timerButtonPulse 3.2s ease-in-out infinite;border-color:var(--timer-border)}
 .task:hover .due-btn,.due-btn:focus-visible{opacity:1}
 .task.is-selected .due-btn{opacity:1}
-.note-btn:hover,.timer-btn:hover,.due-btn:hover{background:var(--hover)}
+.note-btn:hover,.timer-btn:hover,.due-btn:hover{background-color:var(--hover)}
 .note-btn:hover{border-color:#f2994a;color:#f2994a}
 body.theme-dark .note-btn:hover{border-color:#f2994a;color:#f2994a}
 .timer-btn:hover{border-color:#e45b4d;color:#e45b4d}
 body.theme-dark .timer-btn:hover{border-color:#e45b4d;color:#e45b4d}
 .due-btn:hover{border-color:#3a82f6;color:#3a82f6}
 body.theme-dark .due-btn:hover{border-color:#3a82f6;color:#3a82f6}
-.note-btn:active,.timer-btn:active,.due-btn:active{background:var(--hover-strong)}
-.note-btn:focus-visible,.timer-btn:focus-visible,.due-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;background:var(--hover);box-shadow:0 0 0 4px rgba(0,0,0,.06)}
+.note-btn:active,.timer-btn:active,.due-btn:active{background-color:var(--hover-strong)}
+.note-btn:focus-visible,.timer-btn:focus-visible,.due-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;background-color:var(--hover);box-shadow:0 0 0 4px rgba(0,0,0,.06)}
 body.theme-dark .note-btn:focus-visible,body.theme-dark .timer-btn:focus-visible,body.theme-dark .due-btn:focus-visible{box-shadow:0 0 0 4px rgba(0,0,0,.4)}
 .timer-btn[data-active="true"]:hover{background-color:var(--timer-glow-strong);box-shadow:none}
 .timer-btn[data-active="true"]:active{background-color:var(--timer-glow);box-shadow:0 4px 12px var(--timer-shadow)}
