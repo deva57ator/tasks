@@ -25,6 +25,19 @@ function parsePayload(raw) {
   }
 }
 
+function resetPayloadForReopen(source) {
+  if (!source || typeof source !== 'object') {
+    return null;
+  }
+  return {
+    ...source,
+    locked: false,
+    closedAt: null,
+    closedManually: false,
+    manualClosedStats: { timeMs: 0, doneCount: 0 }
+  };
+}
+
 function mapWorkdayRow(row) {
   if (!row) return null;
   return {
@@ -53,14 +66,14 @@ function extractManualStats(payload) {
 
 async function computeWorkdayDelta(payload) {
   if (!payload || typeof payload !== 'object') {
-    return { timeMs: 0, doneCount: 0 };
+    return { timeMs: 0, doneCount: 0, hasSource: false };
   }
 
   const baseline = payload.baseline && typeof payload.baseline === 'object' ? payload.baseline : {};
   const completed = payload.completed && typeof payload.completed === 'object' ? payload.completed : {};
   const needsTasks = Object.keys(baseline).length > 0 || Object.keys(completed).length > 0;
   if (!needsTasks) {
-    return { timeMs: 0, doneCount: 0 };
+    return { timeMs: 0, doneCount: 0, hasSource: false };
   }
 
   const rows = await db.all('SELECT id, timeSpentMs, done FROM tasks');
@@ -73,9 +86,11 @@ async function computeWorkdayDelta(payload) {
   }
 
   let deltaTime = 0;
+  let hasSource = false;
   for (const [taskId, baseValue] of Object.entries(baseline)) {
     const task = taskMap.get(taskId);
     if (!task) continue;
+    hasSource = true;
     const base = coerceNonNegative(baseValue);
     if (task.timeSpent > base) {
       deltaTime += task.timeSpent - base;
@@ -87,10 +102,11 @@ async function computeWorkdayDelta(payload) {
     const task = taskMap.get(taskId);
     if (task && task.done) {
       deltaDone += 1;
+      hasSource = true;
     }
   }
 
-  return { timeMs: deltaTime, doneCount: deltaDone };
+  return { timeMs: deltaTime, doneCount: deltaDone, hasSource };
 }
 
 async function hydrateWorkday(row) {
@@ -105,6 +121,7 @@ async function hydrateWorkday(row) {
   const manual = extractManualStats(payload);
   let summaryTimeMs = manual.timeMs;
   let summaryDone = manual.doneCount;
+  let hasStatsSource = manual.timeMs > 0 || manual.doneCount > 0;
 
   let includeDelta = payload.closedManually !== true;
   if (includeDelta) {
@@ -119,19 +136,51 @@ async function hydrateWorkday(row) {
     const delta = await computeWorkdayDelta(payload);
     summaryTimeMs += delta.timeMs;
     summaryDone += delta.doneCount;
+    if (delta.hasSource) {
+      hasStatsSource = true;
+    }
   }
 
-  mapped.summaryTimeMs = Math.max(mapped.summaryTimeMs, summaryTimeMs);
-  mapped.summaryDone = Math.max(mapped.summaryDone, summaryDone);
+  if (hasStatsSource) {
+    mapped.summaryTimeMs = Math.max(0, Math.round(coerceNumber(summaryTimeMs)) || 0);
+    mapped.summaryDone = Math.max(0, Math.round(coerceNumber(summaryDone)) || 0);
+  } else {
+    mapped.summaryTimeMs = Math.max(mapped.summaryTimeMs, 0);
+    mapped.summaryDone = Math.max(mapped.summaryDone, 0);
+  }
   return mapped;
+}
+
+async function computeFinalStats(row) {
+  const payload = parsePayload(row.payload);
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+  const manual = extractManualStats(payload);
+  let summaryTimeMs = manual.timeMs;
+  let summaryDone = manual.doneCount;
+  const delta = await computeWorkdayDelta(payload);
+  summaryTimeMs += delta.timeMs;
+  summaryDone += delta.doneCount;
+  const hasStats = manual.timeMs > 0 || manual.doneCount > 0 || delta.hasSource;
+  if (!hasStats) {
+    return null;
+  }
+  return {
+    timeMs: summaryTimeMs,
+    doneCount: summaryDone
+  };
 }
 
 async function finalizeWorkdayRow(row, closedAtValue) {
   const hydrated = await hydrateWorkday(row);
   if (!hydrated) return;
 
-  const finalTime = Math.max(0, Math.round(coerceNumber(hydrated.summaryTimeMs)) || 0);
-  const finalDone = Math.max(0, Math.round(coerceNumber(hydrated.summaryDone)) || 0);
+  const recomputed = await computeFinalStats(row);
+  const timeSource = recomputed ? recomputed.timeMs : hydrated.summaryTimeMs;
+  const doneSource = recomputed ? recomputed.doneCount : hydrated.summaryDone;
+  const finalTime = Math.max(0, Math.round(coerceNumber(timeSource)) || 0);
+  const finalDone = Math.max(0, Math.round(coerceNumber(doneSource)) || 0);
   const timestamp = nowIso();
 
   let payload = null;
@@ -281,11 +330,60 @@ async function importCurrent(state) {
   await upsert(state);
 }
 
+async function closeById(id, closedAtValue = Date.now()) {
+  if (!id) return null;
+  const row = await db.get('SELECT * FROM workdays WHERE id = ?', [id]);
+  if (!row) return null;
+  if (row.closedAt !== undefined && row.closedAt !== null) {
+    return hydrateWorkday(row);
+  }
+  const effectiveClosedAt = Number.isFinite(Number(closedAtValue))
+    ? Number(closedAtValue)
+    : (Number.isFinite(Number(row.closedAt)) ? Number(row.closedAt) : Date.now());
+  await finalizeWorkdayRow(row, effectiveClosedAt);
+  const updated = await db.get('SELECT * FROM workdays WHERE id = ?', [id]);
+  return updated ? hydrateWorkday(updated) : null;
+}
+
+async function reopen(workday) {
+  if (!workday || !workday.id) return null;
+  const existing = await db.get('SELECT * FROM workdays WHERE id = ?', [workday.id]);
+  if (!existing) {
+    const payload = resetPayloadForReopen(workday.payload);
+    return upsert({ ...workday, closedAt: null, payload });
+  }
+  if (existing.closedAt === undefined || existing.closedAt === null) {
+    return hydrateWorkday(existing);
+  }
+  const timestamp = nowIso();
+  const parsedExisting = parsePayload(existing.payload);
+  const payloadSource = workday.payload && typeof workday.payload === 'object' ? workday.payload : parsedExisting;
+  const payload = resetPayloadForReopen(payloadSource);
+  const summaryTime = workday.summaryTimeMs !== undefined ? workday.summaryTimeMs : existing.summaryTimeMs;
+  const summaryDone = workday.summaryDone !== undefined ? workday.summaryDone : existing.summaryDone;
+  await db.run(
+    'UPDATE workdays SET startTs = ?, endTs = ?, summaryTimeMs = ?, summaryDone = ?, payload = ?, closedAt = NULL, updatedAt = ? WHERE id = ?',
+    [
+      workday.startTs !== undefined && workday.startTs !== null ? workday.startTs : existing.startTs,
+      workday.endTs !== undefined && workday.endTs !== null ? workday.endTs : existing.endTs,
+      Math.max(0, Number(summaryTime) || 0),
+      Math.max(0, Math.round(coerceNumber(summaryDone))),
+      payload ? JSON.stringify(payload) : null,
+      timestamp,
+      workday.id
+    ]
+  );
+  await ensureSingleOpenWorkday(workday.id);
+  return getById(workday.id);
+}
+
 module.exports = {
   getCurrent,
   getById,
   upsert,
   importCurrent,
+  closeById,
+  reopen,
   mapWorkday: mapWorkdayRow,
   countBacklogOpenDays,
   ensureSingleOpenWorkday,

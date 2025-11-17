@@ -189,6 +189,85 @@ test('getCurrent ignores closed workday once end time has passed', async () => {
   assert.equal(current, null);
 });
 
+test('closeById recomputes summary from tasks and ignores repeated closes', async () => {
+  const task = await tasks.create({ title: 'Manual close task', timeSpent: 150000 });
+  const payload = {
+    id: 'day-close-manual',
+    start: Date.now() - 3600000,
+    end: Date.now() + 3600000,
+    baseline: {
+      [task.id]: 60000
+    },
+    completed: {},
+    manualClosedStats: { timeMs: 0, doneCount: 0 },
+    closedManually: true
+  };
+
+  await workdays.upsert({
+    id: payload.id,
+    startTs: payload.start,
+    endTs: payload.end,
+    summaryTimeMs: 1000,
+    summaryDone: 5,
+    payload,
+    closedAt: null
+  });
+
+  const firstClose = await workdays.closeById(payload.id, payload.end - 1000);
+  assert.ok(firstClose);
+  assert.equal(firstClose.summaryTimeMs, 90000);
+  assert.equal(firstClose.summaryDone, 0);
+
+  await tasks.update(task.id, { timeSpent: 210000 });
+  const secondClose = await workdays.closeById(payload.id, payload.end);
+  assert.ok(secondClose);
+  assert.equal(secondClose.summaryTimeMs, 90000);
+  assert.equal(secondClose.summaryDone, 0);
+});
+
+test('reopen clears closed flag and allows totals to refresh', async () => {
+  const task = await tasks.create({ title: 'Reopen task', timeSpent: 60000 });
+  const payload = {
+    id: 'day-reopen',
+    start: Date.now() - 3600000,
+    end: Date.now() + 3600000,
+    baseline: {
+      [task.id]: 60000
+    },
+    completed: {
+      [task.id]: Date.now()
+    },
+    manualClosedStats: { timeMs: 0, doneCount: 0 },
+    closedManually: true
+  };
+
+  await workdays.upsert({
+    id: payload.id,
+    startTs: payload.start,
+    endTs: payload.end,
+    summaryTimeMs: 0,
+    summaryDone: 0,
+    payload,
+    closedAt: null
+  });
+
+  await workdays.closeById(payload.id, payload.end - 5000);
+  let stored = await workdays.getById(payload.id);
+  assert.ok(stored.closedAt);
+  assert.equal(stored.payload && stored.payload.locked, true);
+
+  await workdays.reopen({ id: payload.id, payload });
+  stored = await workdays.getById(payload.id);
+  assert.equal(stored.closedAt, null);
+  assert.equal(stored.payload && stored.payload.locked, false);
+
+  await tasks.update(task.id, { timeSpent: 180000, done: true });
+  const finalClose = await workdays.closeById(payload.id, payload.end);
+  assert.ok(finalClose);
+  assert.equal(finalClose.summaryTimeMs, 120000);
+  assert.equal(finalClose.summaryDone, 1);
+});
+
 test('finalizes stale workday automatically at scheduled end', async () => {
   const now = Date.now();
   const start = now - 10 * 3600000;

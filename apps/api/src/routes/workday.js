@@ -48,10 +48,15 @@ router.post('/close', async (req, res, next) => {
     if (!payload.workday || !payload.workday.id) {
       return res.status(400).json({ error: { code: 'validation_error', message: 'workday.id is required' } });
     }
-    const closedAt = payload.workday.closedAt || nowIso();
-    const workdayRecord = await workdays.upsert({
+    const current = await workdays.getById(payload.workday.id);
+    if (current && current.closedAt !== null) {
+      return res.json({ workday: current, archived: [] });
+    }
+    const closedAtSource = payload.workday.closedAt;
+    const closedAt = Number.isFinite(Number(closedAtSource)) ? Number(closedAtSource) : Date.now();
+    await workdays.upsert({
       ...payload.workday,
-      closedAt
+      closedAt: null
     });
     const archivedIds = Array.isArray(payload.completedTaskIds) ? payload.completedTaskIds : [];
     const archivedAt = nowIso();
@@ -70,7 +75,24 @@ router.post('/close', async (req, res, next) => {
         await archive.insert({ id: normalized.id, payload: normalized, archivedAt });
       }
     }
+    const workdayRecord = await workdays.closeById(payload.workday.id, closedAt);
     res.json({ workday: workdayRecord, archived: archivedPayloads });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/reopen', async (req, res, next) => {
+  try {
+    const payload = req.body || {};
+    if (!payload.workday || !payload.workday.id) {
+      return res.status(400).json({ error: { code: 'validation_error', message: 'workday.id is required' } });
+    }
+    const workdayRecord = await workdays.reopen(payload.workday);
+    if (!workdayRecord) {
+      return res.status(404).json({ error: { code: 'not_found', message: 'Workday not found' } });
+    }
+    res.json({ workday: workdayRecord });
   } catch (err) {
     next(err);
   }

@@ -316,6 +316,111 @@ function hydrateWorkdayStateFromServer(record){
   return state;
 }
 
+function isWorkdayClosedForEditing(){
+  if(!workdayState)return false;
+  if(workdayState.locked===true)return true;
+  const closedAt=Number.isFinite(Number(workdayState.closedAt))?Number(workdayState.closedAt):null;
+  return closedAt!==null;
+}
+
+let workdayReopenPromptActive=false;
+let workdayReopenPromise=null;
+
+async function reopenWorkdayOnServer(){
+  if(!workdayState)return false;
+  const payload=buildWorkdayPayloadForServer(workdayState);
+  if(payload&&payload.payload){
+    payload.payload.locked=false;
+    payload.payload.closedAt=null;
+    payload.payload.closedManually=false;
+    payload.payload.manualClosedStats={timeMs:0,doneCount:0};
+  }
+  if(!isServerMode()){
+    workdayState.closedAt=null;
+    workdayState.locked=false;
+    workdayState.closedManually=false;
+    workdayState.manualClosedStats={timeMs:0,doneCount:0};
+    WorkdayStore.write(workdayState);
+    syncWorkdayTaskSnapshot();
+    updateWorkdayUI();
+    return true;
+  }
+  if(!payload)return false;
+  try{
+    const response=await apiRequest('/workday/reopen',{method:'POST',body:{workday:payload}});
+    const serverWorkday=response&&response.workday?response.workday:null;
+    workdayState=hydrateWorkdayStateFromServer(serverWorkday);
+    persistLocalWorkdayState(workdayState);
+    syncWorkdayTaskSnapshot();
+    updateWorkdayUI();
+    return true;
+  }catch(err){
+    handleApiError(err,'Не удалось открыть день');
+    return false;
+  }
+}
+
+async function promptToReopenWorkday(){
+  if(!isWorkdayClosedForEditing())return true;
+  if(workdayReopenPromptActive)return false;
+  if(workdayReopenPromise)return workdayReopenPromise;
+  workdayReopenPromptActive=true;
+  const confirmed=window.confirm('День уже завершён. Чтобы изменить задачи, его нужно открыть. Открыть день?');
+  workdayReopenPromptActive=false;
+  if(!confirmed){
+    toast('Изменения не применены — день закрыт');
+    return false;
+  }
+  workdayReopenPromise=reopenWorkdayOnServer();
+  const result=await workdayReopenPromise;
+  workdayReopenPromise=null;
+  if(result){toast('Рабочий день снова открыт');}
+  return result;
+}
+
+const WORKDAY_MUTATION_SCOPES=['#tasks','.composer','#notesSidebar','#notesOverlay','#timeOverlay','.context-menu','#ctxSub','#dueMenu','.workday-dialog'];
+const WORKDAY_INTERACTIVE_SELECTOR='button, input, textarea, [contenteditable="true"], .task, .proj-input, .timer-btn, .note-btn, .workday-dialog-action, .workday-dialog-secondary';
+
+function isWorkMutationTarget(node){
+  if(!node)return false;
+  if(!WORKDAY_MUTATION_SCOPES.some(selector=>node.closest(selector)))return false;
+  if(node.closest('[data-allow-closed-day="true"]'))return false;
+  return !!node.closest(WORKDAY_INTERACTIVE_SELECTOR);
+}
+
+function handleClosedWorkdayPointer(event){
+  if(!isWorkdayClosedForEditing())return;
+  if(!isWorkMutationTarget(event.target))return;
+  event.preventDefault();
+  event.stopPropagation();
+  promptToReopenWorkday();
+}
+
+function handleClosedWorkdayClick(event){
+  if(!isWorkdayClosedForEditing())return;
+  if(!isWorkMutationTarget(event.target))return;
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function handleClosedWorkdayKey(event){
+  if(!isWorkdayClosedForEditing())return;
+  if(!isWorkMutationTarget(event.target))return;
+  if(event.key==='Tab'||event.key==='Escape'||event.key==='Shift'||event.key==='Control'||event.key==='Alt'||event.key==='Meta')return;
+  event.preventDefault();
+  event.stopPropagation();
+  promptToReopenWorkday();
+}
+
+let workdayGuardsAttached=false;
+function ensureWorkdayInteractionGuards(){
+  if(workdayGuardsAttached)return;
+  workdayGuardsAttached=true;
+  document.addEventListener('pointerdown',handleClosedWorkdayPointer,true);
+  document.addEventListener('click',handleClosedWorkdayClick,true);
+  document.addEventListener('keydown',handleClosedWorkdayKey,true);
+}
+
 function scheduleWorkdaySync(delay=400){if(workdaySyncTimer)clearTimeout(workdaySyncTimer);workdaySyncTimer=setTimeout(()=>{workdaySyncTimer=null;if(workdaySyncInFlight){scheduleWorkdaySync(delay);return}sendPendingWorkdaySync()},delay)}
 
 function sendPendingWorkdaySync(){if(workdaySyncInFlight||!pendingWorkdaySync)return;const entry=pendingWorkdaySync;workdaySyncInFlight=true;runServerAction(()=>apiRequest('/workday/sync',{method:'POST',body:{workday:entry.payload}}),{silent:true,onSuccess:()=>{if(pendingWorkdaySync===entry)pendingWorkdaySync=null;lastWorkdaySyncPayload=entry.serialized;workdaySyncInFlight=false;if(pendingWorkdaySync){scheduleWorkdaySync(150)}},onError:()=>{workdaySyncInFlight=false;if(pendingWorkdaySync){scheduleWorkdaySync(2000)}else{lastWorkdaySyncPayload=null}}})}
@@ -585,7 +690,7 @@ function computeWorkdayProgress(now=Date.now(),{persist=true,allowBaselineUpdate
 
 function getManualWorkdayStats(){if(!workdayState||!workdayState.manualClosedStats)return{timeMs:0,doneCount:0};const timeMs=typeof workdayState.manualClosedStats.timeMs==='number'&&isFinite(workdayState.manualClosedStats.timeMs)?Math.max(0,workdayState.manualClosedStats.timeMs):0;const doneCount=typeof workdayState.manualClosedStats.doneCount==='number'&&isFinite(workdayState.manualClosedStats.doneCount)?Math.max(0,Math.round(workdayState.manualClosedStats.doneCount)):0;return{timeMs,doneCount}}
 
-function computeAggregatedWorkdayStats(now=Date.now(),options){const base=getManualWorkdayStats();let delta={timeMs:0,doneCount:0};let includeDelta=!workdayState||workdayState.closedManually!==true;const endTs=workdayState&&typeof workdayState.end==='number'&&isFinite(workdayState.end)?workdayState.end:null;if(workdayState&&workdayState.closedManually===true){if(endTs===null||now<=endTs){includeDelta=true}}if(workdayState&&workdayState.locked===true){if(endTs===null||now>=endTs){includeDelta=false}}if(includeDelta){delta=computeWorkdayProgress(now,options)}return{timeMs:base.timeMs+delta.timeMs,doneCount:base.doneCount+delta.doneCount,base,delta}}
+function computeAggregatedWorkdayStats(now=Date.now(),options){const base=getManualWorkdayStats();let delta={timeMs:0,doneCount:0};const endTs=workdayState&&typeof workdayState.end==='number'&&isFinite(workdayState.end)?workdayState.end:null;let includeDelta=false;if(workdayState){includeDelta=workdayState.closedManually!==true&&workdayState.locked!==true;}if(includeDelta&&endTs!==null&&now>endTs){includeDelta=false;}if(includeDelta){delta=computeWorkdayProgress(now,options)}return{timeMs:base.timeMs+delta.timeMs,doneCount:base.doneCount+delta.doneCount,base,delta}}
 
 function updateWorkdayCompletionState(task,done,now=Date.now()){if(!task)return;const info=ensureWorkdayState(now);if(!workdayState)return;const completed=workdayState.completed||(workdayState.completed={});let changed=false;if(done){if(info.state==='active'&&workdayState.id===info.id&&!completed[task.id]){completed[task.id]=now;changed=true}}else if(completed[task.id]){delete completed[task.id];changed=true}if(changed)WorkdayStore.write(workdayState)}
 
@@ -636,9 +741,10 @@ function openWorkdayDialog(){if(!WorkdayUI.overlay)return;const state=updateWork
 
 function closeWorkdayDialog(){if(!WorkdayUI.overlay)return;WorkdayUI.overlay.classList.remove('is-open');WorkdayUI.overlay.setAttribute('aria-hidden','true');document.body.classList.remove('workday-dialog-open');stopWorkdayFireworks()}
 
-function postponePendingTasks(){if(!workdayState)return;const pending=collectWorkdayPendingTasks(workdayState);if(!pending.length){toast('Все задачи уже перенесены');return}const nextDay=new Date(workdayState.start);nextDay.setDate(nextDay.getDate()+1);nextDay.setHours(0,0,0,0);const nextIso=nextDay.toISOString();let changed=false;const updatedIds=[];for(const item of pending){const task=findTask(item.id);if(!task)continue;task.due=nextIso;changed=true;if(isServerMode())updatedIds.push(task.id)}if(changed){Store.write(tasks);if(updatedIds.length){updatedIds.forEach(id=>queueTaskUpdate(id,{due:nextIso}))}render();toast('Дедлайны перенесены на следующий день');updateWorkdayDialogContent()}}
+function postponePendingTasks(){if(!workdayState)return;if(isWorkdayClosedForEditing()){promptToReopenWorkday();return}const pending=collectWorkdayPendingTasks(workdayState);if(!pending.length){toast('Все задачи уже перенесены');return}const nextDay=new Date(workdayState.start);nextDay.setDate(nextDay.getDate()+1);nextDay.setHours(0,0,0,0);const nextIso=nextDay.toISOString();let changed=false;const updatedIds=[];for(const item of pending){const task=findTask(item.id);if(!task)continue;task.due=nextIso;changed=true;if(isServerMode())updatedIds.push(task.id)}if(changed){Store.write(tasks);if(updatedIds.length){updatedIds.forEach(id=>queueTaskUpdate(id,{due:nextIso}))}render();toast('Дедлайны перенесены на следующий день');updateWorkdayDialogContent()}}
 function finishWorkdayAndArchive(){
   if(!workdayState){closeWorkdayDialog();return}
+  if(isWorkdayClosedForEditing()){toast('Рабочий день уже закрыт');closeWorkdayDialog();return}
   const now=Date.now();
   ensureWorkdayState(now);
   const aggregated=computeAggregatedWorkdayStats(now,{persist:true,allowBaselineUpdate:true});
@@ -647,7 +753,7 @@ function finishWorkdayAndArchive(){
   workdayState.finalDoneCount=Math.max(workdayState.finalDoneCount||0,aggregated.doneCount);
   workdayState.closedAt=now;
   workdayState.closedManually=true;
-  workdayState.locked=false;
+  workdayState.locked=true;
   WorkdayStore.write(workdayState);
   if(hasActiveTimer()){
     stopAllTimersExcept(null);
@@ -705,7 +811,7 @@ function finishWorkdayAndArchive(){
 
 let workdayRefreshTimer=null;
 
-function updateWorkdayUI(){if(!WorkdayUI.bar)return;const now=Date.now();const info=ensureWorkdayState(now);let datasetState='inactive';let stats={timeMs:0,doneCount:0};const hasState=!!workdayState;const isCurrent=hasState&&info.state==='active'&&workdayState.id===info.id;const isLocked=hasState&&workdayState.locked;const manuallyClosed=hasState&&workdayState.closedManually;if(isCurrent){const aggregated=computeAggregatedWorkdayStats(now,{persist:true,allowBaselineUpdate:true});stats={timeMs:aggregated.timeMs,doneCount:aggregated.doneCount};datasetState=manuallyClosed?'closed':'active'}else if(hasState){if(!isLocked&&now<workdayState.end){const aggregated=computeAggregatedWorkdayStats(now,{persist:true,allowBaselineUpdate:true});stats={timeMs:aggregated.timeMs,doneCount:aggregated.doneCount}}else{stats={timeMs:workdayState.finalTimeMs||0,doneCount:workdayState.finalDoneCount||0}}if(info.state==='waiting'){datasetState='waiting'}else{datasetState='inactive'}}if(manuallyClosed){const manual=getManualWorkdayStats();stats.timeMs=Math.max(stats.timeMs,manual.timeMs);stats.doneCount=Math.max(stats.doneCount,manual.doneCount)}if(WorkdayUI.done)WorkdayUI.done.textContent=String(stats.doneCount);if(WorkdayUI.time)WorkdayUI.time.textContent=formatDuration(stats.timeMs);WorkdayUI.bar.dataset.state=datasetState;if(WorkdayUI.button){const canInteract=!!workdayState;WorkdayUI.button.disabled=!canInteract;WorkdayUI.button.setAttribute('aria-disabled',canInteract?'false':'true')}}
+function updateWorkdayUI(){if(!WorkdayUI.bar)return;const now=Date.now();const info=ensureWorkdayState(now);let datasetState='inactive';let stats={timeMs:0,doneCount:0};const hasState=!!workdayState;const isCurrent=hasState&&info.state==='active'&&workdayState.id===info.id;const isLocked=hasState&&workdayState.locked;const manuallyClosed=hasState&&workdayState.closedManually;const closedForEditing=isWorkdayClosedForEditing();if(isCurrent){const aggregated=computeAggregatedWorkdayStats(now,{persist:true,allowBaselineUpdate:true});stats={timeMs:aggregated.timeMs,doneCount:aggregated.doneCount};datasetState=closedForEditing?'closed':'active'}else if(hasState){if(!isLocked&&now<workdayState.end&&!closedForEditing){const aggregated=computeAggregatedWorkdayStats(now,{persist:true,allowBaselineUpdate:true});stats={timeMs:aggregated.timeMs,doneCount:aggregated.doneCount}}else{stats={timeMs:workdayState.finalTimeMs||0,doneCount:workdayState.finalDoneCount||0}}if(closedForEditing){datasetState='closed'}else if(info.state==='waiting'){datasetState='waiting'}else{datasetState='inactive'}}if(manuallyClosed){const manual=getManualWorkdayStats();stats.timeMs=Math.max(stats.timeMs,manual.timeMs);stats.doneCount=Math.max(stats.doneCount,manual.doneCount)}if(WorkdayUI.done)WorkdayUI.done.textContent=String(stats.doneCount);if(WorkdayUI.time)WorkdayUI.time.textContent=formatDuration(stats.timeMs);WorkdayUI.bar.dataset.state=datasetState;if(WorkdayUI.button){const canInteract=!!workdayState&&!closedForEditing;WorkdayUI.button.disabled=!canInteract;WorkdayUI.button.setAttribute('aria-disabled',canInteract?'false':'true');WorkdayUI.button.classList.toggle('is-hidden',!!workdayState&&closedForEditing)}}
 
 function ensureWorkdayRefreshLoop(){if(workdayRefreshTimer)return;workdayRefreshTimer=setInterval(()=>updateWorkdayUI(),WORKDAY_REFRESH_INTERVAL)}
 
@@ -1101,7 +1207,7 @@ const storageToggleBtn=document.getElementById('storageToggle');
 if(storageToggleBtn){storageToggleBtn.addEventListener('click',async()=>{if(isDataLoading)return;const switchingToServer=!isServerMode();updateStorageToggle({loading:true});try{if(!switchingToServer){await setStorageModeAndReload(STORAGE_MODES.LOCAL,{forceReload:true,skipToggleUpdate:true});toast('Режим: localStorage');return}const healthResponse=await fetch(api('/health'));if(!healthResponse.ok)throw new Error('API недоступен');await setStorageModeAndReload(STORAGE_MODES.SERVER,{forceReload:true,skipToggleUpdate:true});toast('Режим: API')}catch(err){console.error(err);if(switchingToServer){await setStorageModeAndReload(STORAGE_MODES.LOCAL,{silent:true,forceReload:true,skipToggleUpdate:true});toast('API недоступен')}}finally{updateStorageToggle({loading:false})}})}
 
 if(WorkdayUI.button){WorkdayUI.button.addEventListener('click',()=>{if(WorkdayUI.button.disabled)return;openWorkdayDialog()})}
-if(WorkdayUI.closeBtn)WorkdayUI.closeBtn.addEventListener('click',()=>closeWorkdayDialog());
+if(WorkdayUI.closeBtn){WorkdayUI.closeBtn.setAttribute('data-allow-closed-day','true');WorkdayUI.closeBtn.addEventListener('click',()=>closeWorkdayDialog());}
 if(WorkdayUI.closeAction)WorkdayUI.closeAction.addEventListener('click',()=>finishWorkdayAndArchive());
 if(WorkdayUI.overlay)WorkdayUI.overlay.addEventListener('click',e=>{if(e.target===WorkdayUI.overlay)closeWorkdayDialog()});
 if(WorkdayUI.postponeBtn)WorkdayUI.postponeBtn.addEventListener('click',()=>postponePendingTasks());
@@ -1639,5 +1745,7 @@ window.addEventListener('click',e=>{if(Due.el.style.display==='block'&&!Due.el.c
 
   syncMode();
 })();
+
+ensureWorkdayInteractionGuards();
 
 (function(){applyTheme(ThemeStore.read());initCalendar();updateStorageToggle();refreshDataForCurrentMode()})();
