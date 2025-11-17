@@ -71,7 +71,7 @@ jobs:
             else
               npm install --omit=dev --no-audit --no-fund
             fi
-            npm run migrate
+            DB_PATH="$DEPLOY_PATH/data/tasks.sqlite" npm run migrate
             # Ожидается, что у пользователя deploy настроен NOPASSWD для systemctl
             sudo -n systemctl daemon-reload || true
             sudo -n systemctl restart tasks-stg
