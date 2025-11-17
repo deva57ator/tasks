@@ -56,7 +56,7 @@ router.post('/close', async (req, res, next) => {
     const closedAt = Number.isFinite(Number(closedAtSource)) ? Number(closedAtSource) : Date.now();
     await workdays.upsert({
       ...payload.workday,
-      closedAt
+      closedAt: null
     });
     const archivedIds = Array.isArray(payload.completedTaskIds) ? payload.completedTaskIds : [];
     const archivedAt = nowIso();
