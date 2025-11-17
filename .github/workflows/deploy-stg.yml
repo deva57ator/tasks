@@ -62,21 +62,29 @@ jobs:
 
       # === deps, migrate, restart ===
       - name: Install deps, migrate, restart STG
+        shell: bash
         run: |
           : "${SSH_PORT:=22}"
-          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "set -eu
-            cd '${PATH_STG}/apps/api'
-            if [ -f package-lock.json ]; then
-              npm ci --omit=dev --no-audit --no-fund
-            else
-              npm install --omit=dev --no-audit --no-fund
-            fi
-            DB_PATH="$DEPLOY_PATH/data/tasks.sqlite" npm run migrate
-            # Ожидается, что у пользователя deploy настроен NOPASSWD для systemctl
-            sudo -n systemctl daemon-reload || true
-            sudo -n systemctl restart tasks-stg
-            systemctl status --no-pager tasks-stg | tail -n +1 || true
-          "
+          ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" PATH_STG="${PATH_STG}" bash -seu <<'EOSH'
+          set -euo pipefail
+
+          DEPLOY_PATH="$PATH_STG"
+
+          cd "$DEPLOY_PATH/apps/api"
+
+          if [ -f package-lock.json ]; then
+            npm ci --omit=dev --no-audit --no-fund
+          else
+            npm install --omit=dev --no-audit --no-fund
+          fi
+
+          # ВАЖНО: явно говорим миграциям, где живёт стейдж-база
+          DB_PATH="$DEPLOY_PATH/data/tasks.sqlite" npm run migrate
+
+          sudo -n systemctl daemon-reload || true
+          sudo -n systemctl restart tasks-stg
+          systemctl status --no-pager tasks-stg | tail -n +1 || true
+          EOSH
 
       - name: Health check (STG)
         shell: bash
