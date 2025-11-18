@@ -138,6 +138,34 @@ test('getCurrent returns manually closed workday before scheduled end', async ()
   assert.equal(current.summaryDone, 3);
 });
 
+test('getCurrent creates active workday when none exists', async () => {
+  const realNow = Date.now;
+  const base = new Date();
+  base.setHours(12, 0, 0, 0);
+  const fixedTs = base.getTime();
+  Date.now = () => fixedTs;
+  const pad = (value) => String(value).padStart(2, '0');
+  const expectedStart = new Date(base);
+  expectedStart.setHours(6, 0, 0, 0);
+  const expectedEnd = new Date(expectedStart);
+  expectedEnd.setDate(expectedEnd.getDate() + 1);
+  expectedEnd.setHours(3, 0, 0, 0);
+
+  try {
+    const current = await workdays.getCurrent();
+    assert.ok(current);
+    const expectedId = `${expectedStart.getFullYear()}-${pad(expectedStart.getMonth() + 1)}-${pad(expectedStart.getDate())}`;
+    assert.equal(current.id, expectedId);
+    assert.equal(current.startTs, expectedStart.getTime());
+    assert.equal(current.endTs, expectedEnd.getTime());
+    assert.equal(current.closedAt, null);
+    assert.ok(current.payload);
+    assert.equal(current.payload.locked, false);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
 test('falls back to stored summary when payload information is incomplete', async () => {
   const payload = {
     id: 'day-3',
@@ -186,7 +214,9 @@ test('getCurrent ignores closed workday once end time has passed', async () => {
   });
 
   const current = await workdays.getCurrent();
-  assert.equal(current, null);
+  assert.ok(current);
+  assert.notEqual(current.id, payload.id);
+  assert.equal(current.closedAt, null);
 });
 
 test('closeById recomputes summary from tasks and ignores repeated closes', async () => {
@@ -303,7 +333,9 @@ test('finalizes stale workday automatically at scheduled end', async () => {
   });
 
   const current = await workdays.getCurrent();
-  assert.equal(current, null);
+  assert.ok(current);
+  assert.notEqual(current.id, payload.id);
+  assert.equal(current.closedAt, null);
 
   const stored = await workdays.getById('day-auto');
   assert.ok(stored);
