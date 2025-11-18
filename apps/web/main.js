@@ -22,11 +22,13 @@ function normalizeWorkdayState(raw){
   if(typeof normalized.finalDoneCount!=='number'||!isFinite(normalized.finalDoneCount))normalized.finalDoneCount=0;
   if(!normalized.baseline||typeof normalized.baseline!=='object')normalized.baseline={};
   if(!normalized.completed||typeof normalized.completed!=='object')normalized.completed={};
+  normalized.locked=normalized.locked===true;
   const manualStats=normalized.manualClosedStats;
   const manualTime=manualStats&&typeof manualStats.timeMs==='number'&&isFinite(manualStats.timeMs)?Math.max(0,manualStats.timeMs):0;
   const manualDone=manualStats&&typeof manualStats.doneCount==='number'&&isFinite(manualStats.doneCount)?Math.max(0,Math.round(manualStats.doneCount)):0;
   normalized.manualClosedStats={timeMs:manualTime,doneCount:manualDone};
   normalized.closedManually=normalized.closedManually===true;
+  if(typeof normalized.reopenedAt!=='number'||!isFinite(normalized.reopenedAt))normalized.reopenedAt=null;
   return normalized;
 }
 
@@ -269,12 +271,16 @@ function hydrateWorkdayStateFromServer(record){
     const fallback=WorkdayStore.read();
     return fallback?normalizeWorkdayState(cloneWorkdayStateForTransport(fallback)):null;
   }
+  const payloadHasLocked=record.payload&&Object.prototype.hasOwnProperty.call(record.payload,'locked');
+  const payloadHasReopenedAt=record.payload&&Object.prototype.hasOwnProperty.call(record.payload,'reopenedAt');
   const payloadState=normalizeWorkdayState(record.payload);
   const summaryTimeMs=Math.max(0,Number(record.summaryTimeMs)||0);
   const summaryDone=Math.max(0,Math.round(Number(record.summaryDone)||0));
   const closedAt=typeof record.closedAt==='number'&&isFinite(record.closedAt)?record.closedAt:null;
   const startTs=Number.isFinite(Number(record.startTs))?Number(record.startTs):null;
   const endTs=Number.isFinite(Number(record.endTs))?Number(record.endTs):null;
+  const payloadLocked=payloadState&&payloadHasLocked?payloadState.locked===true:null;
+  const payloadReopenedAt=payloadState&&payloadHasReopenedAt&&typeof payloadState.reopenedAt==='number'&&isFinite(payloadState.reopenedAt)?payloadState.reopenedAt:null;
   let state=payloadState;
   if(!state){
     const localSnapshot=WorkdayStore.read();
@@ -284,13 +290,15 @@ function hydrateWorkdayStateFromServer(record){
   }
   if(!state){
     if(!record.id)return null;
-    state={id:record.id,start:startTs,end:endTs,baseline:{},completed:{},closedAt:closedAt,finalTimeMs:summaryTimeMs,finalDoneCount:summaryDone,locked:closedAt!==null,closedManually:false,manualClosedStats:{timeMs:0,doneCount:0}};
+    state={id:record.id,start:startTs,end:endTs,baseline:{},completed:{},closedAt:closedAt,finalTimeMs:summaryTimeMs,finalDoneCount:summaryDone,locked:closedAt!==null,closedManually:false,manualClosedStats:{timeMs:0,doneCount:0},reopenedAt:payloadHasReopenedAt?payloadReopenedAt:null};
   }else{
     if(record.id&&typeof state.id!=='string')state.id=String(record.id);
     if(startTs!==null)state.start=startTs;else if(state.start===undefined)state.start=null;
     if(endTs!==null)state.end=endTs;else if(state.end===undefined)state.end=null;
-    if(closedAt!==null)state.closedAt=closedAt;
-    state.locked=state.locked===true||closedAt!==null;
+    if(closedAt!==null)state.closedAt=closedAt;else state.closedAt=null;
+    const serverLocked=payloadLocked!==null?payloadLocked:closedAt!==null;
+    state.locked=serverLocked===true;
+    if(payloadHasReopenedAt)state.reopenedAt=payloadReopenedAt;else if(state.reopenedAt===undefined)state.reopenedAt=null;
     if(typeof state.finalTimeMs!=='number'||!isFinite(state.finalTimeMs))state.finalTimeMs=0;
     if(typeof state.finalDoneCount!=='number'||!isFinite(state.finalDoneCount))state.finalDoneCount=0;
     if(!state.manualClosedStats||typeof state.manualClosedStats!=='object')state.manualClosedStats={timeMs:0,doneCount:0};
@@ -336,10 +344,12 @@ async function reopenWorkdayOnServer(){
     payload.payload.manualClosedStats={timeMs:0,doneCount:0};
   }
   if(!isServerMode()){
+    const reopenTs=Date.now();
     workdayState.closedAt=null;
     workdayState.locked=false;
     workdayState.closedManually=false;
     workdayState.manualClosedStats={timeMs:0,doneCount:0};
+    workdayState.reopenedAt=reopenTs;
     WorkdayStore.write(workdayState);
     syncWorkdayTaskSnapshot();
     updateWorkdayUI();
@@ -694,7 +704,7 @@ function computeAggregatedWorkdayStats(now=Date.now(),options){const base=getMan
 
 function updateWorkdayCompletionState(task,done,now=Date.now()){if(!task)return;const info=ensureWorkdayState(now);if(!workdayState)return;const completed=workdayState.completed||(workdayState.completed={});let changed=false;if(done){if(info.state==='active'&&workdayState.id===info.id&&!completed[task.id]){completed[task.id]=now;changed=true}}else if(completed[task.id]){delete completed[task.id];changed=true}if(changed)WorkdayStore.write(workdayState)}
 
-function ensureWorkdayState(now=Date.now()){const info=getWorkdayInfo(now);if(info.state==='active'){if(!workdayState||workdayState.id!==info.id){workdayState=createWorkdaySnapshot(info);WorkdayStore.write(workdayState)}else{if(workdayState.start!==info.start||workdayState.end!==info.end){workdayState.start=info.start;workdayState.end=info.end;workdayState.locked=false;workdayState.closedManually=false;workdayState.manualClosedStats={timeMs:0,doneCount:0};WorkdayStore.write(workdayState)}if(workdayState.closedAt&&now<workdayState.end&&!workdayState.closedManually){workdayState.closedAt=null;workdayState.finalTimeMs=0;workdayState.finalDoneCount=0;workdayState.locked=false;workdayState.closedManually=false;workdayState.manualClosedStats={timeMs:0,doneCount:0};WorkdayStore.write(workdayState)}}}else if(workdayState&&now>=workdayState.end&&(!workdayState.locked||workdayState.closedManually)){const summary=computeAggregatedWorkdayStats(workdayState.end,{persist:true,allowBaselineUpdate:true});workdayState.finalTimeMs=summary.timeMs;workdayState.finalDoneCount=summary.doneCount;workdayState.locked=true;workdayState.closedAt=typeof workdayState.end==='number'&&isFinite(workdayState.end)?workdayState.end:now;workdayState.closedManually=false;workdayState.manualClosedStats={timeMs:summary.timeMs,doneCount:summary.doneCount};WorkdayStore.write(workdayState);if(hasActiveTimer()){stopAllTimersExcept(null);Store.write(tasks);syncTimerLoop()}}return info}
+function ensureWorkdayState(now=Date.now()){const info=getWorkdayInfo(now);if(isServerMode())return info;if(info.state==='active'){if(!workdayState||workdayState.id!==info.id){workdayState=createWorkdaySnapshot(info);WorkdayStore.write(workdayState)}else{if(workdayState.start!==info.start||workdayState.end!==info.end){workdayState.start=info.start;workdayState.end=info.end;workdayState.locked=false;workdayState.closedManually=false;workdayState.manualClosedStats={timeMs:0,doneCount:0};WorkdayStore.write(workdayState)}if(workdayState.closedAt&&now<workdayState.end&&!workdayState.closedManually){workdayState.closedAt=null;workdayState.finalTimeMs=0;workdayState.finalDoneCount=0;workdayState.locked=false;workdayState.closedManually=false;workdayState.manualClosedStats={timeMs:0,doneCount:0};WorkdayStore.write(workdayState)}}}else if(workdayState&&now>=workdayState.end&&(!workdayState.locked||workdayState.closedManually)){const summary=computeAggregatedWorkdayStats(workdayState.end,{persist:true,allowBaselineUpdate:true});workdayState.finalTimeMs=summary.timeMs;workdayState.finalDoneCount=summary.doneCount;workdayState.locked=true;workdayState.closedAt=typeof workdayState.end==='number'&&isFinite(workdayState.end)?workdayState.end:now;workdayState.closedManually=false;workdayState.manualClosedStats={timeMs:summary.timeMs,doneCount:summary.doneCount};WorkdayStore.write(workdayState);if(hasActiveTimer()){stopAllTimersExcept(null);Store.write(tasks);syncTimerLoop()}}return info}
 
 function formatTimeHM(ms){const d=new Date(ms);if(isNaN(d))return'';return`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`}
 
