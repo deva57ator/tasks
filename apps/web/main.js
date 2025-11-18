@@ -365,7 +365,7 @@ async function promptToReopenWorkday(){
   if(workdayReopenPromptActive)return false;
   if(workdayReopenPromise)return workdayReopenPromise;
   workdayReopenPromptActive=true;
-  const confirmed=window.confirm('День уже завершён. Чтобы изменить задачи, его нужно открыть. Открыть день?');
+  const confirmed=window.confirm('День уже завершён. Открыть его для редактирования?');
   workdayReopenPromptActive=false;
   if(!confirmed){
     toast('Изменения не применены — день закрыт');

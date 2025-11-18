@@ -2,6 +2,110 @@ const db = require('../db/client');
 const { nowIso } = require('../lib/time');
 const logger = require('../lib/logger');
 
+const WORKDAY_START_HOUR = 6;
+const WORKDAY_END_HOUR = 3;
+
+function pad(value) {
+  return String(value).padStart(2, '0');
+}
+
+function formatWorkdayId(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function getWorkdayWindow(nowTs = Date.now()) {
+  const current = new Date(nowTs);
+  const hour = current.getHours();
+  if (hour < WORKDAY_END_HOUR) {
+    const start = new Date(current);
+    start.setDate(start.getDate() - 1);
+    start.setHours(WORKDAY_START_HOUR, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    end.setHours(WORKDAY_END_HOUR, 0, 0, 0);
+    return {
+      state: 'active',
+      id: formatWorkdayId(start),
+      startTs: start.getTime(),
+      endTs: end.getTime()
+    };
+  }
+  if (hour >= WORKDAY_START_HOUR) {
+    const start = new Date(current);
+    start.setHours(WORKDAY_START_HOUR, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    end.setHours(WORKDAY_END_HOUR, 0, 0, 0);
+    return {
+      state: 'active',
+      id: formatWorkdayId(start),
+      startTs: start.getTime(),
+      endTs: end.getTime()
+    };
+  }
+
+  const prevStart = new Date(current);
+  prevStart.setDate(prevStart.getDate() - 1);
+  prevStart.setHours(WORKDAY_START_HOUR, 0, 0, 0);
+  const prevEnd = new Date(prevStart);
+  prevEnd.setDate(prevEnd.getDate() + 1);
+  prevEnd.setHours(WORKDAY_END_HOUR, 0, 0, 0);
+  const nextStart = new Date(current);
+  nextStart.setHours(WORKDAY_START_HOUR, 0, 0, 0);
+  return {
+    state: 'waiting',
+    id: formatWorkdayId(prevStart),
+    startTs: prevStart.getTime(),
+    endTs: prevEnd.getTime(),
+    nextStartTs: nextStart.getTime()
+  };
+}
+
+function buildOpenPayloadFromWindow(window) {
+  if (!window || !window.id) {
+    return null;
+  }
+  return {
+    id: window.id,
+    start: window.startTs,
+    end: window.endTs,
+    baseline: {},
+    completed: {},
+    locked: false,
+    closedAt: null,
+    closedManually: false,
+    manualClosedStats: { timeMs: 0, doneCount: 0 },
+    finalTimeMs: 0,
+    finalDoneCount: 0,
+    reopenedAt: null
+  };
+}
+
+async function ensureActiveWorkday(nowTs = Date.now()) {
+  const window = getWorkdayWindow(nowTs);
+  if (!window || window.state !== 'active' || !window.id) {
+    return null;
+  }
+  const existing = await db.get('SELECT * FROM workdays WHERE id = ?', [window.id]);
+  if (existing) {
+    return hydrateWorkday(existing);
+  }
+  const payload = buildOpenPayloadFromWindow(window);
+  return upsert({
+    id: window.id,
+    startTs: window.startTs,
+    endTs: window.endTs,
+    summaryTimeMs: 0,
+    summaryDone: 0,
+    payload,
+    closedAt: null
+  });
+}
+
 function coerceNumber(value) {
   if (typeof value === 'number') {
     return Number.isFinite(value) ? value : 0;
@@ -26,15 +130,27 @@ function parsePayload(raw) {
 }
 
 function resetPayloadForReopen(source) {
+  const reopenedAt = Date.now();
   if (!source || typeof source !== 'object') {
-    return null;
+    return {
+      locked: false,
+      closedAt: null,
+      closedManually: false,
+      manualClosedStats: { timeMs: 0, doneCount: 0 },
+      baseline: {},
+      completed: {},
+      finalTimeMs: 0,
+      finalDoneCount: 0,
+      reopenedAt
+    };
   }
   return {
     ...source,
     locked: false,
     closedAt: null,
     closedManually: false,
-    manualClosedStats: { timeMs: 0, doneCount: 0 }
+    manualClosedStats: { timeMs: 0, doneCount: 0 },
+    reopenedAt
   };
 }
 
@@ -172,7 +288,7 @@ async function computeFinalStats(row) {
   };
 }
 
-async function finalizeWorkdayRow(row, closedAtValue) {
+async function finalizeWorkdayRow(row, closedAtValue, options = {}) {
   const hydrated = await hydrateWorkday(row);
   if (!hydrated) return;
 
@@ -182,6 +298,7 @@ async function finalizeWorkdayRow(row, closedAtValue) {
   const finalTime = Math.max(0, Math.round(coerceNumber(timeSource)) || 0);
   const finalDone = Math.max(0, Math.round(coerceNumber(doneSource)) || 0);
   const timestamp = nowIso();
+  const closedManually = options && options.closedManually === true;
 
   let payload = null;
   if (hydrated.payload && typeof hydrated.payload === 'object') {
@@ -196,13 +313,11 @@ async function finalizeWorkdayRow(row, closedAtValue) {
       manualClosedStats: manualStats,
       finalTimeMs: finalTime,
       finalDoneCount: finalDone,
-      closedManually: basePayload.closedManually === true,
+      closedManually,
       locked: true,
-      closedAt: closedAtValue
+      closedAt: closedAtValue,
+      reopenedAt: null
     };
-    if (payload.closedManually !== true) {
-      payload.closedManually = false;
-    }
   }
 
   await db.run(
@@ -231,7 +346,7 @@ async function finalizeExpiredWorkdays(nowTs = Date.now()) {
   const closedIds = [];
   for (const row of staleRows) {
     const closedAtValue = Number.isFinite(Number(row.endTs)) ? Number(row.endTs) : nowTs;
-    await finalizeWorkdayRow(row, closedAtValue);
+    await finalizeWorkdayRow(row, closedAtValue, { closedManually: false });
     closedIds.push(row.id);
   }
 
@@ -273,7 +388,7 @@ async function ensureSingleOpenWorkday(preferredOpenId = null) {
       continue;
     }
     const closedAtValue = Number.isFinite(Number(row.endTs)) ? Number(row.endTs) : nowTs;
-    await finalizeWorkdayRow(row, closedAtValue);
+    await finalizeWorkdayRow(row, closedAtValue, { closedManually: false });
     closedIds.push(row.id);
   }
 
@@ -295,7 +410,10 @@ async function getCurrent() {
     'SELECT * FROM workdays WHERE closedAt IS NULL OR (endTs IS NOT NULL AND endTs > ?) ORDER BY (closedAt IS NULL) DESC, startTs DESC, createdAt DESC LIMIT 1',
     [nowTs]
   );
-  return row ? hydrateWorkday(row) : null;
+  if (row) {
+    return hydrateWorkday(row);
+  }
+  return ensureActiveWorkday(nowTs);
 }
 
 async function getById(id) {
@@ -340,7 +458,7 @@ async function closeById(id, closedAtValue = Date.now()) {
   const effectiveClosedAt = Number.isFinite(Number(closedAtValue))
     ? Number(closedAtValue)
     : (Number.isFinite(Number(row.closedAt)) ? Number(row.closedAt) : Date.now());
-  await finalizeWorkdayRow(row, effectiveClosedAt);
+  await finalizeWorkdayRow(row, effectiveClosedAt, { closedManually: true });
   const updated = await db.get('SELECT * FROM workdays WHERE id = ?', [id]);
   return updated ? hydrateWorkday(updated) : null;
 }
