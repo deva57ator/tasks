@@ -327,8 +327,8 @@ function hydrateWorkdayStateFromServer(record){
 function isWorkdayClosedForEditing(){
   if(!workdayState)return false;
   if(workdayState.locked===true)return true;
-  const closedAt=Number.isFinite(Number(workdayState.closedAt))?Number(workdayState.closedAt):null;
-  return closedAt!==null;
+  const hasClosedAt=workdayState.closedAt!==null&&workdayState.closedAt!==undefined;
+  return hasClosedAt;
 }
 
 let workdayReopenPromptActive=false;
