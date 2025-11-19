@@ -341,15 +341,17 @@ async function reopenWorkdayOnServer(){
     payload.payload.locked=false;
     payload.payload.closedAt=null;
     payload.payload.closedManually=false;
-    payload.payload.manualClosedStats={timeMs:0,doneCount:0};
+    payload.payload.baseline={};
+    payload.payload.completed={};
+    payload.payload.reopenedAt=Date.now();
   }
   if(!isServerMode()){
     const reopenTs=Date.now();
     workdayState.closedAt=null;
     workdayState.locked=false;
     workdayState.closedManually=false;
-    workdayState.manualClosedStats={timeMs:0,doneCount:0};
     workdayState.reopenedAt=reopenTs;
+    resetWorkdaySnapshotAfterReopen(reopenTs);
     WorkdayStore.write(workdayState);
     syncWorkdayTaskSnapshot();
     updateWorkdayUI();
@@ -695,6 +697,8 @@ function getWorkdayInfo(now=Date.now()){const current=new Date(now);const hour=c
 function createWorkdaySnapshot(info){const baseline={};walkTasks(tasks,item=>{baseline[item.id]=totalTimeMs(item,info.start)});return{id:info.id,start:info.start,end:info.end,baseline,completed:{},closedAt:null,finalTimeMs:0,finalDoneCount:0,locked:false,closedManually:false,manualClosedStats:{timeMs:0,doneCount:0}}}
 
 function syncWorkdayTaskSnapshot(){if(!workdayState||workdayState.locked)return;let changed=false;const baseline=workdayState.baseline||(workdayState.baseline={});const seen=new Set();walkTasks(tasks,item=>{seen.add(item.id);if(!(item.id in baseline)){baseline[item.id]=totalTimeMs(item,workdayState.start);changed=true}else{const current=totalTimeMs(item);if(current<baseline[item.id]){baseline[item.id]=current;changed=true}}});for(const id of Object.keys(baseline)){if(!seen.has(id)){delete baseline[id];changed=true}}const completed=workdayState.completed||(workdayState.completed={});for(const id of Object.keys(completed)){const task=findTask(id);if(!task||!task.done){delete completed[id];changed=true}}if(changed)WorkdayStore.write(workdayState)}
+
+function resetWorkdaySnapshotAfterReopen(now=Date.now()){if(!workdayState)return;const baseline={};walkTasks(tasks,item=>{baseline[item.id]=totalTimeMs(item,now)});workdayState.baseline=baseline;workdayState.completed={}}
 
 function computeWorkdayProgress(now=Date.now(),{persist=true,allowBaselineUpdate=true}={}){if(!workdayState)return{timeMs:0,doneCount:0};const baseline=workdayState.baseline||(workdayState.baseline={});const seen=new Set();let total=0;let changed=false;walkTasks(tasks,item=>{const id=item.id;seen.add(id);let baseValue=baseline[id];if(baseValue===undefined){if(!allowBaselineUpdate)return;baseValue=totalTimeMs(item,workdayState.start);baseline[id]=baseValue;changed=true}let current=totalTimeMs(item,now);if(allowBaselineUpdate&&current<baseValue){baseline[id]=current;baseValue=current;changed=true}const diff=current-baseValue;if(diff>0)total+=diff});if(allowBaselineUpdate){for(const id of Object.keys(baseline)){if(!seen.has(id)){delete baseline[id];changed=true}}}const completed=workdayState.completed||(workdayState.completed={});let doneCount=0;for(const id of Object.keys(completed)){const task=findTask(id);if(task&&task.done){doneCount++}else if(allowBaselineUpdate){delete completed[id];changed=true}}if(persist&&changed)WorkdayStore.write(workdayState);return{timeMs:total,doneCount}}
 

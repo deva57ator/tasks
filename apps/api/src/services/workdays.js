@@ -129,6 +129,17 @@ function parsePayload(raw) {
   }
 }
 
+function extractManualStats(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return { timeMs: 0, doneCount: 0 };
+  }
+  const stats = payload.manualClosedStats;
+  const timeMs = stats && typeof stats === 'object' ? coerceNonNegative(stats.timeMs) : 0;
+  const doneCountRaw = stats && typeof stats === 'object' ? coerceNumber(stats.doneCount) : 0;
+  const doneCount = doneCountRaw < 0 ? 0 : Math.round(doneCountRaw);
+  return { timeMs, doneCount };
+}
+
 function resetPayloadForReopen(source) {
   const reopenedAt = Date.now();
   if (!source || typeof source !== 'object') {
@@ -144,12 +155,27 @@ function resetPayloadForReopen(source) {
       reopenedAt
     };
   }
+
+  const manualStats = extractManualStats(source);
+  const finalTimeRaw = source.finalTimeMs;
+  const finalDoneRaw = source.finalDoneCount;
+  const finalTime = Number.isFinite(Number(finalTimeRaw))
+    ? Math.max(0, Math.round(coerceNumber(finalTimeRaw)))
+    : manualStats.timeMs;
+  const finalDone = Number.isFinite(Number(finalDoneRaw))
+    ? Math.max(0, Math.round(coerceNumber(finalDoneRaw)))
+    : manualStats.doneCount;
+
   return {
     ...source,
+    baseline: {},
+    completed: {},
     locked: false,
     closedAt: null,
     closedManually: false,
-    manualClosedStats: { timeMs: 0, doneCount: 0 },
+    manualClosedStats: manualStats,
+    finalTimeMs: finalTime,
+    finalDoneCount: finalDone,
     reopenedAt
   };
 }
@@ -167,17 +193,6 @@ function mapWorkdayRow(row) {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt
   };
-}
-
-function extractManualStats(payload) {
-  if (!payload || typeof payload !== 'object') {
-    return { timeMs: 0, doneCount: 0 };
-  }
-  const stats = payload.manualClosedStats;
-  const timeMs = stats && typeof stats === 'object' ? coerceNonNegative(stats.timeMs) : 0;
-  const doneCountRaw = stats && typeof stats === 'object' ? coerceNumber(stats.doneCount) : 0;
-  const doneCount = doneCountRaw < 0 ? 0 : Math.round(doneCountRaw);
-  return { timeMs, doneCount };
 }
 
 async function computeWorkdayDelta(payload) {
@@ -475,10 +490,25 @@ async function reopen(workday) {
   }
   const timestamp = nowIso();
   const parsedExisting = parsePayload(existing.payload);
-  const payloadSource = workday.payload && typeof workday.payload === 'object' ? workday.payload : parsedExisting;
+  const providedPayload = workday.payload && typeof workday.payload === 'object' ? workday.payload : null;
+  const payloadSource = parsedExisting || providedPayload;
   const payload = resetPayloadForReopen(payloadSource);
-  const summaryTime = workday.summaryTimeMs !== undefined ? workday.summaryTimeMs : existing.summaryTimeMs;
-  const summaryDone = workday.summaryDone !== undefined ? workday.summaryDone : existing.summaryDone;
+  const existingSummaryTime = Math.max(0, Number(existing.summaryTimeMs) || 0);
+  const existingSummaryDone = Math.max(0, Math.round(Number(existing.summaryDone) || 0));
+  const providedSummaryTime =
+    workday.summaryTimeMs !== undefined && workday.summaryTimeMs !== null
+      ? Math.max(0, Number(workday.summaryTimeMs) || 0)
+      : null;
+  const providedSummaryDone =
+    workday.summaryDone !== undefined && workday.summaryDone !== null
+      ? Math.max(0, Math.round(Number(workday.summaryDone) || 0))
+      : null;
+  const summaryTime = providedSummaryTime === null
+    ? existingSummaryTime
+    : Math.max(existingSummaryTime, providedSummaryTime);
+  const summaryDone = providedSummaryDone === null
+    ? existingSummaryDone
+    : Math.max(existingSummaryDone, providedSummaryDone);
   await db.run(
     'UPDATE workdays SET startTs = ?, endTs = ?, summaryTimeMs = ?, summaryDone = ?, payload = ?, closedAt = NULL, updatedAt = ? WHERE id = ?',
     [
