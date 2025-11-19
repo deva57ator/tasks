@@ -48,13 +48,27 @@ jobs:
               "${SSH_USER}@${SSH_HOST}" "echo ok"
 
       # === API → PROD ===
-      - name: Copy API to PROD (/srv/tasks-prod/apps/api)
+      - name: Copy API to PROD (/srv/tasks-prod/_tmp → /srv/tasks-prod/apps/api)
         run: |
           : "${SSH_PORT:=22}"
+
+          # 1. Копируем весь репозиторий в внутренний _tmp, как на STG
           rsync -av --delete \
             -e "ssh -p ${SSH_PORT} -o AddressFamily=inet -o ServerAliveInterval=30 -o ServerAliveCountMax=2 -o ConnectTimeout=15" \
             --filter='merge infra/rsync/api.filter' \
-            ./apps/api/ "${SSH_USER}@${SSH_HOST}:${PATH_PROD}/apps/api/"
+            ./ "${SSH_USER}@${SSH_HOST}:${PATH_PROD}/_tmp/"
+
+          # 2. На сервере перекладываем apps/api на место и чистим _tmp
+          ssh -o AddressFamily=inet \
+              -o ServerAliveInterval=30 -o ServerAliveCountMax=2 \
+              -o ConnectTimeout=15 -p "${SSH_PORT}" \
+              "${SSH_USER}@${SSH_HOST}" "set -eu
+            DEPLOY_PATH='${PATH_PROD}'
+            mkdir -p \"\$DEPLOY_PATH/apps\"
+            rm -rf \"\$DEPLOY_PATH/apps/api\"
+            mv \"\$DEPLOY_PATH/_tmp/apps/api\" \"\$DEPLOY_PATH/apps/\"
+            rm -rf \"\$DEPLOY_PATH/_tmp\"/*
+          "
 
       # === WEB → PROD ===
       - name: Copy WEB to PROD webroot (/var/www/tasks-prod)
