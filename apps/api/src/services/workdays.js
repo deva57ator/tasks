@@ -288,18 +288,24 @@ async function computeFinalStats(row) {
     return null;
   }
   const manual = extractManualStats(payload);
+  const delta = await computeWorkdayDelta(payload);
+  const deltaTime = Math.max(0, coerceNumber(delta.timeMs));
+  const deltaDone = Math.max(0, Math.round(coerceNumber(delta.doneCount)));
   let summaryTimeMs = manual.timeMs;
   let summaryDone = manual.doneCount;
-  const delta = await computeWorkdayDelta(payload);
-  summaryTimeMs += delta.timeMs;
-  summaryDone += delta.doneCount;
-  const hasStats = manual.timeMs > 0 || manual.doneCount > 0 || delta.hasSource;
+
+  if (delta.hasSource) {
+    summaryTimeMs += deltaTime;
+    summaryDone += deltaDone;
+  }
+
+  const hasStats = summaryTimeMs > 0 || summaryDone > 0;
   if (!hasStats) {
     return null;
   }
   return {
-    timeMs: summaryTimeMs,
-    doneCount: summaryDone
+    timeMs: Math.max(0, Math.round(coerceNumber(summaryTimeMs)) || 0),
+    doneCount: Math.max(0, Math.round(coerceNumber(summaryDone)) || 0)
   };
 }
 

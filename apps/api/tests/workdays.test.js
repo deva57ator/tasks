@@ -334,6 +334,49 @@ test('reopen clears closed flag and allows totals to refresh', async () => {
   assert.equal(finalClose.summaryDone, 1);
 });
 
+test('manual stats are not doubled on first close and remain stable after reopen', async () => {
+  const task = await tasks.create({ title: 'Manual close task', timeSpent: 90000, done: true });
+  const start = Date.now() - 3600000;
+  const end = Date.now() + 3600000;
+  const payload = {
+    id: 'day-manual',
+    start,
+    end,
+    baseline: {
+      [task.id]: 0
+    },
+    completed: {
+      [task.id]: end - 1000
+    },
+    manualClosedStats: { timeMs: 90000, doneCount: 1 },
+    closedManually: false
+  };
+
+  await workdays.upsert({
+    id: payload.id,
+    startTs: payload.start,
+    endTs: payload.end,
+    summaryTimeMs: 0,
+    summaryDone: 0,
+    payload,
+    closedAt: null
+  });
+
+  const firstClose = await workdays.closeById(payload.id, end);
+  assert.ok(firstClose);
+  assert.equal(firstClose.summaryTimeMs, 90000);
+  assert.equal(firstClose.summaryDone, 1);
+
+  const reopened = await workdays.reopen({ id: payload.id, payload });
+  assert.ok(reopened);
+  assert.equal(reopened.closedAt, null);
+
+  const secondClose = await workdays.closeById(payload.id, end + 1000);
+  assert.ok(secondClose);
+  assert.equal(secondClose.summaryTimeMs, 90000);
+  assert.equal(secondClose.summaryDone, 1);
+});
+
 test('reopen preserves stored stats even when tasks are removed', async () => {
   const task = await tasks.create({ title: 'Archived task', timeSpent: 180000, done: true });
   const start = Date.now() - 2 * 3600000;
