@@ -295,8 +295,8 @@ async function computeFinalStats(row) {
   let summaryDone = manual.doneCount;
 
   if (delta.hasSource) {
-    summaryTimeMs = Math.max(deltaTime, manual.timeMs);
-    summaryDone = Math.max(deltaDone, manual.doneCount);
+    summaryTimeMs += deltaTime;
+    summaryDone += deltaDone;
   }
 
   const hasStats = summaryTimeMs > 0 || summaryDone > 0;
