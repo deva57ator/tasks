@@ -282,21 +282,25 @@ async function hydrateWorkday(row) {
   return mapped;
 }
 
-async function computeFinalStats(row) {
+async function computeFinalStats(row, options = {}) {
   const payload = parsePayload(row.payload);
   if (!payload || typeof payload !== 'object') {
     return null;
   }
   const manual = extractManualStats(payload);
-  const delta = await computeWorkdayDelta(payload);
-  const deltaTime = Math.max(0, coerceNumber(delta.timeMs));
-  const deltaDone = Math.max(0, Math.round(coerceNumber(delta.doneCount)));
+  const closedManually = options.closedManually === true || payload.closedManually === true;
   let summaryTimeMs = manual.timeMs;
   let summaryDone = manual.doneCount;
 
-  if (delta.hasSource) {
-    summaryTimeMs += deltaTime;
-    summaryDone += deltaDone;
+  if (!closedManually) {
+    const delta = await computeWorkdayDelta(payload);
+    const deltaTime = Math.max(0, coerceNumber(delta.timeMs));
+    const deltaDone = Math.max(0, Math.round(coerceNumber(delta.doneCount)));
+
+    if (delta.hasSource) {
+      summaryTimeMs += deltaTime;
+      summaryDone += deltaDone;
+    }
   }
 
   const hasStats = summaryTimeMs > 0 || summaryDone > 0;
@@ -313,13 +317,13 @@ async function finalizeWorkdayRow(row, closedAtValue, options = {}) {
   const hydrated = await hydrateWorkday(row);
   if (!hydrated) return;
 
-  const recomputed = await computeFinalStats(row);
+  const closedManually = options && options.closedManually === true;
+  const recomputed = await computeFinalStats(row, { closedManually });
   const timeSource = recomputed ? recomputed.timeMs : hydrated.summaryTimeMs;
   const doneSource = recomputed ? recomputed.doneCount : hydrated.summaryDone;
   const finalTime = Math.max(0, Math.round(coerceNumber(timeSource)) || 0);
   const finalDone = Math.max(0, Math.round(coerceNumber(doneSource)) || 0);
   const timestamp = nowIso();
-  const closedManually = options && options.closedManually === true;
 
   let payload = null;
   if (hydrated.payload && typeof hydrated.payload === 'object') {
