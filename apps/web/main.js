@@ -1345,6 +1345,11 @@ document.addEventListener('keydown',e=>{
     openDuePicker(selectedTaskId,anchor||null);
     return;
   }
+  if(e.code==='KeyF'){
+    e.preventDefault();
+    toggleTask(selectedTaskId);
+    return;
+  }
   if(e.code==='KeyR'){
     e.preventDefault();
     toggleTaskTimer(selectedTaskId);
