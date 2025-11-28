@@ -101,10 +101,10 @@ jobs:
           # Делаем health-check с ретраями, чтобы успел подняться nginx+API
           URL='https://parkhomenko.space/tasks-stg/api/health'
 
-          echo "Checking health: \$URL"
+          echo "Checking health: $URL"
 
           curl --fail --show-error \
                --retry 10 \
                --retry-delay 5 \
                --retry-all-errors \
-               "\$URL" >/dev/null
+               "$URL" >/dev/null
