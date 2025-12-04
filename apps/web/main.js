@@ -1405,6 +1405,11 @@ document.addEventListener('keydown',e=>{
   if(e.code==='KeyC'){
     e.preventDefault();
     openNotesPanel(selectedTaskId);
+    return;
+  }
+  if(e.code==='KeyT'){
+    e.preventDefault();
+    openTimeEditDialog(selectedTaskId);
   }
 });
 
