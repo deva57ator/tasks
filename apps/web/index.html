@@ -83,6 +83,7 @@
           <button type="button" class="workday-finish" id="workdayFinishBtn">Завершить день</button>
         </div>
         <div class="header-actions">
+          <button type="button" class="api-key-btn" id="apiSettingsBtn" title="Настройки API key">API key</button>
           <button
             type="button"
             class="icon-btn theme-btn"
@@ -109,6 +110,34 @@
   <div class="ctx-submenu" id="ctxSub" aria-hidden="true"></div>
 
   <button id="storageToggle" class="storage-toggle" type="button" aria-live="polite" title="Переключить хранилище"></button>
+
+  <div class="api-settings-overlay" id="apiSettingsOverlay" aria-hidden="true">
+    <div class="api-settings-dialog" id="apiSettingsDialog" role="dialog" aria-modal="true" aria-labelledby="apiSettingsTitle">
+      <button type="button" class="api-settings-close" id="apiSettingsClose" aria-label="Закрыть окно">×</button>
+      <div class="api-settings-header">
+        <div class="api-settings-title" id="apiSettingsTitle">API key</div>
+        <div class="api-settings-description" id="apiSettingsEnv"></div>
+        <div class="api-settings-hint" id="apiSettingsHint"></div>
+        <div class="api-settings-message" id="apiSettingsMessage"></div>
+      </div>
+      <form class="api-settings-form" id="apiSettingsForm">
+        <div class="api-settings-field">
+          <label class="api-settings-label" for="apiKeyInput">API key</label>
+          <div class="api-settings-input-wrap">
+            <input type="password" class="api-settings-input" id="apiKeyInput" autocomplete="off" />
+            <button type="button" class="api-settings-ghost" id="apiKeyToggle">Показать</button>
+          </div>
+        </div>
+        <div class="api-settings-error" id="apiSettingsError" role="alert" aria-live="polite"></div>
+        <div class="api-settings-actions">
+          <button type="button" class="api-settings-secondary" id="apiKeyClear">Очистить ключ</button>
+          <div class="api-settings-actions-spacer"></div>
+          <button type="button" class="api-settings-secondary" id="apiKeyToLocal">В LOCAL режим</button>
+          <button type="submit" class="api-settings-primary" id="apiSettingsSave">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <div class="notes-overlay" id="notesOverlay" aria-hidden="true"></div>
   <aside class="notes-sidebar" id="notesSidebar" aria-hidden="true">
