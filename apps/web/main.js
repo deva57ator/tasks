@@ -1,8 +1,17 @@
 const StorageModeStore={key:'mini-task-tracker:storage-mode',read(){return localStorage.getItem(this.key)||'local'},write(mode){localStorage.setItem(this.key,mode)}};
 const STORAGE_MODES={LOCAL:'local',SERVER:'server'};
-const API_PREFIX=location.pathname.startsWith('/tasks-stg/')?'/tasks-stg':'/tasks';
+const API_PREFIX=location.pathname.startsWith('/tasks-stg')?'/tasks-stg':'/tasks';
 const API_BASE=`${API_PREFIX}/api`;
 const api=path=>`${API_BASE}${path}`;
+const API_ENV_LABEL=API_PREFIX==='/tasks-stg'?'STG':'PROD';
+
+const ApiKeyStore={
+  keyPrefix:'tasks_api_key:',
+  storageKey(){return`${this.keyPrefix}${API_PREFIX}`},
+  read(){return localStorage.getItem(this.storageKey())||''},
+  write(value){if(!value){localStorage.removeItem(this.storageKey());return}localStorage.setItem(this.storageKey(),value)},
+  clear(){localStorage.removeItem(this.storageKey())}
+};
 
 const MIN_TASK_MINUTES=0;
 const MAX_TASK_MINUTES=1440;
@@ -13,6 +22,10 @@ let storageMode=StorageModeStore.read();
 if(storageMode!==STORAGE_MODES.SERVER)storageMode=STORAGE_MODES.LOCAL;
 
 function isServerMode(){return storageMode===STORAGE_MODES.SERVER}
+
+let apiAuthLocked=false;
+let apiAuthMessage='';
+let apiAuthReason=null;
 
 const Store={key:'mini-task-tracker:text:min:v14',read(){try{return JSON.parse(localStorage.getItem(this.key))||[]}catch{return[]}},write(d){if(isServerMode()){handleServerTaskWrite(d);return}localStorage.setItem(this.key,JSON.stringify(d));afterTasksPersisted()}};
 const ThemeStore={key:'mini-task-tracker:theme',read(){return localStorage.getItem(this.key)||'light'},write(v){localStorage.setItem(this.key,v)}};
@@ -196,6 +209,23 @@ const WorkdayUI={
   title:document.getElementById('workdayDialogTitle')
 };
 
+const ApiSettingsUI={
+  overlay:document.getElementById('apiSettingsOverlay'),
+  dialog:document.getElementById('apiSettingsDialog'),
+  closeBtn:document.getElementById('apiSettingsClose'),
+  form:document.getElementById('apiSettingsForm'),
+  input:document.getElementById('apiKeyInput'),
+  toggle:document.getElementById('apiKeyToggle'),
+  error:document.getElementById('apiSettingsError'),
+  env:document.getElementById('apiSettingsEnv'),
+  hint:document.getElementById('apiSettingsHint'),
+  message:document.getElementById('apiSettingsMessage'),
+  saveBtn:document.getElementById('apiSettingsSave'),
+  clearBtn:document.getElementById('apiKeyClear'),
+  toLocalBtn:document.getElementById('apiKeyToLocal'),
+  openBtn:document.getElementById('apiSettingsBtn')
+};
+
 const WORKDAY_REFRESH_INTERVAL=60000;
 
 const $=s=>document.querySelector(s),$$=s=>Array.from(document.querySelectorAll(s));
@@ -226,7 +256,18 @@ let workdaySyncTimer=null;
 let workdaySyncInFlight=false;
 let lastWorkdaySyncPayload=null;
 
-async function apiRequest(path,{method='GET',body}={}){const url=api(path);const init={method};if(body!==undefined){init.body=typeof body==='string'?body:JSON.stringify(body);init.headers={'Content-Type':'application/json'}}let response;try{response=await fetch(url,init)}catch(err){throw new Error('Нет соединения с API')}if(!response.ok){let message=`Ошибка API (${response.status})`;try{const errBody=await response.json();if(errBody&&errBody.error&&errBody.error.message)message=errBody.error.message}catch{}throw new Error(message)}if(response.status===204)return null;const text=await response.text();if(!text)return null;try{return JSON.parse(text)}catch{return null}}
+const API_KEY_HINT='Возьми ключ на сервере в /etc/tasks-*.env';
+let apiSettingsBlocking=false;
+
+function apiError(message,code){const err=new Error(message);if(code)err.code=code;return err}
+
+function resetApiAuthLock(){apiAuthLocked=false;apiAuthReason=null;apiAuthMessage='';}
+
+function lockApiAuth(reason,message){apiAuthLocked=true;apiAuthReason=reason||null;apiAuthMessage=message||'';openApiSettings({blocking:true,reason,message})}
+
+function ensureApiKeyAvailable(reason){if(!isServerMode())return null;if(apiAuthLocked&&apiAuthReason){lockApiAuth(apiAuthReason,apiAuthMessage);throw apiError(apiAuthMessage||'Требуется API key','auth-locked')}const key=ApiKeyStore.read();if(!key){lockApiAuth(reason||'missing','Нужен API key для доступа к API');throw apiError('API key не указан','missing-key')}return key}
+
+async function apiRequest(path,{method='GET',body}={}){const url=api(path);const init={method,headers:{}};if(body!==undefined){init.body=typeof body==='string'?body:JSON.stringify(body);init.headers['Content-Type']='application/json'}if(isServerMode()){const key=ensureApiKeyAvailable('missing');if(key)init.headers['X-API-Key']=key}if(!Object.keys(init.headers).length)delete init.headers;let response;try{response=await fetch(url,init)}catch(err){lockApiAuth('network','API недоступен');throw apiError('Нет соединения с API','network')}if(response.status===401){lockApiAuth('unauthorized','Ключ неверный или не подходит для этого окружения');throw apiError('Требуется корректный API key','unauthorized')}if(!response.ok){let message=`Ошибка API (${response.status})`;try{const errBody=await response.json();if(errBody&&errBody.error&&errBody.error.message)message=errBody.error.message}catch{}throw apiError(message,'api')}if(response.status===204)return null;const text=await response.text();if(!text)return null;try{return JSON.parse(text)}catch{return null}}
 
 function handleApiError(err,fallback){const message=err&&err.message?err.message:fallback||'Ошибка при работе с API';console.error(err);toast(message)}
 
@@ -256,7 +297,7 @@ function finalizeDataLoad(){tasks=migrate(tasks);ensureTaskParentIds(tasks,null)
 
 async function loadDataFromLocal(){tasks=Store.read();tasks=migrate(tasks);ensureTaskParentIds(tasks,null);projects=ProjectsStore.read();if(!Array.isArray(projects))projects=[];normalizeProjectsList(projects,{persist:!isServerMode()});archivedTasks=normalizeArchiveList(ArchiveStore.read(),{persist:!isServerMode()});workdayState=WorkdayStore.read();if(workdayState&&(!workdayState.id||typeof workdayState.start!=='number'||typeof workdayState.end!=='number'))workdayState=null;finalizeDataLoad();updateStorageToggle()}
 
-async function loadDataFromServer({silent=false}={}){if(isDataLoading)return;isDataLoading=true;updateStorageToggle({loading:true});try{const [tasksPayload,projectsPayload,archivePayload,workdayPayload]=await Promise.all([apiRequest('/tasks'),apiRequest(`/projects?limit=${API_DEFAULT_LIMIT}`),apiRequest(`/archive?limit=${API_DEFAULT_LIMIT}`),apiRequest('/workday/current')]);const serverTasks=Array.isArray(tasksPayload?.items)?tasksPayload.items:Array.isArray(tasksPayload)?tasksPayload:[];tasks=normalizeTaskTree(serverTasks,null);projects=normalizeProjectsList(projectsPayload&&Array.isArray(projectsPayload.items)?projectsPayload.items:[],{persist:false});const archiveItems=normalizeArchivePayload(archivePayload&&Array.isArray(archivePayload.items)?archivePayload.items:[]);archivedTasks=normalizeArchiveList(archiveItems,{persist:false});const serverWorkday=workdayPayload&&workdayPayload.workday?workdayPayload.workday:null;workdayState=hydrateWorkdayStateFromServer(serverWorkday);persistLocalWorkdayState(workdayState);finalizeDataLoad()}catch(err){if(!silent)handleApiError(err,'Не удалось загрузить данные с сервера');storageMode=STORAGE_MODES.LOCAL;StorageModeStore.write(storageMode);updateStorageToggle();await loadDataFromLocal()}finally{isDataLoading=false;updateStorageToggle({loading:false})}}
+async function loadDataFromServer({silent=false}={}){if(isDataLoading)return;if(apiAuthLocked&&apiAuthReason){lockApiAuth(apiAuthReason,apiAuthMessage);return}const key=ApiKeyStore.read();if(!key){lockApiAuth('missing','Нужен API key для доступа к API');return}isDataLoading=true;updateStorageToggle({loading:true});try{const [tasksPayload,projectsPayload,archivePayload,workdayPayload]=await Promise.all([apiRequest('/tasks'),apiRequest(`/projects?limit=${API_DEFAULT_LIMIT}`),apiRequest(`/archive?limit=${API_DEFAULT_LIMIT}`),apiRequest('/workday/current')]);const serverTasks=Array.isArray(tasksPayload?.items)?tasksPayload.items:Array.isArray(tasksPayload)?tasksPayload:[];tasks=normalizeTaskTree(serverTasks,null);projects=normalizeProjectsList(projectsPayload&&Array.isArray(projectsPayload.items)?projectsPayload.items:[],{persist:false});const archiveItems=normalizeArchivePayload(archivePayload&&Array.isArray(archivePayload.items)?archivePayload.items:[]);archivedTasks=normalizeArchiveList(archiveItems,{persist:false});const serverWorkday=workdayPayload&&workdayPayload.workday?workdayPayload.workday:null;workdayState=hydrateWorkdayStateFromServer(serverWorkday);persistLocalWorkdayState(workdayState);finalizeDataLoad();resetApiAuthLock()}catch(err){if(err&&['missing-key','unauthorized','auth-locked','network'].includes(err.code)){return}if(!silent)handleApiError(err,'Не удалось загрузить данные с сервера')}finally{isDataLoading=false;updateStorageToggle({loading:false})}}
 
 async function refreshDataForCurrentMode(options={}){if(isServerMode())return loadDataFromServer(options);return loadDataFromLocal()}
 
@@ -266,7 +307,7 @@ function collectActiveTimerTasks(list=tasks,acc=[]){if(!Array.isArray(list))retu
 
 function finalizeActiveTimersBeforeModeChange(mode=storageMode){const targetMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:STORAGE_MODES.LOCAL;const activeTasks=collectActiveTimerTasks();if(!activeTasks.length)return false;for(const task of activeTasks){stopTaskTimer(task,{silent:true})}Store.write(tasks);if(targetMode===STORAGE_MODES.SERVER){for(const task of activeTasks){if(task&&task.id)queueTaskUpdate(task.id,{timeSpent:task.timeSpent})}}syncTimerLoop();return true}
 
-async function setStorageModeAndReload(mode,{silent=false,forceReload=false,skipToggleUpdate=false}={}){const nextMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:STORAGE_MODES.LOCAL;const prevMode=storageMode;const changed=prevMode!==nextMode;if(changed)finalizeActiveTimersBeforeModeChange(prevMode);storageMode=nextMode;StorageModeStore.write(storageMode);if(!skipToggleUpdate)updateStorageToggle();if(changed){activeTimersState=ActiveTimersStore.read({mode:storageMode});ensureActiveTimersState()}flushPendingTaskUpdates();flushPendingWorkdaySync();if(!changed&&!forceReload)return;await refreshDataForCurrentMode({silent})}
+  async function setStorageModeAndReload(mode,{silent=false,forceReload=false,skipToggleUpdate=false}={}){const nextMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:STORAGE_MODES.LOCAL;const prevMode=storageMode;const changed=prevMode!==nextMode;if(changed)finalizeActiveTimersBeforeModeChange(prevMode);storageMode=nextMode;StorageModeStore.write(storageMode);if(!skipToggleUpdate)updateStorageToggle();if(changed){activeTimersState=ActiveTimersStore.read({mode:storageMode});ensureActiveTimersState();if(storageMode===STORAGE_MODES.LOCAL)resetApiAuthLock()}flushPendingTaskUpdates();flushPendingWorkdaySync();if(!changed&&!forceReload)return;await refreshDataForCurrentMode({silent})}
 
 function handleServerTaskWrite(){afterTasksPersisted()}
 function handleServerProjectsWrite(data){if(Array.isArray(data)){projects=data}}
@@ -675,6 +716,24 @@ function handleTaskCompletionEffects(taskId,{completed=false,undone=false}={}){i
 }
 
 function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('show'),1400)}
+
+function apiEnvDescription(){return`Окружение: ${API_ENV_LABEL}`}
+function setApiSettingsError(message){if(ApiSettingsUI.error)ApiSettingsUI.error.textContent=message||''}
+function setApiSettingsMessage(message){if(!ApiSettingsUI.message)return;ApiSettingsUI.message.textContent=message||'';ApiSettingsUI.message.style.display=message?'block':'none'}
+function isApiSettingsOpen(){return ApiSettingsUI.overlay&&ApiSettingsUI.overlay.classList.contains('is-open')}
+function syncApiSettingsStaticText(){if(ApiSettingsUI.env)ApiSettingsUI.env.textContent=apiEnvDescription();if(ApiSettingsUI.hint)ApiSettingsUI.hint.textContent=API_KEY_HINT}
+
+function openApiSettings({blocking=false,reason=null,message=null,resetInput=false}={}){syncApiSettingsStaticText();apiSettingsBlocking=!!blocking;const overlay=ApiSettingsUI.overlay;if(!overlay)return;const defaultMessage=reason==='unauthorized'?'Ключ неверный или не подходит для этого окружения':reason==='network'?'API недоступен':reason==='missing'?'Укажи ключ для этого окружения':'Добавь или обнови ключ для серверного режима';setApiSettingsMessage(message||defaultMessage);setApiSettingsError('');const currentValue=ApiKeyStore.read();if(ApiSettingsUI.input){ApiSettingsUI.input.value=resetInput?'':currentValue;ApiSettingsUI.input.type='password'}if(ApiSettingsUI.toggle){ApiSettingsUI.toggle.textContent='Показать'}if(ApiSettingsUI.closeBtn)ApiSettingsUI.closeBtn.style.display=apiSettingsBlocking?'none':'block';overlay.classList.add('is-open');overlay.setAttribute('aria-hidden','false');document.body.classList.add('api-settings-open');const target=ApiSettingsUI.input||ApiSettingsUI.dialog;setTimeout(()=>{if(target){try{target.focus({preventScroll:true})}catch{try{target.focus()}catch{}}}},50)}
+
+function closeApiSettings({force=false}={}){if(!isApiSettingsOpen())return;if(apiSettingsBlocking&&!force&&isServerMode()&&!ApiKeyStore.read())return;apiSettingsBlocking=false;const overlay=ApiSettingsUI.overlay;overlay.classList.remove('is-open');overlay.setAttribute('aria-hidden','true');document.body.classList.remove('api-settings-open');setApiSettingsError('')}
+
+function toggleApiKeyVisibility(){if(!ApiSettingsUI.input||!ApiSettingsUI.toggle)return;const showing=ApiSettingsUI.input.type==='text';ApiSettingsUI.input.type=showing?'password':'text';ApiSettingsUI.toggle.textContent=showing?'Показать':'Скрыть'}
+
+async function saveApiKey(event){event&&event.preventDefault();if(!ApiSettingsUI.input)return;const value=(ApiSettingsUI.input.value||'').trim();if(!value){setApiSettingsError('Введите API key');return}ApiKeyStore.write(value);setApiSettingsError('');const reset=()=>{if(ApiSettingsUI.saveBtn)ApiSettingsUI.saveBtn.disabled=false};if(ApiSettingsUI.saveBtn)ApiSettingsUI.saveBtn.disabled=true;try{resetApiAuthLock();if(isServerMode()){await apiRequest('/tasks?limit=1')}apiSettingsBlocking=false;closeApiSettings({force:true});toast('API key сохранён');if(isServerMode())await refreshDataForCurrentMode({silent:true})}catch(err){if(err&&err.code==='unauthorized'){setApiSettingsError('Ключ неверный или не подходит для этого окружения');lockApiAuth('unauthorized','Ключ неверный или не подходит для этого окружения');return}else if(err&&err.code==='network'){setApiSettingsError('API недоступен');lockApiAuth('network','API недоступен');return}setApiSettingsError(err&&err.message?err.message:'Не удалось сохранить ключ')}finally{reset()}}
+
+function clearApiKey(){ApiKeyStore.clear();if(ApiSettingsUI.input)ApiSettingsUI.input.value='';setApiSettingsError('Ключ очищен');if(isServerMode())lockApiAuth('missing','Нужен API key для доступа к API')}
+
+async function switchToLocalMode(){await setStorageModeAndReload(STORAGE_MODES.LOCAL,{forceReload:true});apiSettingsBlocking=false;closeApiSettings({force:true});toast('Режим: localStorage')}
 function migrate(list,depth=0){const extras=[];for(const t of list){if(!Array.isArray(t.children)) t.children=[];if(typeof t.collapsed!=='boolean') t.collapsed=false;if(typeof t.done!=='boolean') t.done=false;if(!('due' in t)) t.due=null;if(!('project' in t)) t.project=null;if(typeof t.notes!=='string') t.notes='';if(typeof t.timeSpent!=='number'||!isFinite(t.timeSpent)||t.timeSpent<0)t.timeSpent=0;t.timeSpent=clampTimeSpentMs(t.timeSpent);if(typeof t.timerActive!=='boolean')t.timerActive=false;if(typeof t.timerStart!=='number'||!isFinite(t.timerStart))t.timerStart=null;if(t.children.length){migrate(t.children,depth+1);if(depth>=MAX_TASK_DEPTH){extras.push(...t.children);t.children=[]}}}if(extras.length) list.push(...extras);return list}
 tasks=migrate(tasks);
 ensureTaskParentIds(tasks,null);
@@ -1265,7 +1324,16 @@ $$('.nav-btn').forEach(btn=>btn.onclick=()=>{const view=btn.dataset.view;if(view
 if(archiveBtn){archiveBtn.addEventListener('click',()=>{currentView='archive';render()})}
 
 const storageToggleBtn=document.getElementById('storageToggle');
-if(storageToggleBtn){storageToggleBtn.addEventListener('click',async()=>{if(isDataLoading)return;const switchingToServer=!isServerMode();updateStorageToggle({loading:true});try{if(!switchingToServer){await setStorageModeAndReload(STORAGE_MODES.LOCAL,{forceReload:true,skipToggleUpdate:true});toast('Режим: localStorage');return}const healthResponse=await fetch(api('/health'));if(!healthResponse.ok)throw new Error('API недоступен');await setStorageModeAndReload(STORAGE_MODES.SERVER,{forceReload:true,skipToggleUpdate:true});toast('Режим: API')}catch(err){console.error(err);if(switchingToServer){await setStorageModeAndReload(STORAGE_MODES.LOCAL,{silent:true,forceReload:true,skipToggleUpdate:true});toast('API недоступен')}}finally{updateStorageToggle({loading:false})}})}
+if(storageToggleBtn){storageToggleBtn.addEventListener('click',async()=>{if(isDataLoading)return;const switchingToServer=!isServerMode();updateStorageToggle({loading:true});try{if(!switchingToServer){await setStorageModeAndReload(STORAGE_MODES.LOCAL,{forceReload:true,skipToggleUpdate:true});toast('Режим: localStorage');return}await setStorageModeAndReload(STORAGE_MODES.SERVER,{forceReload:true,skipToggleUpdate:true});const key=ApiKeyStore.read();if(!key){lockApiAuth('missing','Нужен API key для доступа к API');return}toast('Режим: API')}catch(err){console.error(err);if(switchingToServer){lockApiAuth('network','API недоступен')}}finally{updateStorageToggle({loading:false})}})}
+
+if(ApiSettingsUI.openBtn){ApiSettingsUI.openBtn.addEventListener('click',()=>{const needsKey=isServerMode()&&!ApiKeyStore.read();const shouldBlock=needsKey||apiAuthLocked;const reason=apiAuthReason||(needsKey?'missing':null);openApiSettings({blocking:shouldBlock,reason,message:apiAuthMessage||null})})}
+if(ApiSettingsUI.closeBtn){ApiSettingsUI.closeBtn.addEventListener('click',()=>closeApiSettings())}
+if(ApiSettingsUI.overlay){ApiSettingsUI.overlay.addEventListener('click',e=>{if(e.target===ApiSettingsUI.overlay&&!apiSettingsBlocking)closeApiSettings()})}
+if(ApiSettingsUI.toggle){ApiSettingsUI.toggle.addEventListener('click',toggleApiKeyVisibility)}
+if(ApiSettingsUI.form){ApiSettingsUI.form.addEventListener('submit',saveApiKey)}
+if(ApiSettingsUI.clearBtn){ApiSettingsUI.clearBtn.addEventListener('click',clearApiKey)}
+if(ApiSettingsUI.toLocalBtn){ApiSettingsUI.toLocalBtn.addEventListener('click',()=>switchToLocalMode())}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&isApiSettingsOpen()&&!apiSettingsBlocking){closeApiSettings()}});
 
 if(WorkdayUI.button){WorkdayUI.button.addEventListener('click',()=>{if(WorkdayUI.button.disabled)return;openWorkdayDialog()})}
 if(WorkdayUI.closeBtn){WorkdayUI.closeBtn.setAttribute('data-allow-closed-day','true');WorkdayUI.closeBtn.addEventListener('click',()=>closeWorkdayDialog());}
