@@ -20,7 +20,7 @@ function createApp() {
 
   app.use('/api/health', healthRouter);
 
-  app.use(auth);
+  app.use('/api', auth);
 
   app.use('/api/projects', projectsRouter);
   app.use('/api/tasks', tasksRouter);
