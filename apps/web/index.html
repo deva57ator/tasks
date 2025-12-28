@@ -83,7 +83,13 @@
           <button type="button" class="workday-finish" id="workdayFinishBtn">Завершить день</button>
         </div>
         <div class="header-actions">
-          <button type="button" class="api-key-btn" id="apiSettingsBtn" title="Настройки API key">API key</button>
+          <button
+            type="button"
+            class="icon-btn settings-btn"
+            id="apiSettingsBtn"
+            aria-label="Настройки API key"
+            title="Настройки API key"
+          ></button>
           <button
             type="button"
             class="icon-btn theme-btn"
@@ -130,10 +136,10 @@
         </div>
         <div class="api-settings-error" id="apiSettingsError" role="alert" aria-live="polite"></div>
         <div class="api-settings-actions">
-          <button type="button" class="api-settings-secondary" id="apiKeyClear">Очистить ключ</button>
+          <button type="button" class="api-settings-secondary" id="apiKeyClear">очистить</button>
           <div class="api-settings-actions-spacer"></div>
-          <button type="button" class="api-settings-secondary" id="apiKeyToLocal">В LOCAL режим</button>
-          <button type="submit" class="api-settings-primary" id="apiSettingsSave">Сохранить</button>
+          <button type="button" class="api-settings-secondary" id="apiKeyToLocal">local</button>
+          <button type="submit" class="api-settings-primary" id="apiSettingsSave">сохранить</button>
         </div>
       </form>
     </div>
