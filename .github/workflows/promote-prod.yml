@@ -95,11 +95,26 @@ jobs:
             npm run migrate
             sudo -n systemctl daemon-reload || true
             sudo -n systemctl restart tasks-prod
+            sleep 3
+            if ! systemctl is-active --quiet tasks-prod; then
+              echo "tasks-prod is not active after restart" >&2
+              systemctl status --no-pager tasks-prod || true
+              journalctl -u tasks-prod --since "5 minutes ago" --no-pager || true
+              exit 1
+            fi
+
+            curl -fsS --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:3101/api/health >/dev/null
             systemctl status --no-pager tasks-prod | tail -n +1 || true
           "
 
       - name: Health check (PROD)
         shell: bash
         run: |
-          curl -fsS 'https://parkhomenko.space/tasks/api/health' >/dev/null
-
+          URL='https://parkhomenko.space/tasks/api/health'
+          echo "Checking health: $URL"
+      
+          curl --fail --show-error \
+               --retry 10 \
+               --retry-delay 5 \
+               --retry-all-errors \
+               "$URL" >/dev/null
