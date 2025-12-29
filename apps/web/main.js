@@ -155,6 +155,7 @@ let selectedTaskId=null;
 let pendingEditId=null;
 let currentView='all';
 let currentProjectId=null;
+let yearPlanYear=new Date().getFullYear();
 let activeEditId=null;
 let activeInputEl=null;
 let projects=ProjectsStore.read();
@@ -240,6 +241,7 @@ if(!Array.isArray(archivedTasks))archivedTasks=[];else archivedTasks=normalizeAr
 const MAX_TASK_DEPTH=2;
 const MONTH_NAMES=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 const TIME_UPDATE_INTERVAL=1000;
+const YEAR_PLAN_MAX_DAYS=31;
 
 function ensureActiveTimersState(){if(!activeTimersState||typeof activeTimersState!=='object')activeTimersState={}}
 function persistActiveTimersState(){ensureActiveTimersState();ActiveTimersStore.write(activeTimersState,{mode:storageMode})}
@@ -1105,6 +1107,67 @@ initTimeDialogPresets();
 function formatArchiveDateTime(ms){if(typeof ms!=='number'||!isFinite(ms)||ms<=0)return null;const date=new Date(ms);if(isNaN(date))return null;const timestamp=date.getTime();return`${formatDateDMY(timestamp)} ${formatTimeHM(timestamp)}`}
 function renderArchivedNode(node,depth,container){if(!node)return;const row=document.createElement('div');row.className='archive-task';row.dataset.id=node.id;row.dataset.depth=String(depth);if(depth>0)row.style.marginLeft=`${depth*18}px`;const status=document.createElement('div');status.className='archive-status';status.textContent='✔';const main=document.createElement('div');main.className='archive-main';const title=document.createElement('div');title.className='archive-title';title.textContent=node.title||'Без названия';main.appendChild(title);const tags=document.createElement('div');tags.className='archive-tags';if(node.due){const dueTag=document.createElement('span');dueTag.className='due-tag';if(isDueToday(node.due))dueTag.classList.add('is-today');else if(isDuePast(node.due))dueTag.classList.add('is-overdue');dueTag.textContent=formatDue(node.due);if(dueTag.textContent)tags.appendChild(dueTag)}if(node.project){const projectMeta=getProjectMeta(node.project);const projTag=document.createElement('span');projTag.className='proj-tag';const emoji=projectMeta.emoji?`${projectMeta.emoji} `:'';projTag.textContent=`${emoji}${projectMeta.title}`.trim();tags.appendChild(projTag)}if(tags.childElementCount)main.appendChild(tags);const meta=document.createElement('div');meta.className='archive-meta';const completedText=formatArchiveDateTime(node.completedAt);if(completedText)meta.appendChild(document.createTextNode(`Завершено: ${completedText}`));const archivedText=formatArchiveDateTime(node.archivedAt);if(archivedText){if(meta.textContent)meta.appendChild(document.createTextNode(' • '));meta.appendChild(document.createTextNode(`В архиве: ${archivedText}`))}if(meta.textContent)main.appendChild(meta);const actions=document.createElement('div');actions.className='archive-actions';const time=document.createElement('div');time.className='archive-time';time.textContent=formatDuration(node.timeSpent);actions.appendChild(time);const noteBtn=document.createElement('button');noteBtn.className='note-btn';noteBtn.type='button';noteBtn.textContent='📝';noteBtn.title='Открыть заметки';noteBtn.setAttribute('aria-label','Заметки задачи');noteBtn.dataset.hasNotes=node.notes&&node.notes.trim()? 'true':'false';noteBtn.onclick=e=>{e.stopPropagation();openNotesPanel(node.id,{source:'archive'})};actions.appendChild(noteBtn);const deleteBtn=document.createElement('button');deleteBtn.className='archive-delete';deleteBtn.type='button';deleteBtn.textContent='✕';deleteBtn.title='Удалить из архива';deleteBtn.setAttribute('aria-label','Удалить задачу из архива');deleteBtn.onclick=e=>{e.stopPropagation();const removed=removeArchivedTask(node.id);if(removed){ArchiveStore.write(archivedTasks);if(isServerMode())queueArchiveDelete(node.id);if(currentView==='archive')render()}};actions.appendChild(deleteBtn);row.append(status,main,actions);container.appendChild(row);if(Array.isArray(node.children)&&node.children.length){for(const child of node.children){renderArchivedNode(child,depth+1,container)}}}
 function renderArchive(container){const wrap=document.createElement('div');wrap.className='archive-container';const items=[...archivedTasks];items.sort((a,b)=>(b.archivedAt||0)-(a.archivedAt||0)||(b.completedAt||0)-(a.completedAt||0));if(!items.length){const empty=document.createElement('div');empty.className='archive-empty';empty.textContent='Архив пока пуст.';container.appendChild(empty);return}for(const item of items){renderArchivedNode(item,0,wrap)}container.appendChild(wrap)}
+function renderYearPlan(container){
+  if(!container)return;
+  container.innerHTML='';
+  const root=document.createElement('div');
+  root.className='year-plan';
+
+  const header=document.createElement('div');
+  header.className='year-plan-header';
+  const title=document.createElement('div');
+  title.className='year-plan-title';
+  title.textContent='План года';
+  const controls=document.createElement('div');
+  controls.className='year-plan-controls';
+  const prev=document.createElement('button');
+  prev.type='button';
+  prev.className='year-plan-arrow';
+  prev.textContent='‹';
+  prev.onclick=()=>{yearPlanYear--;render()};
+  const yearLabel=document.createElement('div');
+  yearLabel.className='year-plan-year';
+  yearLabel.textContent=String(yearPlanYear);
+  const next=document.createElement('button');
+  next.type='button';
+  next.className='year-plan-arrow';
+  next.textContent='›';
+  next.onclick=()=>{yearPlanYear++;render()};
+  controls.append(prev,yearLabel,next);
+  header.append(title,controls);
+  root.appendChild(header);
+
+  const grid=document.createElement('div');
+  grid.className='year-plan-grid';
+  for(let m=0;m<12;m++){
+    const month=document.createElement('div');
+    month.className='year-month';
+    const monthTitleEl=document.createElement('div');
+    monthTitleEl.className='year-month-title';
+    monthTitleEl.textContent=MONTH_NAMES[m];
+    const daysWrap=document.createElement('div');
+    daysWrap.className='year-days';
+    const daysInMonth=getDaysInMonth(yearPlanYear,m);
+    for(let d=1;d<=YEAR_PLAN_MAX_DAYS;d++){
+      const row=document.createElement('div');
+      row.className='year-day';
+      if(d>daysInMonth){
+        row.classList.add('is-disabled');
+      }else{
+        if(isWeekendDay(yearPlanYear,m,d))row.classList.add('is-weekend');
+        const num=document.createElement('span');
+        num.className='year-day-num';
+        num.textContent=String(d);
+        row.appendChild(num);
+      }
+      daysWrap.appendChild(row)
+    }
+    month.append(monthTitleEl,daysWrap);
+    grid.appendChild(month)
+  }
+  root.appendChild(grid);
+  container.appendChild(root)
+}
 function render(){
   $$('.nav-btn').forEach(b=>b.classList.toggle('is-active',b.dataset.view===currentView));
   if(archiveBtn)archiveBtn.classList.toggle('is-active',currentView==='archive');
@@ -1114,15 +1177,17 @@ function render(){
   }
   const composer=$('.composer');
   if(composer){
-    const hide=currentView==='sprint'||currentView==='archive';
+    const hide=currentView==='sprint'||currentView==='archive'||currentView==='year';
     if(composer.hidden!==hide)composer.hidden=hide;
     composer.setAttribute('aria-hidden',hide?'true':'false');
     document.body.classList.toggle('view-sprint',currentView==='sprint');
   }
   document.body.classList.toggle('view-archive',currentView==='archive');
+  document.body.classList.toggle('view-year',currentView==='year');
   const wrap=$('#tasks');wrap.innerHTML='';
   if(currentView==='archive'){document.getElementById('viewTitle').textContent='Архив';renderArchive(wrap);updateWorkdayUI();return}
   if(currentView==='sprint'){document.getElementById('viewTitle').textContent='Спринт';renderSprint(wrap);syncTimerLoop();return}
+  if(currentView==='year'){document.getElementById('viewTitle').textContent='План года';renderYearPlan(wrap);updateWorkdayUI();return}
   if(currentView==='project'){const proj=projects.find(p=>p.id===currentProjectId);document.getElementById('viewTitle').textContent=proj?proj.title:'Проект';const dataList=filterTree(tasks,t=>t.project===currentProjectId);if(!dataList.length){const empty=document.createElement('div');empty.className='task';empty.innerHTML='<div></div><div class="task-title">Нет задач этого проекта.</div><div></div>';wrap.appendChild(empty);syncTimerLoop();return}for(const t of dataList){renderTaskRow(t,0,wrap)}if(pendingEditId){const rowEl=document.querySelector(`[data-id="${pendingEditId}"]`);const taskObj=findTask(pendingEditId);if(rowEl&&taskObj)startEdit(rowEl,taskObj);pendingEditId=null}syncTimerLoop();return}
   document.getElementById('viewTitle').textContent=currentView==='today'?'Сегодня':'Все задачи';
   const dataList=currentView==='today'?filterTree(tasks,t=>isDueToday(t.due)):tasks;
@@ -1252,6 +1317,8 @@ function sameDay(a,b){return!!(a&&b)&&a.getFullYear()===b.getFullYear()&&a.getMo
 function isoWeekNumber(d){const date=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));const dayNum=(date.getUTCDay()+6)%7;date.setUTCDate(date.getUTCDate()-dayNum+3);const firstThursday=new Date(Date.UTC(date.getUTCFullYear(),0,4));const diff=date-firstThursday;return 1+Math.round(diff/(7*24*3600*1000))}
 function buildMonthMatrix(y,m,{minVisibleDays=1,maxWeeks=6}={}){const first=new Date(y,m,1);const startDay=(first.getDay()+6)%7;const weeks=[];let day=1-startDay;const today=normalizeDate(new Date());while(true){const week={weekNum:null,days:[]};for(let i=0;i<7;i++){const d=new Date(y,m,day);const inMonth=d.getMonth()===m;const isToday=sameDay(d,today);week.days.push({d,inMonth,isToday});day++}const thursday=new Date(week.days[3].d);week.weekNum=isoWeekNumber(thursday);weeks.push(week);const lastDay=week.days[6].d;if(lastDay.getMonth()>m||(y<lastDay.getFullYear()&&lastDay.getMonth()===0))break;if(weeks.length>6)break}const countInMonth=week=>week.days.reduce((acc,cell)=>acc+(cell.inMonth?1:0),0);while(weeks.length&&countInMonth(weeks[0])<minVisibleDays)weeks.shift();while(weeks.length&&countInMonth(weeks[weeks.length-1])<minVisibleDays)weeks.pop();if(maxWeeks&&weeks.length>maxWeeks){while(weeks.length>maxWeeks){const firstCount=countInMonth(weeks[0]);const lastCount=countInMonth(weeks[weeks.length-1]);if(firstCount<=lastCount){weeks.shift()}else{weeks.pop()}}}return weeks}
 function renderMonthInto(container,y,m,options){const weeks=buildMonthMatrix(y,m,options);const wrap=document.createElement('div');wrap.className='cal-grid';weeks.forEach(week=>{const row=document.createElement('div');row.className='cal-week';const wn=document.createElement('div');wn.className='cal-weeknum';wn.textContent=String(week.weekNum).padStart(2,'0');row.appendChild(wn);for(const cell of week.days){const el=document.createElement('div');el.className='cal-day';if(!cell.inMonth)el.classList.add('is-out');if(cell.isToday)el.classList.add('is-today');el.textContent=cell.d.getDate();row.appendChild(el)}wrap.appendChild(row)});container.innerHTML='';container.appendChild(wrap);return weeks}
+function getDaysInMonth(year,monthIndex){return new Date(year,monthIndex+1,0).getDate()}
+function isWeekendDay(year,monthIndex,day){const dow=new Date(year,monthIndex,day,12,0,0).getDay();return dow===0||dow===6}
 function monthTitle(y,m){return`${MONTH_NAMES[m]} ${y}`}
 function weekTitle(date){const info=isoWeekInfo(date);return`Неделя ${String(info.week).padStart(2,'0')} · ${monthTitle(date.getFullYear(),date.getMonth())}`}
 function findWeekIndexForDate(weeks,date){if(!date)return-1;for(let i=0;i<weeks.length;i++){if(weeks[i].days.some(cell=>sameDay(cell.d,date)))return i}return-1}
@@ -1328,7 +1395,7 @@ if(taskInput){
     commitTaskInput();
   });
 }
-$$('.nav-btn').forEach(btn=>btn.onclick=()=>{const view=btn.dataset.view;if(view==='today'){currentView='today';render();return}if(view==='sprint'){currentView='sprint';render();return}currentView='all';render()});
+$$('.nav-btn').forEach(btn=>btn.onclick=()=>{const view=btn.dataset.view;if(view==='today'){currentView='today';render();return}if(view==='sprint'){currentView='sprint';render();return}if(view==='year'){currentView='year';render();return}currentView='all';render()});
 if(archiveBtn){archiveBtn.addEventListener('click',()=>{currentView='archive';render()})}
 
 const storageToggleBtn=document.getElementById('storageToggle');
