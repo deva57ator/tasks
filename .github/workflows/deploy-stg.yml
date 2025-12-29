@@ -76,7 +76,7 @@ jobs:
           fi
 
           # Явно говорим миграциям, где лежит стейдж-база
-          DB_PATH="$DEPLOY_PATH/data/tasks.sqlite" npm run migrate
+          DB_PATH="$DEPLOY_PATH/data/tasks.db" npm run migrate
 
           # Рестарт сервиса
           sudo -n systemctl daemon-reload || true
