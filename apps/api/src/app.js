@@ -11,6 +11,7 @@ const archiveRouter = require('./routes/archive');
 const workdayRouter = require('./routes/workday');
 const importRouter = require('./routes/import');
 const statsRouter = require('./routes/stats');
+const yearplanRouter = require('./routes/yearplan');
 
 function createApp() {
   const app = express();
@@ -28,6 +29,7 @@ function createApp() {
   app.use('/api/workday', workdayRouter);
   app.use('/api/import', importRouter);
   app.use('/api/stats', statsRouter);
+  app.use('/api/yearplan', yearplanRouter);
 
   app.use(errorHandler);
 
