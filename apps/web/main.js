@@ -1115,9 +1115,6 @@ function renderYearPlan(container){
 
   const header=document.createElement('div');
   header.className='year-plan-header';
-  const title=document.createElement('div');
-  title.className='year-plan-title';
-  title.textContent='План года';
   const controls=document.createElement('div');
   controls.className='year-plan-controls';
   const prev=document.createElement('button');
@@ -1134,7 +1131,7 @@ function renderYearPlan(container){
   next.textContent='›';
   next.onclick=()=>{yearPlanYear++;render()};
   controls.append(prev,yearLabel,next);
-  header.append(title,controls);
+  header.append(controls);
   root.appendChild(header);
 
   const grid=document.createElement('div');
