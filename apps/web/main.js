@@ -242,6 +242,14 @@ const MAX_TASK_DEPTH=2;
 const MONTH_NAMES=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 const TIME_UPDATE_INTERVAL=1000;
 const YEAR_PLAN_MAX_DAYS=31;
+const YEAR_PLAN_DAY_HEIGHT=22;
+const yearPlanCache=new Map();
+const yearPlanLoadingYears=new Set();
+const yearPlanErrors=new Map();
+let yearPlanFormOpen=false;
+let yearPlanFormSubmitting=false;
+let yearPlanFormError='';
+let yearPlanFormState=null;
 
 function ensureActiveTimersState(){if(!activeTimersState||typeof activeTimersState!=='object')activeTimersState={}}
 function persistActiveTimersState(){ensureActiveTimersState();ActiveTimersStore.write(activeTimersState,{mode:storageMode})}
@@ -1107,6 +1115,31 @@ initTimeDialogPresets();
 function formatArchiveDateTime(ms){if(typeof ms!=='number'||!isFinite(ms)||ms<=0)return null;const date=new Date(ms);if(isNaN(date))return null;const timestamp=date.getTime();return`${formatDateDMY(timestamp)} ${formatTimeHM(timestamp)}`}
 function renderArchivedNode(node,depth,container){if(!node)return;const row=document.createElement('div');row.className='archive-task';row.dataset.id=node.id;row.dataset.depth=String(depth);if(depth>0)row.style.marginLeft=`${depth*18}px`;const status=document.createElement('div');status.className='archive-status';status.textContent='✔';const main=document.createElement('div');main.className='archive-main';const title=document.createElement('div');title.className='archive-title';title.textContent=node.title||'Без названия';main.appendChild(title);const tags=document.createElement('div');tags.className='archive-tags';if(node.due){const dueTag=document.createElement('span');dueTag.className='due-tag';if(isDueToday(node.due))dueTag.classList.add('is-today');else if(isDuePast(node.due))dueTag.classList.add('is-overdue');dueTag.textContent=formatDue(node.due);if(dueTag.textContent)tags.appendChild(dueTag)}if(node.project){const projectMeta=getProjectMeta(node.project);const projTag=document.createElement('span');projTag.className='proj-tag';const emoji=projectMeta.emoji?`${projectMeta.emoji} `:'';projTag.textContent=`${emoji}${projectMeta.title}`.trim();tags.appendChild(projTag)}if(tags.childElementCount)main.appendChild(tags);const meta=document.createElement('div');meta.className='archive-meta';const completedText=formatArchiveDateTime(node.completedAt);if(completedText)meta.appendChild(document.createTextNode(`Завершено: ${completedText}`));const archivedText=formatArchiveDateTime(node.archivedAt);if(archivedText){if(meta.textContent)meta.appendChild(document.createTextNode(' • '));meta.appendChild(document.createTextNode(`В архиве: ${archivedText}`))}if(meta.textContent)main.appendChild(meta);const actions=document.createElement('div');actions.className='archive-actions';const time=document.createElement('div');time.className='archive-time';time.textContent=formatDuration(node.timeSpent);actions.appendChild(time);const noteBtn=document.createElement('button');noteBtn.className='note-btn';noteBtn.type='button';noteBtn.textContent='📝';noteBtn.title='Открыть заметки';noteBtn.setAttribute('aria-label','Заметки задачи');noteBtn.dataset.hasNotes=node.notes&&node.notes.trim()? 'true':'false';noteBtn.onclick=e=>{e.stopPropagation();openNotesPanel(node.id,{source:'archive'})};actions.appendChild(noteBtn);const deleteBtn=document.createElement('button');deleteBtn.className='archive-delete';deleteBtn.type='button';deleteBtn.textContent='✕';deleteBtn.title='Удалить из архива';deleteBtn.setAttribute('aria-label','Удалить задачу из архива');deleteBtn.onclick=e=>{e.stopPropagation();const removed=removeArchivedTask(node.id);if(removed){ArchiveStore.write(archivedTasks);if(isServerMode())queueArchiveDelete(node.id);if(currentView==='archive')render()}};actions.appendChild(deleteBtn);row.append(status,main,actions);container.appendChild(row);if(Array.isArray(node.children)&&node.children.length){for(const child of node.children){renderArchivedNode(child,depth+1,container)}}}
 function renderArchive(container){const wrap=document.createElement('div');wrap.className='archive-container';const items=[...archivedTasks];items.sort((a,b)=>(b.archivedAt||0)-(a.archivedAt||0)||(b.completedAt||0)-(a.completedAt||0));if(!items.length){const empty=document.createElement('div');empty.className='archive-empty';empty.textContent='Архив пока пуст.';container.appendChild(empty);return}for(const item of items){renderArchivedNode(item,0,wrap)}container.appendChild(wrap)}
+
+function renderYearPlanIfVisible(){if(currentView==='year')render()}
+
+function getDefaultYearPlanFormState(){const now=new Date();const defaultMonth=now.getFullYear()===yearPlanYear?now.getMonth()+1:1;return{month:defaultMonth,startDay:1,endDay:1,title:''}}
+
+function clampYearPlanFormBounds(){if(!yearPlanFormState){yearPlanFormState=getDefaultYearPlanFormState()}const monthIndex=Math.min(11,Math.max(0,Math.trunc((yearPlanFormState.month||1)-1)));const daysInMonth=getDaysInMonth(yearPlanYear,monthIndex);const normalizedStart=Math.max(1,Math.min(daysInMonth,Math.trunc(yearPlanFormState.startDay)||1));const normalizedEndRaw=Math.max(normalizedStart,Math.trunc(yearPlanFormState.endDay)||normalizedStart);const normalizedEnd=Math.min(daysInMonth,normalizedEndRaw);yearPlanFormState.startDay=normalizedStart;yearPlanFormState.endDay=normalizedEnd;yearPlanFormState.month=monthIndex+1;return daysInMonth}
+
+function validateYearPlanFormState(){const daysInMonth=clampYearPlanFormBounds();if(yearPlanFormState.startDay<1)return'День начала должен быть не меньше 1';if(yearPlanFormState.endDay<yearPlanFormState.startDay)return'День окончания не может быть раньше начала';if(yearPlanFormState.endDay>daysInMonth)return`В ${MONTH_NAMES[yearPlanFormState.month-1]} только ${daysInMonth} дней`;return''}
+
+function normalizeYearPlanItem(raw,year){if(!raw||typeof raw!=='object')return null;const safeMonth=Math.min(12,Math.max(1,Math.trunc(Number(raw.month)||1)));const daysInMonth=getDaysInMonth(year,safeMonth-1);let startDay=Math.trunc(Number(raw.startDay));if(!Number.isFinite(startDay))startDay=1;startDay=Math.min(Math.max(1,startDay),daysInMonth);let endDay=Math.trunc(Number(raw.endDay));if(!Number.isFinite(endDay))endDay=startDay;endDay=Math.max(startDay,endDay);endDay=Math.min(endDay,daysInMonth);const id=typeof raw.id==='string'?raw.id:String(raw.id||uid());const title=typeof raw.title==='string'?raw.title:'';return{id,month:safeMonth,startDay,endDay,title}}
+
+function normalizeYearPlanList(list,year){const normalized=[];if(Array.isArray(list)){for(const entry of list){const item=normalizeYearPlanItem(entry,year);if(item)normalized.push(item)}}return normalized}
+
+async function ensureYearPlanData(year,{force=false}={}){if(!force&&yearPlanCache.has(year))return;if(yearPlanLoadingYears.has(year))return;if(force)yearPlanCache.delete(year);yearPlanErrors.delete(year);yearPlanLoadingYears.add(year);renderYearPlanIfVisible();try{const payload=await apiRequest(`/yearplan?year=${encodeURIComponent(year)}`);const items=Array.isArray(payload?.items)?payload.items:Array.isArray(payload)?payload:[];yearPlanCache.set(year,normalizeYearPlanList(items,year))}catch(err){yearPlanErrors.set(year,err&&err.message?err.message:'Не удалось загрузить план')}finally{yearPlanLoadingYears.delete(year);renderYearPlanIfVisible()}}
+
+function closeYearPlanForm(){yearPlanFormOpen=false;yearPlanFormSubmitting=false;yearPlanFormError='';yearPlanFormState=getDefaultYearPlanFormState();renderYearPlanIfVisible()}
+
+function openYearPlanForm(){yearPlanFormOpen=true;yearPlanFormError='';yearPlanFormSubmitting=false;yearPlanFormState=getDefaultYearPlanFormState();renderYearPlanIfVisible()}
+
+async function submitYearPlanForm(event){event&&event.preventDefault();if(yearPlanFormSubmitting)return;const validationError=validateYearPlanFormState();if(validationError){yearPlanFormError=validationError;renderYearPlanIfVisible();return}yearPlanFormSubmitting=true;yearPlanFormError='';renderYearPlanIfVisible();const payload={year:yearPlanYear,month:yearPlanFormState.month,startDay:yearPlanFormState.startDay,endDay:yearPlanFormState.endDay,title:yearPlanFormState.title||''};try{await apiRequest('/yearplan',{method:'POST',body:payload});yearPlanFormOpen=false;yearPlanFormState=getDefaultYearPlanFormState();await ensureYearPlanData(yearPlanYear,{force:true})}catch(err){yearPlanFormError=`Не удалось создать активность${err&&err.message?`: ${err.message}`:''}`}finally{yearPlanFormSubmitting=false;renderYearPlanIfVisible()}}
+
+function renderYearPlanActivities(monthMeta,items){if(!Array.isArray(monthMeta))return;if(!Array.isArray(items))return;const sorted=[...items];sorted.sort((a,b)=>a.startDay-b.startDay||b.endDay-a.endDay||String(a.id).localeCompare(String(b.id)));for(const meta of monthMeta){if(!meta||!meta.layer){continue}meta.layer.innerHTML=''}for(const item of sorted){const monthIndex=item.month-1;const target=monthMeta.find(entry=>entry.index===monthIndex);if(!target)continue;const start=Math.max(1,Math.min(item.startDay,target.daysInMonth));const end=Math.max(start,Math.min(item.endDay,target.daysInMonth));const block=document.createElement('div');block.className='year-activity';block.style.top=`${(start-1)*YEAR_PLAN_DAY_HEIGHT}px`;block.style.height=`${(end-start+1)*YEAR_PLAN_DAY_HEIGHT}px`;const title=document.createElement('div');title.className='year-activity-title';title.textContent=item.title||'Без названия';const duration=document.createElement('div');duration.className='year-activity-duration';duration.textContent=`${end-start+1} дней`;block.append(title,duration);target.layer.appendChild(block)}}
+
+yearPlanFormState=getDefaultYearPlanFormState();
+
 function renderYearPlan(container){
   if(!container)return;
   container.innerHTML='';
@@ -1132,16 +1165,120 @@ function renderYearPlan(container){
   next.onclick=()=>{yearPlanYear++;render()};
   controls.append(prev,yearLabel,next);
   header.append(controls);
+
+  const actions=document.createElement('div');
+  actions.className='year-plan-actions';
+  const addBtn=document.createElement('button');
+  addBtn.type='button';
+  addBtn.className='year-plan-add';
+  addBtn.textContent='+ Активность';
+  addBtn.onclick=()=>{yearPlanFormOpen?closeYearPlanForm():openYearPlanForm()};
+  actions.appendChild(addBtn);
+  header.append(actions);
   root.appendChild(header);
+
+  ensureYearPlanData(yearPlanYear);
+
+  const content=document.createElement('div');
+  content.className='year-plan-content';
+
+  if(yearPlanFormOpen){
+    const form=document.createElement('form');
+    form.className='year-plan-form';
+    form.addEventListener('submit',submitYearPlanForm);
+    const formDaysInMonth=clampYearPlanFormBounds();
+
+    const monthField=document.createElement('label');
+    monthField.className='year-plan-field';
+    monthField.innerHTML='<span class="year-plan-label">Месяц</span>';
+    const monthSelect=document.createElement('select');
+    monthSelect.className='year-plan-input';
+    for(let i=0;i<MONTH_NAMES.length;i++){
+      const option=document.createElement('option');
+      option.value=String(i+1);
+      option.textContent=MONTH_NAMES[i];
+      if(yearPlanFormState.month===i+1)option.selected=true;
+      monthSelect.appendChild(option)
+    }
+    monthSelect.onchange=e=>{const next=Number(e.target.value);yearPlanFormState.month=Number.isFinite(next)?next:yearPlanFormState.month;clampYearPlanFormBounds();renderYearPlanIfVisible()};
+    monthField.appendChild(monthSelect);
+
+    const startField=document.createElement('label');
+    startField.className='year-plan-field';
+    startField.innerHTML='<span class="year-plan-label">День начала</span>';
+    const startInput=document.createElement('input');
+    startInput.type='number';
+    startInput.min='1';
+    startInput.max=String(formDaysInMonth);
+    startInput.className='year-plan-input';
+    startInput.value=String(yearPlanFormState.startDay);
+    startInput.oninput=e=>{const val=Math.trunc(Number(e.target.value));yearPlanFormState.startDay=Number.isFinite(val)?val:yearPlanFormState.startDay;clampYearPlanFormBounds();renderYearPlanIfVisible()};
+    startField.appendChild(startInput);
+
+    const endField=document.createElement('label');
+    endField.className='year-plan-field';
+    endField.innerHTML='<span class="year-plan-label">День окончания</span>';
+    const endInput=document.createElement('input');
+    endInput.type='number';
+    endInput.min='1';
+    endInput.max=String(formDaysInMonth);
+    endInput.className='year-plan-input';
+    endInput.value=String(yearPlanFormState.endDay);
+    endInput.oninput=e=>{const val=Math.trunc(Number(e.target.value));yearPlanFormState.endDay=Number.isFinite(val)?val:yearPlanFormState.endDay;clampYearPlanFormBounds();renderYearPlanIfVisible()};
+    endField.appendChild(endInput);
+
+    const titleField=document.createElement('label');
+    titleField.className='year-plan-field';
+    titleField.innerHTML='<span class="year-plan-label">Название</span>';
+    const titleInput=document.createElement('input');
+    titleInput.type='text';
+    titleInput.className='year-plan-input';
+    titleInput.value=yearPlanFormState.title||'';
+    titleInput.oninput=e=>{yearPlanFormState.title=e.target.value||''};
+    titleField.appendChild(titleInput);
+
+    const errorRow=document.createElement('div');
+    errorRow.className='year-plan-error';
+    errorRow.textContent=yearPlanFormError;
+
+    const actionsRow=document.createElement('div');
+    actionsRow.className='year-plan-form-actions';
+    const cancelBtn=document.createElement('button');
+    cancelBtn.type='button';
+    cancelBtn.className='year-plan-secondary';
+    cancelBtn.textContent='Отмена';
+    cancelBtn.onclick=()=>closeYearPlanForm();
+    const createBtn=document.createElement('button');
+    createBtn.type='submit';
+    createBtn.className='year-plan-primary';
+    createBtn.textContent='Создать';
+    createBtn.disabled=yearPlanFormSubmitting;
+    actionsRow.append(cancelBtn,createBtn);
+
+    form.append(monthField,startField,endField,titleField,errorRow,actionsRow);
+    content.appendChild(form)
+  }
+
+  const loading=yearPlanLoadingYears.has(yearPlanYear);
+  const error=yearPlanErrors.get(yearPlanYear)||'';
+  const items=yearPlanCache.get(yearPlanYear)||[];
+
+  const statusWrap=document.createElement('div');
+  statusWrap.className='year-plan-status';
+  if(loading){statusWrap.textContent='Загрузка…'}else if(error){statusWrap.textContent=error;statusWrap.classList.add('is-error')}else if(!items.length){statusWrap.textContent='Активностей пока нет';statusWrap.classList.add('is-empty')}
+  if(statusWrap.textContent)content.appendChild(statusWrap);
 
   const grid=document.createElement('div');
   grid.className='year-plan-grid';
+  const monthsMeta=[];
   for(let m=0;m<12;m++){
     const month=document.createElement('div');
     month.className='year-month';
     const monthTitleEl=document.createElement('div');
     monthTitleEl.className='year-month-title';
     monthTitleEl.textContent=MONTH_NAMES[m];
+    const monthBody=document.createElement('div');
+    monthBody.className='year-month-body';
     const daysWrap=document.createElement('div');
     daysWrap.className='year-days';
     const daysInMonth=getDaysInMonth(yearPlanYear,m);
@@ -1159,10 +1296,18 @@ function renderYearPlan(container){
       }
       daysWrap.appendChild(row)
     }
-    month.append(monthTitleEl,daysWrap);
-    grid.appendChild(month)
+    const activitiesLayer=document.createElement('div');
+    activitiesLayer.className='year-activities';
+    monthBody.append(daysWrap,activitiesLayer);
+    month.append(monthTitleEl,monthBody);
+    grid.appendChild(month);
+    monthsMeta.push({index:m,layer:activitiesLayer,daysInMonth})
   }
-  root.appendChild(grid);
+
+  renderYearPlanActivities(monthsMeta,items);
+
+  content.appendChild(grid);
+  root.appendChild(content);
   container.appendChild(root)
 }
 function render(){
