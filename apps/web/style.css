@@ -68,7 +68,7 @@ body.sidebar-resizing{cursor:ew-resize}
 .year-day.is-disabled{background:var(--year-disabled-bg);color:var(--muted);opacity:.7}
 .year-day.is-disabled .year-day-num{display:none}
 .year-activities{position:absolute;inset:0;padding:0 8px 6px;pointer-events:none}
-.year-activity{position:absolute;left:6px;right:6px;border-radius:12px;background:var(--accent-soft);border:1px solid var(--accent-border);box-shadow:0 8px 18px var(--accent-shadow);padding:6px 8px;display:flex;flex-direction:column;gap:4px;justify-content:center;box-sizing:border-box}
+.year-activity{position:absolute;left:0;width:100%;border-radius:12px;background:var(--accent-soft);border:1px solid var(--accent-border);box-shadow:0 8px 18px var(--accent-shadow);padding:6px 8px;display:flex;flex-direction:column;gap:4px;justify-content:center;box-sizing:border-box}
 .year-activity-title{font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .year-activity-duration{font-size:12px;color:var(--muted)}
 .year-activity--draft{background:var(--hover);border:1px dashed var(--accent-border);box-shadow:none;opacity:.9;pointer-events:auto}
