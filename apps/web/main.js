@@ -1413,8 +1413,8 @@ function renderYearPlan(container){
     const meta={index:m,layer:activitiesLayer,daysInMonth,daysWrap};
     const handleMouseMove=e=>{if(!yearPlanDraft||yearPlanDraft.month!==m||yearPlanDraft.mode!=='dragging')return;const day=getYearPlanDayFromEvent(e,meta);if(day)updateYearPlanDraftEnd(day)};
     const handleMouseUp=e=>{if(!yearPlanDraft||yearPlanDraft.month!==m||yearPlanDraft.mode!=='dragging')return;const day=getYearPlanDayFromEvent(e,meta);if(day)updateYearPlanDraftEnd(day);finalizeYearPlanDraft()};
-    daysWrap.addEventListener('mousemove',handleMouseMove);
-    daysWrap.addEventListener('mouseup',handleMouseUp);
+    monthBody.addEventListener('mousemove',handleMouseMove);
+    monthBody.addEventListener('mouseup',handleMouseUp);
     daysWrap.addEventListener('mousedown',e=>{if(e.button!==0)return;const row=e.target&&typeof e.target.closest==='function'?e.target.closest('.year-day'):null;const dayAttr=row&&row.dataset.day;if(!dayAttr||row.classList.contains('is-disabled'))return;const day=Number(dayAttr);if(!Number.isFinite(day))return;yearPlanSelectedId=null;startYearPlanDraft(m,day,daysInMonth);e.preventDefault()});
     monthBody.append(daysWrap,activitiesLayer);
     month.append(monthTitleEl,monthBody);
