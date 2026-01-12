@@ -74,11 +74,11 @@ body.sidebar-resizing{cursor:ew-resize}
 .year-activity-segment{position:absolute;background:var(--accent-soft);border:none;outline:none;box-shadow:none;border-radius:0;margin:0}
 .year-activity-segment.is-top{border-top-left-radius:8px;border-top-right-radius:8px}
 .year-activity-segment.is-bottom{border-bottom-left-radius:8px;border-bottom-right-radius:8px}
-.year-activity-label{position:absolute;padding:6px 8px;display:flex;flex-direction:column;gap:4px;pointer-events:auto;box-sizing:border-box}
+.year-activity-label{position:absolute;padding:6px 8px;display:flex;flex-direction:column;gap:4px;pointer-events:auto;box-sizing:border-box;align-items:flex-end;text-align:right}
 .year-activity-title{font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .year-activity-duration{font-size:12px;color:var(--muted)}
 .year-activity.is-selected .year-activity-segment{background:var(--accent-soft-strong)}
-.year-activity.is-selected .year-activity-label{background:var(--accent-soft-strong);border-radius:8px}
+.year-activity.is-selected .year-activity-label{background:transparent}
 .year-activity--draft{background:var(--hover);border:1px dashed var(--accent-border);box-shadow:none;opacity:.9;pointer-events:auto;border-radius:8px;padding:6px 8px;display:flex;flex-direction:column;gap:4px;justify-content:center}
 .year-activity--draft.is-preview{color:var(--muted)}
 .year-activity--draft.is-editing{background:var(--surface);border-style:solid;box-shadow:0 6px 16px var(--toast-shadow)}
