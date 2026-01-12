@@ -252,10 +252,10 @@ const MAX_TASK_DEPTH=2;
 const MONTH_NAMES=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 const TIME_UPDATE_INTERVAL=1000;
 const YEAR_PLAN_MAX_DAYS=31;
-const YEAR_PLAN_DAY_HEIGHT=22;
+const YEAR_PLAN_DAY_HEIGHT=14;
 const YEAR_PLAN_DEFAULT_TITLE='активность';
 const YEAR_PLAN_COLUMN_GAP=4;
-const YEAR_PLAN_ROW_GAP=6;
+const YEAR_PLAN_ROW_GAP=4;
 const yearPlanCache=new Map();
 const yearPlanLoadingYears=new Set();
 const yearPlanErrors=new Map();
@@ -1381,45 +1381,60 @@ function renderYearPlan(container){
     }
     if(yearPlanSelectedId!==null)clearYearPlanSelection();
   });
+  const semesters=[
+    {title:'Первое полугодие',start:0,end:5},
+    {title:'Второе полугодие',start:6,end:11}
+  ];
   const monthsMeta=[];
-  for(let m=0;m<12;m++){
-    const month=document.createElement('div');
-    month.className='year-month';
-    const monthTitleEl=document.createElement('div');
-    monthTitleEl.className='year-month-title';
-    monthTitleEl.textContent=MONTH_NAMES[m];
-    const monthBody=document.createElement('div');
-    monthBody.className='year-month-body';
-    const daysWrap=document.createElement('div');
-    daysWrap.className='year-days';
-    const daysInMonth=getDaysInMonth(yearPlanYear,m);
-    for(let d=1;d<=YEAR_PLAN_MAX_DAYS;d++){
-      const row=document.createElement('div');
-      row.className='year-day';
-      if(d>daysInMonth){
-        row.classList.add('is-disabled');
-      }else{
-        if(isWeekendDay(yearPlanYear,m,d))row.classList.add('is-weekend');
-        const num=document.createElement('span');
-        num.className='year-day-num';
-        num.textContent=String(d);
-        row.dataset.day=String(d);
-        row.appendChild(num);
+  for(const semester of semesters){
+    const half=document.createElement('div');
+    half.className='year-half';
+    const halfLabel=document.createElement('div');
+    halfLabel.className='year-half-label';
+    halfLabel.textContent=semester.title;
+    const halfMonths=document.createElement('div');
+    halfMonths.className='year-half-months';
+    for(let m=semester.start;m<=semester.end;m++){
+      const month=document.createElement('div');
+      month.className='year-month';
+      const monthTitleEl=document.createElement('div');
+      monthTitleEl.className='year-month-title';
+      monthTitleEl.textContent=MONTH_NAMES[m];
+      const monthBody=document.createElement('div');
+      monthBody.className='year-month-body';
+      const daysWrap=document.createElement('div');
+      daysWrap.className='year-days';
+      const daysInMonth=getDaysInMonth(yearPlanYear,m);
+      for(let d=1;d<=YEAR_PLAN_MAX_DAYS;d++){
+        const row=document.createElement('div');
+        row.className='year-day';
+        if(d>daysInMonth){
+          row.classList.add('is-disabled');
+        }else{
+          if(isWeekendDay(yearPlanYear,m,d))row.classList.add('is-weekend');
+          const num=document.createElement('span');
+          num.className='year-day-num';
+          num.textContent=String(d);
+          row.dataset.day=String(d);
+          row.appendChild(num);
+        }
+        daysWrap.appendChild(row)
       }
-      daysWrap.appendChild(row)
+      const activitiesLayer=document.createElement('div');
+      activitiesLayer.className='year-activities';
+      const meta={index:m,layer:activitiesLayer,daysInMonth,daysWrap};
+      const handleMouseMove=e=>{if(!yearPlanDraft||yearPlanDraft.month!==m||yearPlanDraft.mode!=='dragging')return;const day=getYearPlanDayFromEvent(e,meta);if(day)updateYearPlanDraftEnd(day)};
+      const handleMouseUp=e=>{if(!yearPlanDraft||yearPlanDraft.month!==m||yearPlanDraft.mode!=='dragging')return;const day=getYearPlanDayFromEvent(e,meta);if(day)updateYearPlanDraftEnd(day);finalizeYearPlanDraft()};
+      monthBody.addEventListener('mousemove',handleMouseMove);
+      monthBody.addEventListener('mouseup',handleMouseUp);
+      daysWrap.addEventListener('mousedown',e=>{if(e.button!==0)return;const row=e.target&&typeof e.target.closest==='function'?e.target.closest('.year-day'):null;const dayAttr=row&&row.dataset.day;if(!dayAttr||row.classList.contains('is-disabled'))return;const day=Number(dayAttr);if(!Number.isFinite(day))return;yearPlanSelectedId=null;startYearPlanDraft(m,day,daysInMonth);e.preventDefault()});
+      monthBody.append(daysWrap,activitiesLayer);
+      month.append(monthTitleEl,monthBody);
+      halfMonths.appendChild(month);
+      monthsMeta.push(meta)
     }
-    const activitiesLayer=document.createElement('div');
-    activitiesLayer.className='year-activities';
-    const meta={index:m,layer:activitiesLayer,daysInMonth,daysWrap};
-    const handleMouseMove=e=>{if(!yearPlanDraft||yearPlanDraft.month!==m||yearPlanDraft.mode!=='dragging')return;const day=getYearPlanDayFromEvent(e,meta);if(day)updateYearPlanDraftEnd(day)};
-    const handleMouseUp=e=>{if(!yearPlanDraft||yearPlanDraft.month!==m||yearPlanDraft.mode!=='dragging')return;const day=getYearPlanDayFromEvent(e,meta);if(day)updateYearPlanDraftEnd(day);finalizeYearPlanDraft()};
-    monthBody.addEventListener('mousemove',handleMouseMove);
-    monthBody.addEventListener('mouseup',handleMouseUp);
-    daysWrap.addEventListener('mousedown',e=>{if(e.button!==0)return;const row=e.target&&typeof e.target.closest==='function'?e.target.closest('.year-day'):null;const dayAttr=row&&row.dataset.day;if(!dayAttr||row.classList.contains('is-disabled'))return;const day=Number(dayAttr);if(!Number.isFinite(day))return;yearPlanSelectedId=null;startYearPlanDraft(m,day,daysInMonth);e.preventDefault()});
-    monthBody.append(daysWrap,activitiesLayer);
-    month.append(monthTitleEl,monthBody);
-    grid.appendChild(month);
-    monthsMeta.push(meta)
+    half.append(halfLabel,halfMonths);
+    grid.appendChild(half);
   }
 
   renderYearPlanActivities(monthsMeta,items);
