@@ -165,6 +165,8 @@ let yearPlanEditingValue='';
 let yearPlanEditingOriginal='';
 let yearPlanEditingFocusRequested=false;
 let yearPlanEditingSubmitting=false;
+let yearPlanResizeState=null;
+let yearPlanResizeSubmitting=false;
 const yearPlanPendingDeletes=new Set();
 let activeEditId=null;
 let activeInputEl=null;
@@ -1135,7 +1137,15 @@ window.addEventListener('keydown',e=>{
 });
 window.addEventListener('resize',()=>{closeContextMenu();closeYearPlanContextMenu()});
 window.addEventListener('scroll',()=>{closeContextMenu();closeYearPlanContextMenu()},true);
-window.addEventListener('mouseup',()=>{if(yearPlanDraft&&yearPlanDraft.mode==='dragging')finalizeYearPlanDraft()});
+window.addEventListener('mousemove',e=>{
+  if(!yearPlanResizeState||!yearPlanResizeState.meta)return;
+  const day=getYearPlanDayFromEvent(e,yearPlanResizeState.meta);
+  if(day)updateYearPlanResize(day);
+});
+window.addEventListener('mouseup',()=>{
+  if(yearPlanDraft&&yearPlanDraft.mode==='dragging')finalizeYearPlanDraft();
+  if(yearPlanResizeState)finalizeYearPlanResize();
+});
 
 NotesPanel.overlay&&NotesPanel.overlay.addEventListener('click',()=>closeNotesPanel());
 NotesPanel.close&&NotesPanel.close.addEventListener('click',()=>closeNotesPanel());
@@ -1156,9 +1166,20 @@ function renderYearPlanIfVisible(){if(currentView==='year')render()}
 function getYearPlanItems(year=yearPlanYear){return yearPlanCache.get(year)||[]}
 function findYearPlanItem(id,year=yearPlanYear){const list=getYearPlanItems(year);return list.find(item=>item&&item.id===id)||null}
 function updateYearPlanItemTitle(id,title){const list=getYearPlanItems(yearPlanYear);const item=list.find(entry=>entry&&entry.id===id);if(!item)return;item.title=title;yearPlanCache.set(yearPlanYear,list)}
+function updateYearPlanItemDates(id,startDay,endDay){const list=getYearPlanItems(yearPlanYear);const item=list.find(entry=>entry&&entry.id===id);if(!item)return;item.startDay=startDay;item.endDay=endDay;yearPlanCache.set(yearPlanYear,list)}
 function removeYearPlanItem(id){const list=getYearPlanItems(yearPlanYear);const idx=list.findIndex(entry=>entry&&entry.id===id);if(idx===-1)return false;list.splice(idx,1);yearPlanCache.set(yearPlanYear,list);return true}
-function setYearPlanSelected(id){if(yearPlanSelectedId===id)return;yearPlanSelectedId=id;renderYearPlanIfVisible()}
-function clearYearPlanSelection(){if(yearPlanSelectedId===null)return;yearPlanSelectedId=null;renderYearPlanIfVisible()}
+function setYearPlanSelected(id){
+  if(yearPlanSelectedId===id)return;
+  if(yearPlanResizeState&&yearPlanResizeState.id!==id)resetYearPlanResizeState({render:false});
+  yearPlanSelectedId=id;
+  renderYearPlanIfVisible();
+}
+function clearYearPlanSelection(){
+  if(yearPlanSelectedId===null)return;
+  resetYearPlanResizeState({render:false});
+  yearPlanSelectedId=null;
+  renderYearPlanIfVisible();
+}
 function closeYearPlanContextMenu(){YearPlanCtx.activityId=null;YearPlanCtx.el.style.display='none';YearPlanCtx.el.setAttribute('aria-hidden','true')}
 function openYearPlanContextMenu(id,x,y){
   setYearPlanSelected(id);
@@ -1184,6 +1205,56 @@ function resetYearPlanEditingState(){
   yearPlanEditingOriginal='';
   yearPlanEditingFocusRequested=false;
   yearPlanEditingSubmitting=false;
+}
+function resetYearPlanResizeState({render=true}={}){
+  yearPlanResizeState=null;
+  yearPlanResizeSubmitting=false;
+  if(render)renderYearPlanIfVisible();
+}
+function startYearPlanResize(item,edge,meta){
+  if(!item||!meta||yearPlanResizeSubmitting)return;
+  if(yearPlanDraft||yearPlanEditingId)return;
+  yearPlanResizeState={
+    id:item.id,
+    month:meta.index,
+    daysInMonth:meta.daysInMonth,
+    startDay:item.startDay,
+    endDay:item.endDay,
+    originalStart:item.startDay,
+    originalEnd:item.endDay,
+    edge,
+    meta
+  };
+  renderYearPlanIfVisible();
+}
+function updateYearPlanResize(day){
+  if(!yearPlanResizeState)return;
+  const clamped=Math.max(1,Math.min(yearPlanResizeState.daysInMonth,day));
+  if(yearPlanResizeState.edge==='start'){
+    yearPlanResizeState.startDay=Math.min(clamped,yearPlanResizeState.endDay);
+  }else{
+    yearPlanResizeState.endDay=Math.max(clamped,yearPlanResizeState.startDay);
+  }
+  renderYearPlanIfVisible();
+}
+async function finalizeYearPlanResize(){
+  if(!yearPlanResizeState||yearPlanResizeSubmitting)return;
+  const {id,startDay,endDay,originalStart,originalEnd}=yearPlanResizeState;
+  if(startDay===originalStart&&endDay===originalEnd){
+    resetYearPlanResizeState();
+    return;
+  }
+  yearPlanResizeSubmitting=true;
+  renderYearPlanIfVisible();
+  try{
+    await apiRequest(`/yearplan/${encodeURIComponent(id)}`,{method:'PATCH',body:{startDay,endDay}});
+    updateYearPlanItemDates(id,startDay,endDay);
+  }catch(err){
+    toast('Не удалось изменить сроки');
+    await ensureYearPlanData(yearPlanYear,{force:true});
+  }finally{
+    resetYearPlanResizeState();
+  }
 }
 function startYearPlanRename(id){
   const item=findYearPlanItem(id);
@@ -1253,7 +1324,7 @@ function normalizeYearPlanList(list,year){const normalized=[];if(Array.isArray(l
 
 function resetYearPlanDraft(){yearPlanDraft=null;yearPlanDraftSubmitting=false;yearPlanDraftFocusRequested=false}
 
-function startYearPlanDraft(monthIndex,day,daysInMonth){if(yearPlanDraftSubmitting)return;if(yearPlanDraft&&(yearPlanDraft.mode==='editing'||yearPlanDraft.mode==='dragging'))return;yearPlanDraft={mode:'dragging',month:monthIndex,startDay:day,endDay:day,daysInMonth,originalStart:day};yearPlanDraftSubmitting=false;renderYearPlanIfVisible()}
+function startYearPlanDraft(monthIndex,day,daysInMonth){if(yearPlanDraftSubmitting)return;if(yearPlanDraft&&(yearPlanDraft.mode==='editing'||yearPlanDraft.mode==='dragging'))return;resetYearPlanResizeState({render:false});yearPlanDraft={mode:'dragging',month:monthIndex,startDay:day,endDay:day,daysInMonth,originalStart:day};yearPlanDraftSubmitting=false;renderYearPlanIfVisible()}
 
 function updateYearPlanDraftEnd(day){
   if(!yearPlanDraft||yearPlanDraft.mode!=='dragging')return;
@@ -1297,7 +1368,7 @@ async function submitYearPlanForm(event){event&&event.preventDefault();if(yearPl
 
 function getYearPlanSegmentsForMonth(items,daysInMonth){const perItemDayMeta=new Map();for(let day=1;day<=daysInMonth;day++){const active=items.filter(entry=>entry.startDay<=day&&entry.endDay>=day);active.sort((a,b)=>a.startDay-b.startDay||b.endDay-a.endDay||String(a.id).localeCompare(String(b.id)));const colCount=active.length;for(let i=0;i<active.length;i++){const item=active[i];if(!perItemDayMeta.has(item.id))perItemDayMeta.set(item.id,{});perItemDayMeta.get(item.id)[day]={slotIndex:i,colCount}}}const segments=[];for(const item of items){const dayMeta=perItemDayMeta.get(item.id)||{};let current=null;for(let day=item.startDay;day<=item.endDay&&day<=daysInMonth;day++){const meta=dayMeta[day];if(!meta)continue;if(!current){current={item,startDay:day,endDay:day,slotIndex:meta.slotIndex,colCount:meta.colCount}}else if(current.slotIndex===meta.slotIndex&&current.colCount===meta.colCount){current.endDay=day}else{segments.push(current);current={item,startDay:day,endDay:day,slotIndex:meta.slotIndex,colCount:meta.colCount}}}if(current)segments.push(current)}segments.sort((a,b)=>a.item.startDay-b.item.startDay||b.item.endDay-a.item.endDay||String(a.item.id).localeCompare(String(b.item.id))||a.startDay-b.startDay);const seen=new Set();for(const seg of segments){seg.isFirst=!seen.has(seg.item.id);seen.add(seg.item.id)}return segments}
 function getYearPlanSegmentPosition(segment){const leftPercent=segment.colCount?segment.slotIndex/segment.colCount*100:0;const widthPercent=segment.colCount?100/segment.colCount:100;const leftOffset=YEAR_PLAN_COLUMN_GAP/2;const widthOffset=YEAR_PLAN_COLUMN_GAP;return{left:YEAR_PLAN_COLUMN_GAP?`calc(${leftPercent}% + ${leftOffset}px)`:leftPercent+'%',width:YEAR_PLAN_COLUMN_GAP?`calc(${widthPercent}% - ${widthOffset}px)`:widthPercent+'%'}}
-function renderYearPlanActivities(monthMeta,items){if(!Array.isArray(monthMeta))return;if(!Array.isArray(items))return;const rowOffset=YEAR_PLAN_ROW_GAP/2;for(const meta of monthMeta){if(!meta||!meta.layer){continue}meta.layer.innerHTML=''}for(const meta of monthMeta){if(!meta||!meta.layer)continue;const monthItems=items.filter(entry=>entry.month-1===meta.index);if(!monthItems.length)continue;const segments=getYearPlanSegmentsForMonth(monthItems,meta.daysInMonth);const grouped=new Map();for(const segment of segments){const itemId=segment.item.id;if(!grouped.has(itemId)){grouped.set(itemId,{item:segment.item,segments:[],start:segment.startDay,end:segment.endDay})}const group=grouped.get(itemId);group.segments.push(segment);group.start=Math.min(group.start,segment.startDay);group.end=Math.max(group.end,segment.endDay)}const orderedGroups=[...grouped.values()].sort((a,b)=>a.item.startDay-b.item.startDay||b.item.endDay-a.item.endDay||String(a.item.id).localeCompare(String(b.item.id)));for(const group of orderedGroups){const wrapper=document.createElement('div');wrapper.className='year-activity';wrapper.style.top=`${(group.start-1)*YEAR_PLAN_DAY_HEIGHT}px`;wrapper.style.height=`${(group.end-group.start+1)*YEAR_PLAN_DAY_HEIGHT}px`;wrapper.style.left='0';wrapper.style.width='100%';if(yearPlanSelectedId===group.item.id)wrapper.classList.add('is-selected');wrapper.addEventListener('click',()=>{setYearPlanSelected(group.item.id)});wrapper.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();closeContextMenu();openYearPlanContextMenu(group.item.id,e.clientX,e.clientY)});const segmentsWrap=document.createElement('div');segmentsWrap.className='year-activity-segments';const sortedSegments=group.segments.slice().sort((a,b)=>a.startDay-b.startDay||a.slotIndex-b.slotIndex);for(const segment of sortedSegments){const pos=getYearPlanSegmentPosition(segment);const segEl=document.createElement('div');segEl.className='year-activity-segment';segEl.style.left=pos.left;segEl.style.width=pos.width;const topInset=segment.startDay===group.start?rowOffset:0;const bottomInset=segment.endDay===group.end?rowOffset:0;segEl.style.top=`${(segment.startDay-group.start)*YEAR_PLAN_DAY_HEIGHT+topInset}px`;segEl.style.height=`${(segment.endDay-segment.startDay+1)*YEAR_PLAN_DAY_HEIGHT-topInset-bottomInset}px`;if(segment.startDay===group.start)segEl.classList.add('is-top');if(segment.endDay===group.end)segEl.classList.add('is-bottom');segmentsWrap.appendChild(segEl)}wrapper.appendChild(segmentsWrap);const anchor=sortedSegments.find(entry=>entry.isFirst)||sortedSegments[0];if(anchor){const pos=getYearPlanSegmentPosition(anchor);const label=document.createElement('div');label.className='year-activity-label';label.style.left=pos.left;label.style.width=pos.width;const labelOffset=anchor.startDay===group.start?rowOffset:0;label.style.top=`${(anchor.startDay-group.start)*YEAR_PLAN_DAY_HEIGHT+labelOffset}px`;const title=document.createElement('div');title.className='year-activity-title';if(yearPlanEditingId===group.item.id){const input=document.createElement('input');input.type='text';input.className='year-plan-rename-input';input.value=yearPlanEditingValue;input.disabled=yearPlanEditingSubmitting;input.oninput=e=>{yearPlanEditingValue=e.target.value||''};input.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();commitYearPlanRename()}else if(e.key==='Escape'||e.key==='Esc'){e.preventDefault();cancelYearPlanRename()}};input.onblur=()=>{if(yearPlanEditingId===group.item.id)commitYearPlanRename()};title.appendChild(input);if(yearPlanEditingFocusRequested&&!yearPlanEditingSubmitting){yearPlanEditingFocusRequested=false;setTimeout(()=>{try{input.focus({preventScroll:true});input.select()}catch{input.focus();input.select()}},0)}}else{title.textContent=group.item.title||'Без названия'}const duration=document.createElement('div');duration.className='year-activity-duration';duration.textContent=`${group.item.endDay-group.item.startDay+1} дней`;label.append(title,duration);wrapper.appendChild(label)}meta.layer.appendChild(wrapper)}}}
+function renderYearPlanActivities(monthMeta,items){if(!Array.isArray(monthMeta))return;if(!Array.isArray(items))return;const rowOffset=YEAR_PLAN_ROW_GAP/2;for(const meta of monthMeta){if(!meta||!meta.layer){continue}meta.layer.innerHTML=''}for(const meta of monthMeta){if(!meta||!meta.layer)continue;const monthItems=items.filter(entry=>entry.month-1===meta.index).map(item=>{if(yearPlanResizeState&&yearPlanResizeState.id===item.id&&yearPlanResizeState.month===meta.index){const safeStart=Math.max(1,Math.min(meta.daysInMonth,yearPlanResizeState.startDay));const safeEnd=Math.max(safeStart,Math.min(meta.daysInMonth,yearPlanResizeState.endDay));yearPlanResizeState.meta=meta;yearPlanResizeState.daysInMonth=meta.daysInMonth;return{...item,startDay:safeStart,endDay:safeEnd}}return item});if(!monthItems.length)continue;const segments=getYearPlanSegmentsForMonth(monthItems,meta.daysInMonth);const grouped=new Map();for(const segment of segments){const itemId=segment.item.id;if(!grouped.has(itemId)){grouped.set(itemId,{item:segment.item,segments:[],start:segment.startDay,end:segment.endDay})}const group=grouped.get(itemId);group.segments.push(segment);group.start=Math.min(group.start,segment.startDay);group.end=Math.max(group.end,segment.endDay)}const orderedGroups=[...grouped.values()].sort((a,b)=>a.item.startDay-b.item.startDay||b.item.endDay-a.item.endDay||String(a.item.id).localeCompare(String(b.item.id)));for(const group of orderedGroups){const wrapper=document.createElement('div');wrapper.className='year-activity';wrapper.style.top=`${(group.start-1)*YEAR_PLAN_DAY_HEIGHT}px`;wrapper.style.height=`${(group.end-group.start+1)*YEAR_PLAN_DAY_HEIGHT}px`;wrapper.style.left='0';wrapper.style.width='100%';if(yearPlanSelectedId===group.item.id){wrapper.classList.add('is-selected');const topHandle=document.createElement('div');topHandle.className='year-activity-resize is-top';topHandle.title='Изменить начало';topHandle.addEventListener('mousedown',e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();startYearPlanResize(group.item,'start',meta)});const bottomHandle=document.createElement('div');bottomHandle.className='year-activity-resize is-bottom';bottomHandle.title='Изменить окончание';bottomHandle.addEventListener('mousedown',e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();startYearPlanResize(group.item,'end',meta)});wrapper.append(topHandle,bottomHandle)}wrapper.addEventListener('click',()=>{setYearPlanSelected(group.item.id)});wrapper.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();closeContextMenu();openYearPlanContextMenu(group.item.id,e.clientX,e.clientY)});const segmentsWrap=document.createElement('div');segmentsWrap.className='year-activity-segments';const sortedSegments=group.segments.slice().sort((a,b)=>a.startDay-b.startDay||a.slotIndex-b.slotIndex);for(const segment of sortedSegments){const pos=getYearPlanSegmentPosition(segment);const segEl=document.createElement('div');segEl.className='year-activity-segment';segEl.style.left=pos.left;segEl.style.width=pos.width;const topInset=segment.startDay===group.start?rowOffset:0;const bottomInset=segment.endDay===group.end?rowOffset:0;segEl.style.top=`${(segment.startDay-group.start)*YEAR_PLAN_DAY_HEIGHT+topInset}px`;segEl.style.height=`${(segment.endDay-segment.startDay+1)*YEAR_PLAN_DAY_HEIGHT-topInset-bottomInset}px`;if(segment.startDay===group.start)segEl.classList.add('is-top');if(segment.endDay===group.end)segEl.classList.add('is-bottom');segmentsWrap.appendChild(segEl)}wrapper.appendChild(segmentsWrap);const anchor=sortedSegments.find(entry=>entry.isFirst)||sortedSegments[0];if(anchor){const pos=getYearPlanSegmentPosition(anchor);const label=document.createElement('div');label.className='year-activity-label';label.style.left=pos.left;label.style.width=pos.width;const labelOffset=anchor.startDay===group.start?rowOffset:0;label.style.top=`${(anchor.startDay-group.start)*YEAR_PLAN_DAY_HEIGHT+labelOffset}px`;const title=document.createElement('div');title.className='year-activity-title';if(yearPlanEditingId===group.item.id){const input=document.createElement('input');input.type='text';input.className='year-plan-rename-input';input.value=yearPlanEditingValue;input.disabled=yearPlanEditingSubmitting;input.oninput=e=>{yearPlanEditingValue=e.target.value||''};input.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();commitYearPlanRename()}else if(e.key==='Escape'||e.key==='Esc'){e.preventDefault();cancelYearPlanRename()}};input.onblur=()=>{if(yearPlanEditingId===group.item.id)commitYearPlanRename()};title.appendChild(input);if(yearPlanEditingFocusRequested&&!yearPlanEditingSubmitting){yearPlanEditingFocusRequested=false;setTimeout(()=>{try{input.focus({preventScroll:true});input.select()}catch{input.focus();input.select()}},0)}}else{title.textContent=group.item.title||'Без названия'}const duration=document.createElement('div');duration.className='year-activity-duration';duration.textContent=`${group.item.endDay-group.item.startDay+1} дней`;label.append(title,duration);wrapper.appendChild(label)}meta.layer.appendChild(wrapper)}}}
 
 function getYearPlanDayFromEvent(event,meta){if(!meta||!meta.daysWrap)return null;const row=event.target&&typeof event.target.closest==='function'?event.target.closest('.year-day'):null;if(row&&row.dataset.day&&!row.classList.contains('is-disabled')){const parsed=Math.trunc(Number(row.dataset.day));return Number.isFinite(parsed)?parsed:null}const rect=meta.daysWrap.getBoundingClientRect();const relativeY=Math.max(0,Math.min(rect.height,event.clientY-rect.top));const inferred=Math.floor(relativeY/YEAR_PLAN_DAY_HEIGHT)+1;return Math.max(1,Math.min(meta.daysInMonth,inferred))}
 
@@ -1336,6 +1407,7 @@ function renderYearPlan(container){
     resetYearPlanDraft();
     yearPlanSelectedId=null;
     resetYearPlanEditingState();
+    resetYearPlanResizeState({render:false});
     closeYearPlanContextMenu();
     render();
   };
@@ -1351,6 +1423,7 @@ function renderYearPlan(container){
     resetYearPlanDraft();
     yearPlanSelectedId=null;
     resetYearPlanEditingState();
+    resetYearPlanResizeState({render:false});
     closeYearPlanContextMenu();
     render();
   };
@@ -1451,6 +1524,7 @@ function render(){
     closeYearPlanContextMenu();
     resetYearPlanEditingState();
     yearPlanSelectedId=null;
+    if(yearPlanResizeState)resetYearPlanResizeState({render:false});
   }
   if(currentView!=='sprint'){
     if(sprintVisibleProjects.size)sprintVisibleProjects.clear();
