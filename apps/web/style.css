@@ -71,7 +71,7 @@ body.sidebar-resizing{cursor:ew-resize}
 .year-day.is-disabled{background:var(--year-disabled-bg);color:var(--muted);opacity:.7}
 .year-day.is-disabled .year-day-num{display:none}
 .year-activities{position:absolute;inset:0;padding:0 6px 4px;pointer-events:none}
-.year-activity{position:absolute;left:0;width:100%;box-sizing:border-box;pointer-events:auto}
+.year-activity{position:absolute;left:0;width:100%;box-sizing:border-box;pointer-events:auto;--year-activity-handle-height:20px}
 .year-activity:not(.year-activity--draft){filter:drop-shadow(0 8px 18px var(--accent-shadow))}
 .year-activity.is-dragging{opacity:.35}
 .year-activity-resize{position:absolute;left:0;right:0;height:10px;opacity:0;pointer-events:none;cursor:ns-resize;z-index:4}
@@ -79,11 +79,15 @@ body.sidebar-resizing{cursor:ew-resize}
 .year-activity-resize.is-bottom{bottom:-2px}
 .year-activity.is-selected:hover .year-activity-resize{opacity:1;pointer-events:auto}
 .year-activity-resize::after{content:'';position:absolute;left:10px;right:10px;top:4px;height:2px;border-radius:999px;background:var(--accent-border);opacity:.9}
+.year-activity-handle{position:absolute;height:var(--year-activity-handle-height);display:flex;align-items:center;justify-content:flex-start;gap:6px;padding:0 8px;box-sizing:border-box;background:var(--accent-soft-strong);border-bottom:1px solid var(--accent-border);cursor:grab;z-index:2}
+.year-activity-handle:hover{filter:brightness(1.05)}
+.year-activity.is-dragging .year-activity-handle{cursor:grabbing}
+.year-activity-grip{width:18px;height:10px;background-image:radial-gradient(circle,var(--accent-border) 1.3px,transparent 1.6px);background-size:4px 4px;opacity:.75}
 .year-activity-segments{position:relative;width:100%;height:100%;pointer-events:none}
 .year-activity-segment{position:absolute;background:var(--accent-soft);border:none;outline:none;box-shadow:none;border-radius:0;margin:0}
 .year-activity-segment.is-top{border-top-left-radius:0;border-top-right-radius:0}
 .year-activity-segment.is-bottom{border-bottom-left-radius:0;border-bottom-right-radius:0}
-.year-activity-label{position:absolute;padding:4px 6px 4px 28px;display:flex;flex-direction:column;gap:2px;pointer-events:auto;box-sizing:border-box;align-items:flex-end;text-align:right}
+.year-activity-label{position:absolute;padding:calc(var(--year-activity-handle-height) + 4px) 6px 4px 28px;display:flex;flex-direction:column;gap:2px;pointer-events:auto;box-sizing:border-box;align-items:flex-end;text-align:right;z-index:3}
 .year-activity-title{font-weight:700;font-size:12px;white-space:normal;overflow-wrap:anywhere;word-break:break-word}
 .year-activity-duration{font-size:11px;color:var(--muted)}
 .year-activity.is-selected .year-activity-segment{background:var(--accent-soft-strong)}
