@@ -73,6 +73,7 @@ body.sidebar-resizing{cursor:ew-resize}
 .year-activities{position:absolute;inset:0;padding:0 6px 4px;pointer-events:none}
 .year-activity{position:absolute;left:0;width:100%;box-sizing:border-box;pointer-events:auto}
 .year-activity:not(.year-activity--draft){filter:drop-shadow(0 8px 18px var(--accent-shadow))}
+.year-activity.is-dragging{opacity:.35}
 .year-activity-resize{position:absolute;left:0;right:0;height:10px;opacity:0;pointer-events:none;cursor:ns-resize;z-index:4}
 .year-activity-resize.is-top{top:-2px}
 .year-activity-resize.is-bottom{bottom:-2px}
@@ -87,6 +88,7 @@ body.sidebar-resizing{cursor:ew-resize}
 .year-activity-duration{font-size:11px;color:var(--muted)}
 .year-activity.is-selected .year-activity-segment{background:var(--accent-soft-strong)}
 .year-activity.is-selected .year-activity-label{background:transparent}
+.year-activity--move-preview{background:var(--accent-soft-strong);border:1px solid var(--accent-border);box-shadow:none;opacity:.6;pointer-events:none;border-radius:0;padding:4px 6px;display:flex;justify-content:flex-end;align-items:center;box-sizing:border-box}
 .year-activity--draft{background:var(--hover);border:1px dashed var(--accent-border);box-shadow:none;opacity:.9;pointer-events:auto;border-radius:0;padding:6px 8px;display:flex;flex-direction:column;gap:4px;justify-content:center}
 .year-activity--draft.is-preview{color:var(--muted)}
 .year-activity--draft.is-editing{background:var(--surface);border-style:solid;box-shadow:0 6px 16px var(--toast-shadow)}
