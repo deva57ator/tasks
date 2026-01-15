@@ -74,7 +74,7 @@ body.sidebar-resizing{cursor:ew-resize}
 .year-activity{position:absolute;left:0;width:100%;box-sizing:border-box;pointer-events:auto;--year-activity-handle-height:10px}
 .year-activity:not(.year-activity--draft){filter:drop-shadow(0 8px 18px var(--accent-shadow))}
 .year-activity.is-dragging{opacity:.35}
-.year-activity-resize{position:absolute;left:0;right:0;height:10px;opacity:0;pointer-events:none;cursor:ns-resize;z-index:4}
+.year-activity-resize{position:absolute;left:0;width:100%;height:10px;opacity:0;pointer-events:none;cursor:ns-resize;z-index:4}
 .year-activity-resize.is-top{top:-2px}
 .year-activity-resize.is-bottom{bottom:-2px}
 .year-activity.is-selected:hover .year-activity-resize{opacity:1;pointer-events:auto}

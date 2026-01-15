@@ -1547,26 +1547,37 @@ function renderYearPlanActivities(monthMeta,items){
       if(isDragging)wrapper.classList.add('is-dragging');
       const isSelected=yearPlanSelectedId===group.item.id;
       if(isSelected)wrapper.classList.add('is-selected');
-      if(isSelected&&group.slice.isFirstSlice){
+      const sortedSegments=group.segments.slice().sort((a,b)=>a.startDay-b.startDay||a.slotIndex-b.slotIndex);
+      const topSegment=sortedSegments[0];
+      const bottomSegment=sortedSegments[sortedSegments.length-1];
+      if(isSelected&&group.slice.isFirstSlice&&topSegment){
         const topHandle=document.createElement('div');
         topHandle.className='year-activity-resize is-top';
         topHandle.title='Изменить начало';
+        const pos=getYearPlanSegmentPosition(topSegment);
+        topHandle.style.left=pos.left;
+        topHandle.style.width=pos.width;
         topHandle.addEventListener('mousedown',e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();startYearPlanResize(group.item,'start',meta)});
         wrapper.appendChild(topHandle);
       }
-      if(isSelected&&group.slice.isLastSlice){
+      if(isSelected&&group.slice.isLastSlice&&bottomSegment){
         const bottomHandle=document.createElement('div');
         bottomHandle.className='year-activity-resize is-bottom';
         bottomHandle.title='Изменить окончание';
+        const pos=getYearPlanSegmentPosition(bottomSegment);
+        bottomHandle.style.left=pos.left;
+        bottomHandle.style.width=pos.width;
         bottomHandle.addEventListener('mousedown',e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();startYearPlanResize(group.item,'end',meta)});
         wrapper.appendChild(bottomHandle);
       }
-      wrapper.addEventListener('click',()=>{setYearPlanSelected(group.item.id)});
+      wrapper.addEventListener('click',e=>{
+        if(!e.target||typeof e.target.closest!=='function')return;
+        if(!e.target.closest('.year-activity-segment, .year-activity-label, .year-activity-handle, .year-activity-resize'))return;
+        setYearPlanSelected(group.item.id);
+      });
       wrapper.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();closeContextMenu();openYearPlanContextMenu(group.item.id,e.clientX,e.clientY)});
       const segmentsWrap=document.createElement('div');
       segmentsWrap.className='year-activity-segments';
-      const sortedSegments=group.segments.slice().sort((a,b)=>a.startDay-b.startDay||a.slotIndex-b.slotIndex);
-      const topSegment=sortedSegments[0];
       if(topSegment&&group.slice.isFirstSlice){
         const handle=document.createElement('div');
         handle.className='year-activity-handle';
@@ -1593,6 +1604,7 @@ function renderYearPlanActivities(monthMeta,items){
         segEl.style.height=`${(segment.endDay-segment.startDay+1)*YEAR_PLAN_DAY_HEIGHT-topInset-bottomInset}px`;
         if(segment.startDay===group.start)segEl.classList.add('is-top');
         if(segment.endDay===group.end)segEl.classList.add('is-bottom');
+        segEl.addEventListener('click',e=>{e.stopPropagation();setYearPlanSelected(group.item.id)});
         segmentsWrap.appendChild(segEl);
       }
       wrapper.appendChild(segmentsWrap);
@@ -1605,6 +1617,7 @@ function renderYearPlanActivities(monthMeta,items){
         label.style.width=pos.width;
         const labelOffset=anchor.startDay===group.start?rowOffset:0;
         label.style.top=`${(anchor.startDay-group.start)*YEAR_PLAN_DAY_HEIGHT+labelOffset}px`;
+        label.addEventListener('click',e=>{e.stopPropagation();setYearPlanSelected(group.item.id)});
         const title=document.createElement('div');
         title.className='year-activity-title';
         const editingValue=(yearPlanEditingValue||'').trim()||YEAR_PLAN_DEFAULT_TITLE;
