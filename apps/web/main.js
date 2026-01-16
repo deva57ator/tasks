@@ -1863,6 +1863,10 @@ function renderYearPlan(container){
       const daysWrap=document.createElement('div');
       daysWrap.className='year-days';
       const daysInMonth=getDaysInMonth(yearPlanYear,m);
+      const today=new Date();
+      const isCurrentYear=today.getFullYear()===yearPlanYear;
+      const currentMonth=isCurrentYear?today.getMonth():-1;
+      const currentDay=isCurrentYear?today.getDate():-1;
       for(let d=1;d<=YEAR_PLAN_MAX_DAYS;d++){
         const row=document.createElement('div');
         row.className='year-day';
@@ -1870,6 +1874,7 @@ function renderYearPlan(container){
           row.classList.add('is-disabled');
         }else{
           if(isWeekendDay(yearPlanYear,m,d))row.classList.add('is-weekend');
+          if(m===currentMonth&&d===currentDay)row.classList.add('is-today');
           const num=document.createElement('span');
           num.className='year-day-num';
           num.textContent=String(d);

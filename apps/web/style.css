@@ -68,6 +68,8 @@ body.sidebar-resizing{cursor:ew-resize}
 .year-day:last-child{border-bottom:none}
 .year-day-num{font-variant-numeric:tabular-nums;font-weight:500;font-size:11px;color:var(--hint)}
 .year-day.is-weekend{background:var(--year-weekend-bg);color:var(--year-weekend-text)}
+.year-day.is-today{background:var(--today-bg);color:var(--today-text);font-weight:600}
+.year-day.is-today .year-day-num{color:var(--today-text)}
 .year-day.is-disabled{background:var(--year-disabled-bg);color:var(--muted);opacity:.7}
 .year-day.is-disabled .year-day-num{display:none}
 .year-activities{position:absolute;inset:0;padding:0 6px 4px;pointer-events:none}
