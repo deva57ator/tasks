@@ -160,6 +160,7 @@ let yearPlanDraft=null;
 let yearPlanDraftFocusRequested=false;
 let yearPlanDraftSubmitting=false;
 let yearPlanSelectedId=null;
+let yearPlanHoverId=null;
 let yearPlanEditingId=null;
 let yearPlanEditingValue='';
 let yearPlanEditingOriginal='';
@@ -1195,6 +1196,16 @@ function clearYearPlanSelection(){
   yearPlanSelectedId=null;
   renderYearPlanIfVisible();
 }
+function setYearPlanHover(id){
+  if(yearPlanHoverId===id)return;
+  yearPlanHoverId=id;
+  renderYearPlanIfVisible();
+}
+function clearYearPlanHover(id){
+  if(yearPlanHoverId!==id)return;
+  yearPlanHoverId=null;
+  renderYearPlanIfVisible();
+}
 function closeYearPlanContextMenu(){YearPlanCtx.activityId=null;YearPlanCtx.el.style.display='none';YearPlanCtx.el.setAttribute('aria-hidden','true')}
 function openYearPlanContextMenu(id,x,y){
   setYearPlanSelected(id);
@@ -1505,6 +1516,24 @@ async function submitYearPlanForm(event){event&&event.preventDefault();if(yearPl
 
 function getYearPlanSegmentsForMonth(slices,daysInMonth){const perItemDayMeta=new Map();for(let day=1;day<=daysInMonth;day++){const active=slices.filter(entry=>entry.startDay<=day&&entry.endDay>=day);active.sort((a,b)=>a.startDay-b.startDay||b.endDay-a.endDay||String(a.id).localeCompare(String(b.id)));const colCount=active.length;for(let i=0;i<active.length;i++){const slice=active[i];if(!perItemDayMeta.has(slice.id))perItemDayMeta.set(slice.id,{});perItemDayMeta.get(slice.id)[day]={slotIndex:i,colCount}}}const segments=[];for(const slice of slices){const dayMeta=perItemDayMeta.get(slice.id)||{};let current=null;for(let day=slice.startDay;day<=slice.endDay&&day<=daysInMonth;day++){const meta=dayMeta[day];if(!meta)continue;if(!current){current={item:slice.item,slice,startDay:day,endDay:day,slotIndex:meta.slotIndex,colCount:meta.colCount}}else if(current.slotIndex===meta.slotIndex&&current.colCount===meta.colCount){current.endDay=day}else{segments.push(current);current={item:slice.item,slice,startDay:day,endDay:day,slotIndex:meta.slotIndex,colCount:meta.colCount}}}if(current)segments.push(current)}segments.sort((a,b)=>a.slice.startDay-b.slice.startDay||b.slice.endDay-a.slice.endDay||String(a.item.id).localeCompare(String(b.item.id))||a.startDay-b.startDay);return segments}
 function getYearPlanSegmentPosition(segment){const leftPercent=segment.colCount?segment.slotIndex/segment.colCount*100:0;const widthPercent=segment.colCount?100/segment.colCount:100;const leftOffset=YEAR_PLAN_COLUMN_GAP/2;const widthOffset=YEAR_PLAN_COLUMN_GAP;return{left:YEAR_PLAN_COLUMN_GAP?`calc(${leftPercent}% + ${leftOffset}px)`:leftPercent+'%',width:YEAR_PLAN_COLUMN_GAP?`calc(${widthPercent}% - ${widthOffset}px)`:widthPercent+'%'}}
+function bindYearPlanActivityHover(el,id){
+  el.dataset.yearActivityId=String(id);
+  el.addEventListener('mouseenter',()=>setYearPlanHover(id));
+  el.addEventListener('mouseleave',event=>{
+    if(!event||!event.relatedTarget||typeof event.relatedTarget.closest!=='function'){clearYearPlanHover(id);return}
+    const related=event.relatedTarget.closest('[data-year-activity-id]');
+    if(related&&related.dataset.yearActivityId===String(id))return;
+    clearYearPlanHover(id);
+  });
+}
+function bindYearPlanActivitySelect(el,id){
+  el.dataset.yearActivityId=String(id);
+  el.addEventListener('click',e=>{e.stopPropagation();setYearPlanSelected(id)});
+}
+function bindYearPlanActivityContext(el,id){
+  el.dataset.yearActivityId=String(id);
+  el.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();closeContextMenu();openYearPlanContextMenu(id,e.clientX,e.clientY)});
+}
 function renderYearPlanActivities(monthMeta,items){
   if(!Array.isArray(monthMeta))return;
   if(!Array.isArray(items))return;
@@ -1547,6 +1576,8 @@ function renderYearPlanActivities(monthMeta,items){
       if(isDragging)wrapper.classList.add('is-dragging');
       const isSelected=yearPlanSelectedId===group.item.id;
       if(isSelected)wrapper.classList.add('is-selected');
+      const isHovered=yearPlanHoverId===group.item.id;
+      if(isHovered)wrapper.classList.add('is-hovered');
       const sortedSegments=group.segments.slice().sort((a,b)=>a.startDay-b.startDay||a.slotIndex-b.slotIndex);
       const topSegment=sortedSegments[0];
       const bottomSegment=sortedSegments[sortedSegments.length-1];
@@ -1558,6 +1589,9 @@ function renderYearPlanActivities(monthMeta,items){
         topHandle.style.left=pos.left;
         topHandle.style.width=pos.width;
         topHandle.addEventListener('mousedown',e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();startYearPlanResize(group.item,'start',meta)});
+        bindYearPlanActivityHover(topHandle,group.item.id);
+        bindYearPlanActivitySelect(topHandle,group.item.id);
+        bindYearPlanActivityContext(topHandle,group.item.id);
         wrapper.appendChild(topHandle);
       }
       if(isSelected&&group.slice.isLastSlice&&bottomSegment){
@@ -1568,14 +1602,11 @@ function renderYearPlanActivities(monthMeta,items){
         bottomHandle.style.left=pos.left;
         bottomHandle.style.width=pos.width;
         bottomHandle.addEventListener('mousedown',e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();startYearPlanResize(group.item,'end',meta)});
+        bindYearPlanActivityHover(bottomHandle,group.item.id);
+        bindYearPlanActivitySelect(bottomHandle,group.item.id);
+        bindYearPlanActivityContext(bottomHandle,group.item.id);
         wrapper.appendChild(bottomHandle);
       }
-      wrapper.addEventListener('click',e=>{
-        if(!e.target||typeof e.target.closest!=='function')return;
-        if(!e.target.closest('.year-activity-segment, .year-activity-label, .year-activity-handle, .year-activity-resize'))return;
-        setYearPlanSelected(group.item.id);
-      });
-      wrapper.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();closeContextMenu();openYearPlanContextMenu(group.item.id,e.clientX,e.clientY)});
       const segmentsWrap=document.createElement('div');
       segmentsWrap.className='year-activity-segments';
       if(topSegment&&group.slice.isFirstSlice){
@@ -1587,6 +1618,9 @@ function renderYearPlanActivities(monthMeta,items){
         const handleOffset=topSegment.startDay===group.start?rowOffset:0;
         handle.style.top=`${(topSegment.startDay-group.start)*YEAR_PLAN_DAY_HEIGHT+handleOffset}px`;
         handle.addEventListener('mousedown',e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();startYearPlanMove(group.item,meta,e)});
+        bindYearPlanActivityHover(handle,group.item.id);
+        bindYearPlanActivitySelect(handle,group.item.id);
+        bindYearPlanActivityContext(handle,group.item.id);
         const grip=document.createElement('div');
         grip.className='year-activity-grip';
         handle.appendChild(grip);
@@ -1604,7 +1638,9 @@ function renderYearPlanActivities(monthMeta,items){
         segEl.style.height=`${(segment.endDay-segment.startDay+1)*YEAR_PLAN_DAY_HEIGHT-topInset-bottomInset}px`;
         if(segment.startDay===group.start)segEl.classList.add('is-top');
         if(segment.endDay===group.end)segEl.classList.add('is-bottom');
-        segEl.addEventListener('click',e=>{e.stopPropagation();setYearPlanSelected(group.item.id)});
+        bindYearPlanActivityHover(segEl,group.item.id);
+        bindYearPlanActivitySelect(segEl,group.item.id);
+        bindYearPlanActivityContext(segEl,group.item.id);
         segmentsWrap.appendChild(segEl);
       }
       wrapper.appendChild(segmentsWrap);
@@ -1617,7 +1653,9 @@ function renderYearPlanActivities(monthMeta,items){
         label.style.width=pos.width;
         const labelOffset=anchor.startDay===group.start?rowOffset:0;
         label.style.top=`${(anchor.startDay-group.start)*YEAR_PLAN_DAY_HEIGHT+labelOffset}px`;
-        label.addEventListener('click',e=>{e.stopPropagation();setYearPlanSelected(group.item.id)});
+        bindYearPlanActivityHover(label,group.item.id);
+        bindYearPlanActivitySelect(label,group.item.id);
+        bindYearPlanActivityContext(label,group.item.id);
         const title=document.createElement('div');
         title.className='year-activity-title';
         const editingValue=(yearPlanEditingValue||'').trim()||YEAR_PLAN_DEFAULT_TITLE;
