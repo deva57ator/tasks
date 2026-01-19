@@ -92,6 +92,11 @@ jobs:
             else
               npm install --omit=dev --no-audit --no-fund
             fi
+            
+            set -a
+            . /etc/tasks-prod.env
+            set +a
+            
             npm run migrate
             sudo -n systemctl daemon-reload || true
             sudo -n systemctl restart tasks-prod
