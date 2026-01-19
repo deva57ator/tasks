@@ -93,11 +93,8 @@ jobs:
               npm install --omit=dev --no-audit --no-fund
             fi
             
-            set -a
-            . /etc/tasks-prod.env
-            set +a
+            DB_PATH='${PATH_PROD}/data/tasks.db' npm run migrate
             
-            npm run migrate
             sudo -n systemctl daemon-reload || true
             sudo -n systemctl restart tasks-prod
             sleep 3
