@@ -2096,7 +2096,9 @@ function renderYearPlan(container){
         if(d>daysInMonth){
           row.classList.add('is-disabled');
         }else{
-          if(isWeekendDay(yearPlanYear,m,d))row.classList.add('is-weekend');
+          const isHoliday=isHolidayDay(yearPlanYear,m,d);
+          if(isHoliday)row.classList.add('is-holiday');
+          if(isHoliday||isWeekendDay(yearPlanYear,m,d))row.classList.add('is-weekend');
           if(m===currentMonth&&d===currentDay)row.classList.add('is-today');
           const num=document.createElement('span');
           num.className='year-day-num';
@@ -2290,6 +2292,29 @@ function isoWeekNumber(d){const date=new Date(Date.UTC(d.getFullYear(),d.getMont
 function buildMonthMatrix(y,m,{minVisibleDays=1,maxWeeks=6}={}){const first=new Date(y,m,1);const startDay=(first.getDay()+6)%7;const weeks=[];let day=1-startDay;const today=normalizeDate(new Date());while(true){const week={weekNum:null,days:[]};for(let i=0;i<7;i++){const d=new Date(y,m,day);const inMonth=d.getMonth()===m;const isToday=sameDay(d,today);week.days.push({d,inMonth,isToday});day++}const thursday=new Date(week.days[3].d);week.weekNum=isoWeekNumber(thursday);weeks.push(week);const lastDay=week.days[6].d;if(lastDay.getMonth()>m||(y<lastDay.getFullYear()&&lastDay.getMonth()===0))break;if(weeks.length>6)break}const countInMonth=week=>week.days.reduce((acc,cell)=>acc+(cell.inMonth?1:0),0);while(weeks.length&&countInMonth(weeks[0])<minVisibleDays)weeks.shift();while(weeks.length&&countInMonth(weeks[weeks.length-1])<minVisibleDays)weeks.pop();if(maxWeeks&&weeks.length>maxWeeks){while(weeks.length>maxWeeks){const firstCount=countInMonth(weeks[0]);const lastCount=countInMonth(weeks[weeks.length-1]);if(firstCount<=lastCount){weeks.shift()}else{weeks.pop()}}}return weeks}
 function renderMonthInto(container,y,m,options){const weeks=buildMonthMatrix(y,m,options);const wrap=document.createElement('div');wrap.className='cal-grid';weeks.forEach(week=>{const row=document.createElement('div');row.className='cal-week';const wn=document.createElement('div');wn.className='cal-weeknum';wn.textContent=String(week.weekNum).padStart(2,'0');row.appendChild(wn);for(const cell of week.days){const el=document.createElement('div');el.className='cal-day';if(!cell.inMonth)el.classList.add('is-out');if(cell.isToday)el.classList.add('is-today');el.textContent=cell.d.getDate();row.appendChild(el)}wrap.appendChild(row)});container.innerHTML='';container.appendChild(wrap);return weeks}
 function getDaysInMonth(year,monthIndex){return new Date(year,monthIndex+1,0).getDate()}
+const YEAR_PLAN_HOLIDAYS_2026=new Set([
+  '2026-01-01',
+  '2026-01-02',
+  '2026-01-03',
+  '2026-01-04',
+  '2026-01-05',
+  '2026-01-06',
+  '2026-01-07',
+  '2026-01-08',
+  '2026-02-23',
+  '2026-03-08',
+  '2026-03-09',
+  '2026-05-01',
+  '2026-05-09',
+  '2026-05-11',
+  '2026-06-12',
+  '2026-11-04'
+]);
+function isHolidayDay(year,monthIndex,day){
+  if(year!==2026)return false;
+  const key=`${year}-${String(monthIndex+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+  return YEAR_PLAN_HOLIDAYS_2026.has(key);
+}
 function isWeekendDay(year,monthIndex,day){const dow=new Date(year,monthIndex,day,12,0,0).getDay();return dow===0||dow===6}
 function monthTitle(y,m){return`${MONTH_NAMES[m]} ${y}`}
 function weekTitle(date){const info=isoWeekInfo(date);return`Неделя ${String(info.week).padStart(2,'0')} · ${monthTitle(date.getFullYear(),date.getMonth())}`}
