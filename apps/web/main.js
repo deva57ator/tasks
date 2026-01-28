@@ -1574,8 +1574,8 @@ function openYearPlanAssignSubmenu(id,anchorItem){
   openProjectAssignSubmenu({
     anchorItem,
     currentProjectId,
-    onAssign:projId=>{setYearPlanProject(id,projId);closeYearPlanContextMenu()},
-    onClear:()=>{setYearPlanProject(id,null);closeYearPlanContextMenu()}
+    onAssign:async projId=>{await setYearPlanProject(id,projId);closeYearPlanContextMenu()},
+    onClear:async()=>{await setYearPlanProject(id,null);closeYearPlanContextMenu()}
   });
 }
 function closeYearPlanContextMenu(){YearPlanCtx.activityId=null;YearPlanCtx.el.style.display='none';YearPlanCtx.el.setAttribute('aria-hidden','true');closeAssignSubmenu()}
@@ -1627,7 +1627,11 @@ function openYearPlanContextMenu(id,x,y){
     swatch.style.background=color;
     swatch.title='Изменить цвет';
     swatch.setAttribute('aria-label','Изменить цвет');
-    const handleColorSelect=()=>{setYearPlanColor(id,color)};
+    const handleColorSelect=async()=>{
+      await setYearPlanColor(id,color);
+      closeYearPlanContextMenu();
+      clearYearPlanSelection();
+    };
     swatch.addEventListener('mousedown',e=>{
       if(e.button!==0)return;
       e.preventDefault();
