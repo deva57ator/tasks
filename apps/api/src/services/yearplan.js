@@ -30,6 +30,15 @@ function normalizeTitle(value) {
   return title.length ? title : 'активность';
 }
 
+function normalizeColor(value, fallback) {
+  const normalized =
+    value === undefined || value === null ? null : String(value).trim().toLowerCase();
+  if (!normalized) {
+    return fallback || '#3a82f6';
+  }
+  return normalized;
+}
+
 function normalizeIsDone(value, fallback = 0) {
   if (value === undefined) return fallback;
   if (typeof value === 'boolean') return value ? 1 : 0;
@@ -58,6 +67,7 @@ function normalizeActivityInput(raw, defaults = {}) {
   const startDay = raw.startDay !== undefined ? normalizeInt(raw.startDay) : normalizeInt(defaults.startDay);
   const endDay = raw.endDay !== undefined ? normalizeInt(raw.endDay) : normalizeInt(defaults.endDay);
   const title = normalizeTitle(raw.title !== undefined ? raw.title : defaults.title);
+  const color = normalizeColor(raw.color, defaults.color);
   const isDone = normalizeIsDone(raw.isDone, defaults.isDone || 0);
 
   if (year === null) throw validationError('year is required');
@@ -85,6 +95,7 @@ function normalizeActivityInput(raw, defaults = {}) {
     startDay,
     endDay,
     title,
+    color,
     isDone: isDone ? 1 : 0
   };
 }
@@ -101,7 +112,8 @@ function mapRow(row) {
     endDay: Number(row.endDay),
     isDone: Number(row.isDone),
     createdTs: Number(row.createdTs),
-    updatedTs: Number(row.updatedTs)
+    updatedTs: Number(row.updatedTs),
+    color: row.color ? String(row.color) : '#3a82f6'
   };
 }
 
@@ -123,7 +135,7 @@ async function create(data) {
   const normalized = normalizeActivityInput(data || {});
   const timestamp = Date.now();
   const rows = await db.all(
-    'INSERT INTO yearplan_activities (year, startMonth, startDay, endMonth, endDay, title, isDone, createdTs, updatedTs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *',
+    'INSERT INTO yearplan_activities (year, startMonth, startDay, endMonth, endDay, title, color, isDone, createdTs, updatedTs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *',
     [
       normalized.year,
       normalized.startMonth,
@@ -131,6 +143,7 @@ async function create(data) {
       normalized.endMonth,
       normalized.endDay,
       normalized.title,
+      normalized.color,
       normalized.isDone,
       timestamp,
       timestamp
@@ -145,7 +158,7 @@ async function update(id, patch) {
   const normalized = normalizeActivityInput(patch || {}, existing);
   const timestamp = Date.now();
   const rows = await db.all(
-    'UPDATE yearplan_activities SET year = ?, startMonth = ?, startDay = ?, endMonth = ?, endDay = ?, title = ?, isDone = ?, updatedTs = ? WHERE id = ? RETURNING *',
+    'UPDATE yearplan_activities SET year = ?, startMonth = ?, startDay = ?, endMonth = ?, endDay = ?, title = ?, color = ?, isDone = ?, updatedTs = ? WHERE id = ? RETURNING *',
     [
       normalized.year,
       normalized.startMonth,
@@ -153,6 +166,7 @@ async function update(id, patch) {
       normalized.endMonth,
       normalized.endDay,
       normalized.title,
+      normalized.color,
       normalized.isDone,
       timestamp,
       id
