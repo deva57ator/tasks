@@ -1627,7 +1627,18 @@ function openYearPlanContextMenu(id,x,y){
     swatch.style.background=color;
     swatch.title='Изменить цвет';
     swatch.setAttribute('aria-label','Изменить цвет');
-    swatch.onclick=e=>{e.stopPropagation();setYearPlanColor(id,color)};
+    const handleColorSelect=()=>{setYearPlanColor(id,color)};
+    swatch.addEventListener('mousedown',e=>{
+      if(e.button!==0)return;
+      e.preventDefault();
+      e.stopPropagation();
+      handleColorSelect();
+    });
+    swatch.addEventListener('click',e=>{
+      if(e.detail!==0)return;
+      e.stopPropagation();
+      handleColorSelect();
+    });
     palette.appendChild(swatch);
   }
   YearPlanCtx.el.appendChild(palette);
@@ -3062,7 +3073,18 @@ function openProjectAssignSubmenu({anchorItem,currentProjectId,onAssign,onClear}
       const it=document.createElement('div');
       it.className='ctx-submenu-item';
       it.textContent=`${getProjectEmoji(p.id)} ${p.title}`;
-      it.onclick=e=>{e.stopPropagation();if(typeof onAssign==='function')onAssign(p.id)};
+      const handleAssign=()=>{if(typeof onAssign==='function')onAssign(p.id)};
+      it.addEventListener('mousedown',e=>{
+        if(e.button!==0)return;
+        e.preventDefault();
+        e.stopPropagation();
+        handleAssign();
+      });
+      it.addEventListener('click',e=>{
+        if(e.detail!==0)return;
+        e.stopPropagation();
+        handleAssign();
+      });
       sub.appendChild(it);
     }
   }
@@ -3073,7 +3095,18 @@ function openProjectAssignSubmenu({anchorItem,currentProjectId,onAssign,onClear}
     const clr=document.createElement('div');
     clr.className='ctx-submenu-item';
     clr.textContent='Снять проект';
-    clr.onclick=e=>{e.stopPropagation();if(typeof onClear==='function')onClear()};
+    const handleClear=()=>{if(typeof onClear==='function')onClear()};
+    clr.addEventListener('mousedown',e=>{
+      if(e.button!==0)return;
+      e.preventDefault();
+      e.stopPropagation();
+      handleClear();
+    });
+    clr.addEventListener('click',e=>{
+      if(e.detail!==0)return;
+      e.stopPropagation();
+      handleClear();
+    });
     sub.appendChild(clr);
   }
   if(Ctx.submenuAnchor&&Ctx.submenuAnchor!==anchorItem){
