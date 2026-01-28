@@ -73,29 +73,30 @@ body.sidebar-resizing{cursor:ew-resize}
 .year-day.is-disabled{background:var(--year-disabled-bg);color:var(--muted);opacity:.7}
 .year-day.is-disabled .year-day-num{display:none}
 .year-activities{position:absolute;inset:0;padding:0 6px 4px;pointer-events:none}
-.year-activity{position:absolute;left:0;width:100%;box-sizing:border-box;pointer-events:none;--year-activity-handle-height:10px}
-.year-activity:not(.year-activity--draft){filter:drop-shadow(0 8px 18px var(--accent-shadow))}
+.year-activity{position:absolute;left:0;width:100%;box-sizing:border-box;pointer-events:none;--year-activity-handle-height:10px;--year-activity-color:var(--accent);--year-activity-soft:var(--accent-soft);--year-activity-soft-strong:var(--accent-soft-strong);--year-activity-border:var(--accent-border);--year-activity-shadow:var(--accent-shadow)}
+.year-activity:not(.year-activity--draft){filter:drop-shadow(0 8px 18px var(--year-activity-shadow))}
 .year-activity.is-dragging{opacity:.35}
 .year-activity-resize{position:absolute;left:0;width:100%;height:10px;opacity:0;pointer-events:none;cursor:ns-resize;z-index:4}
 .year-activity-resize.is-top{top:-2px}
 .year-activity-resize.is-bottom{bottom:-2px}
 .year-activity.is-selected.is-hovered .year-activity-resize{opacity:1;pointer-events:auto}
-.year-activity-resize::after{content:'';position:absolute;left:10px;right:10px;top:4px;height:2px;border-radius:999px;background:var(--accent-border);opacity:.9}
-.year-activity-handle{position:absolute;height:var(--year-activity-handle-height);display:flex;align-items:center;justify-content:flex-start;gap:6px;padding:0 6px;box-sizing:border-box;background:var(--accent-soft-strong);border-bottom:1px solid var(--accent-border);cursor:grab;z-index:4;opacity:0;pointer-events:auto;transition:opacity .12s ease}
+.year-activity-resize::after{content:'';position:absolute;left:10px;right:10px;top:4px;height:2px;border-radius:999px;background:var(--year-activity-border);opacity:.9}
+.year-activity-handle{position:absolute;height:var(--year-activity-handle-height);display:flex;align-items:center;justify-content:flex-start;gap:6px;padding:0 6px;box-sizing:border-box;background:var(--year-activity-soft-strong);border-bottom:1px solid var(--year-activity-border);cursor:grab;z-index:4;opacity:0;pointer-events:auto;transition:opacity .12s ease}
 .year-activity.is-hovered .year-activity-handle,.year-activity.is-selected .year-activity-handle,.year-activity.is-dragging .year-activity-handle{opacity:1;pointer-events:auto}
 .year-activity-handle:hover{filter:brightness(1.05)}
 .year-activity.is-dragging .year-activity-handle{cursor:grabbing}
 .year-activity-grip{width:14px;height:6px;background-image:radial-gradient(circle,var(--accent-border) 1.1px,transparent 1.4px);background-size:3px 3px;opacity:.75}
 .year-activity-segments{position:relative;width:100%;height:100%;pointer-events:none}
-.year-activity-segment{position:absolute;background:var(--accent-soft);border:none;outline:none;box-shadow:none;border-radius:0;margin:0;pointer-events:auto}
+.year-activity-segment{position:absolute;background:var(--year-activity-soft);border:none;outline:none;box-shadow:none;border-radius:0;margin:0;pointer-events:auto}
 .year-activity-segment.is-top{border-top-left-radius:0;border-top-right-radius:0}
 .year-activity-segment.is-bottom{border-bottom-left-radius:0;border-bottom-right-radius:0}
 .year-activity-label{position:absolute;padding:calc(var(--year-activity-handle-height) + 4px) 6px 4px 28px;display:flex;flex-direction:column;gap:2px;pointer-events:auto;box-sizing:border-box;align-items:flex-end;text-align:right;z-index:3}
-.year-activity-title{font-weight:700;font-size:12px;white-space:normal;overflow-wrap:anywhere;word-break:break-word}
+.year-activity-title{font-weight:700;font-size:12px;white-space:normal;overflow-wrap:anywhere;word-break:break-word;display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}
+.year-activity-emoji{font-size:13px;line-height:1}
 .year-activity-duration{font-size:11px;color:var(--muted)}
-.year-activity.is-selected .year-activity-segment,.year-activity.is-hovered .year-activity-segment{background:var(--accent-soft-strong)}
+.year-activity.is-selected .year-activity-segment,.year-activity.is-hovered .year-activity-segment{background:var(--year-activity-soft-strong)}
 .year-activity.is-selected .year-activity-label{background:transparent}
-.year-activity--move-preview{background:var(--accent-soft-strong);border:1px solid var(--accent-border);box-shadow:none;opacity:.6;pointer-events:none;border-radius:0;padding:4px 6px;display:flex;justify-content:flex-end;align-items:center;box-sizing:border-box}
+.year-activity--move-preview{background:var(--year-activity-soft-strong);border:1px solid var(--year-activity-border);box-shadow:none;opacity:.6;pointer-events:none;border-radius:0;padding:4px 6px;display:flex;justify-content:flex-end;align-items:center;box-sizing:border-box}
 .year-activity--draft{background:var(--hover);border:1px dashed var(--accent-border);box-shadow:none;opacity:.9;pointer-events:auto;border-radius:0;padding:6px 8px;display:flex;flex-direction:column;gap:4px;justify-content:center}
 .year-activity--draft.is-preview{color:var(--muted)}
 .year-activity--draft.is-editing{background:var(--surface);border-style:solid;box-shadow:0 6px 16px var(--toast-shadow)}
@@ -123,6 +124,35 @@ body.theme-dark .year-plan-error{color:#ff8c8c}
 .year-plan-status.is-error{color:#d64545}
 body.theme-dark .year-plan-status.is-error{color:#ff8c8c}
 .year-plan-status.is-empty{color:var(--muted)}
+.year-plan-color-palette{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;padding:8px 10px 6px;border-top:1px solid var(--toast-border);margin-top:6px}
+.year-plan-color-swatch{width:20px;height:20px;border-radius:6px;border:1px solid transparent;cursor:pointer;display:inline-block}
+.year-plan-color-swatch:hover{transform:translateY(-1px)}
+.year-plan-color-swatch.is-active{border-color:var(--text);box-shadow:0 0 0 2px var(--hover-strong)}
+.tasks.is-project-view{overflow:visible}
+.project-layout{display:flex;gap:16px;align-items:stretch;width:100%;min-width:0}
+.project-tasks{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0;overflow:auto}
+.year-side{flex:0 0 20%;min-width:200px;max-width:320px;background:var(--surface);border:1px solid var(--toast-border);border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:10px;height:fit-content}
+.year-side-header{font-weight:800;font-size:12px;letter-spacing:.3px;text-transform:uppercase;color:var(--muted)}
+.year-side-list{display:flex;flex-direction:column;gap:8px}
+.year-side-item{appearance:none;border:1px solid transparent;background:var(--hover);border-radius:10px;padding:8px 10px;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:4px;transition:background .12s ease,border-color .12s ease}
+.year-side-item:hover{background:var(--hover-strong);border-color:var(--toast-border)}
+.year-side-item-title{font-weight:600;font-size:14px;color:var(--text)}
+.year-side-item-dates{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.year-side-status{font-size:13px;color:var(--muted)}
+.year-side-status.is-error{color:#d64545}
+body.theme-dark .year-side-status.is-error{color:#ff8c8c}
+.project-delete-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(15,17,21,.46);backdrop-filter:blur(5px);opacity:0;pointer-events:none;transition:opacity .2s ease;z-index:12500}
+.project-delete-overlay.is-open{opacity:1;pointer-events:auto}
+.project-delete-dialog{position:relative;width:100%;max-width:420px;background:var(--sidebar-bg);border-radius:20px;padding:24px;border:1px solid var(--toast-border);box-shadow:0 22px 40px rgba(15,17,21,.2);display:flex;flex-direction:column;gap:14px;color:var(--text)}
+.project-delete-title{font-size:16px;font-weight:800}
+.project-delete-list{display:flex;flex-direction:column;gap:8px;max-height:240px;overflow:auto}
+.project-delete-item{background:var(--hover);border-radius:12px;padding:8px 10px;display:flex;flex-direction:column;gap:4px}
+.project-delete-item-title{font-weight:600;font-size:14px}
+.project-delete-item-dates{font-size:12px;color:var(--muted)}
+.project-delete-actions{display:flex;gap:10px;justify-content:flex-end}
+.project-delete-primary,.project-delete-secondary{appearance:none;border-radius:12px;padding:10px 16px;font-weight:700;cursor:pointer;border:none}
+.project-delete-primary{background:var(--accent);color:#fff;box-shadow:0 12px 24px rgba(58,130,246,.28)}
+.project-delete-secondary{background:transparent;color:var(--text);border:1px solid var(--hint)}
 .year-plan-grid::-webkit-scrollbar{height:8px}
 .year-plan-grid::-webkit-scrollbar-thumb{background:var(--hint);border-radius:999px}
 .year-plan-grid::-webkit-scrollbar-track{background:transparent}
