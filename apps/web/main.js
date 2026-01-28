@@ -171,6 +171,7 @@ let yearPlanResizeSubmitting=false;
 let yearPlanMoveState=null;
 let yearPlanMonthMeta=[];
 const yearPlanPendingDeletes=new Set();
+let yearPlanFocusId=null;
 let activeEditId=null;
 let activeInputEl=null;
 let projects=ProjectsStore.read();
@@ -180,6 +181,20 @@ const pendingTimeUpdates=new Set();
 const DEFAULT_PROJECT_EMOJI='📁';
 const SPRINT_UNASSIGNED_KEY='__none__';
 let sprintVisibleProjects=new Map();
+const YEAR_PLAN_COLORS=[
+  '#3A82F6',
+  '#6C5CE7',
+  '#00B894',
+  '#0984E3',
+  '#E17055',
+  '#D63031',
+  '#FDCB6E',
+  '#00CEC9',
+  '#E84393',
+  '#636E72',
+  '#2D3436',
+  '#FAB1A0'
+];
 
 function normalizeProjectsList(list,{persist=false}={}){
   if(!Array.isArray(list))return[];
@@ -291,6 +306,82 @@ function normalizeYearPlanRangeForYear(year,startMonth,startDay,endMonth,endDay)
   }
   return{startMonth:safeStartMonth,startDay:safeStartDay,endMonth:safeStartMonth,endDay:safeStartDay};
 }
+function normalizeYearPlanProjectId(value){
+  if(value===null||value===undefined||value==='')return null;
+  if(typeof value==='string')return value.trim()||null;
+  if(typeof value==='number'&&Number.isFinite(value))return String(value);
+  return null;
+}
+function normalizeYearPlanColor(value){
+  const normalized=typeof value==='string'?value.trim().toLowerCase():'';
+  if(!normalized)return YEAR_PLAN_COLORS[0];
+  const match=YEAR_PLAN_COLORS.find(color=>color.toLowerCase()===normalized);
+  return match||YEAR_PLAN_COLORS[0];
+}
+function hexToRgb(hex){
+  if(typeof hex!=='string')return null;
+  const raw=hex.trim().replace('#','');
+  if(raw.length===3){
+    const r=parseInt(raw[0]+raw[0],16);
+    const g=parseInt(raw[1]+raw[1],16);
+    const b=parseInt(raw[2]+raw[2],16);
+    if([r,g,b].some(v=>Number.isNaN(v)))return null;
+    return{r,g,b};
+  }
+  if(raw.length!==6)return null;
+  const r=parseInt(raw.slice(0,2),16);
+  const g=parseInt(raw.slice(2,4),16);
+  const b=parseInt(raw.slice(4,6),16);
+  if([r,g,b].some(v=>Number.isNaN(v)))return null;
+  return{r,g,b};
+}
+function rgbaFromRgb(rgb,alpha){
+  if(!rgb)return null;
+  const a=Math.max(0,Math.min(1,Number(alpha)));
+  if(!Number.isFinite(a))return null;
+  return`rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${a})`;
+}
+function getYearPlanColorTokens(color){
+  const base=normalizeYearPlanColor(color);
+  const rgb=hexToRgb(base);
+  if(!rgb){
+    return{
+      base,
+      soft:'var(--accent-soft)',
+      softStrong:'var(--accent-soft-strong)',
+      border:'var(--accent-border)',
+      shadow:'var(--accent-shadow)'
+    };
+  }
+  return{
+    base,
+    soft:rgbaFromRgb(rgb,0.18),
+    softStrong:rgbaFromRgb(rgb,0.32),
+    border:rgbaFromRgb(rgb,0.45),
+    shadow:rgbaFromRgb(rgb,0.25)
+  };
+}
+function applyYearPlanColorStyles(el,color){
+  if(!el)return;
+  const tokens=getYearPlanColorTokens(color);
+  el.style.setProperty('--year-activity-color',tokens.base);
+  el.style.setProperty('--year-activity-soft',tokens.soft);
+  el.style.setProperty('--year-activity-soft-strong',tokens.softStrong);
+  el.style.setProperty('--year-activity-border',tokens.border);
+  el.style.setProperty('--year-activity-shadow',tokens.shadow);
+}
+function formatYearPlanDateLabel(month,day){
+  const dd=String(day).padStart(2,'0');
+  const mm=String(month).padStart(2,'0');
+  return`${dd}.${mm}`;
+}
+function formatYearPlanRangeLabel(item){
+  if(!item)return'';
+  const start=formatYearPlanDateLabel(item.startMonth,item.startDay);
+  const end=formatYearPlanDateLabel(item.endMonth,item.endDay);
+  if(start===end)return start;
+  return`${start}–${end}`;
+}
 function sortYearPlanItems(list){if(!Array.isArray(list))return;list.sort((a,b)=>a.startMonth-b.startMonth||a.startDay-b.startDay||a.endMonth-b.endMonth||a.endDay-b.endDay||String(a.id).localeCompare(String(b.id)))}
 function readYearPlanStorage(){
   try{
@@ -315,13 +406,17 @@ function normalizeStoredYearPlanItem(raw){
   const isDone=raw.isDone===true;
   const createdTs=Number.isFinite(raw.createdTs)?raw.createdTs:Date.now();
   const updatedTs=Number.isFinite(raw.updatedTs)?raw.updatedTs:createdTs;
-  return{year,id,startMonth:range.startMonth,startDay:range.startDay,endMonth:range.endMonth,endDay:range.endDay,title,isDone,createdTs,updatedTs};
+  const projectId=normalizeYearPlanProjectId(raw.projectId);
+  const color=normalizeYearPlanColor(raw.color);
+  return{year,id,startMonth:range.startMonth,startDay:range.startDay,endMonth:range.endMonth,endDay:range.endDay,title,isDone,createdTs,updatedTs,projectId,color};
 }
 function normalizeYearPlanPatchForStorage(item,patch){
   const year=normalizeYearPlanYear(patch.year??item.year)??item.year;
   const range=normalizeYearPlanRangeForYear(year,patch.startMonth??item.startMonth,patch.startDay??item.startDay,patch.endMonth??item.endMonth,patch.endDay??item.endDay);
   const nextTitle=patch.title!==undefined?normalizeYearPlanTitle(patch.title):item.title;
   const nextIsDone=patch.isDone!==undefined?patch.isDone===true:item.isDone;
+  const nextProjectId=patch.projectId!==undefined?normalizeYearPlanProjectId(patch.projectId):item.projectId??null;
+  const nextColor=patch.color!==undefined?normalizeYearPlanColor(patch.color):normalizeYearPlanColor(item.color);
   return{
     year,
     startMonth:range.startMonth,
@@ -329,7 +424,9 @@ function normalizeYearPlanPatchForStorage(item,patch){
     endMonth:range.endMonth,
     endDay:range.endDay,
     title:nextTitle,
-    isDone:nextIsDone
+    isDone:nextIsDone,
+    projectId:nextProjectId,
+    color:nextColor
   };
 }
 
@@ -357,6 +454,8 @@ const yearPlanProvider={
     const stored=readYearPlanStorage();
     const year=normalizeYearPlanYear(item.year)||yearPlanYear;
     const range=normalizeYearPlanRangeForYear(year,item.startMonth,item.startDay,item.endMonth,item.endDay);
+    const color=normalizeYearPlanColor(item.color);
+    const projectId=normalizeYearPlanProjectId(item.projectId);
     const now=Date.now();
     const created={
       id:generateLocalYearPlanId(),
@@ -367,6 +466,8 @@ const yearPlanProvider={
       endDay:range.endDay,
       title:normalizeYearPlanTitle(item.title),
       isDone:item.isDone===true,
+      projectId,
+      color,
       createdTs:now,
       updatedTs:now
     };
@@ -1203,6 +1304,7 @@ YearPlanCtx.el.setAttribute('aria-hidden','true');
 document.body.appendChild(YearPlanCtx.el);
 const NotesPanel={panel:document.getElementById('notesSidebar'),overlay:document.getElementById('notesOverlay'),close:document.getElementById('notesClose'),title:document.getElementById('notesTaskTitle'),input:document.getElementById('notesInput'),taskId:null,mode:'tasks'};
 const TimeDialog={overlay:document.getElementById('timeOverlay'),close:document.getElementById('timeDialogClose'),cancel:document.getElementById('timeDialogCancel'),form:document.getElementById('timeDialogForm'),hours:document.getElementById('timeInputHours'),minutes:document.getElementById('timeInputMinutes'),summary:document.getElementById('timeDialogSummary'),subtitle:document.getElementById('timeDialogSubtitle'),error:document.getElementById('timeDialogError'),save:document.getElementById('timeDialogSave'),presets:document.getElementById('timeDialogPresets')};
+const ProjectDeleteDialog={overlay:document.getElementById('projectDeleteOverlay'),dialog:document.getElementById('projectDeleteDialog'),list:document.getElementById('projectDeleteList'),confirm:document.getElementById('projectDeleteConfirm'),detach:document.getElementById('projectDeleteDetach'),projectId:null,items:[]};
 let timeDialogTaskId=null;
 let timeDialogEditedMinutes=0;
 let timeDialogSaving=false;
@@ -1220,6 +1322,33 @@ function updateTimeDialogUI({showValidationError=false,preserveError=false}={}){
 function applyTimeDialogPreset(delta){const next=timeDialogEditedMinutes+delta;setTimeDialogInputsFromMinutes(Math.max(0,next));timeDialogEditedMinutes=next;updateTimeDialogUI({showValidationError:next<MIN_TASK_MINUTES||next>MAX_TASK_MINUTES})}
 function openTimeEditDialog(taskId){const task=findTask(taskId);if(!task||!TimeDialog.overlay)return;if(task.timerActive){stopTaskTimer(task,{skipServer:true});timeDialogDeferredTimerSyncTaskId=task.id;syncTimerLoop()}else{timeDialogDeferredTimerSyncTaskId=null}timeDialogTaskId=taskId;const currentMinutes=getTaskMinutes(task);timeDialogEditedMinutes=currentMinutes;if(TimeDialog.subtitle)TimeDialog.subtitle.textContent=currentMinutes?`Текущее значение: ${formatDuration(minutesToMs(currentMinutes))}`:'Текущее значение: 0 мин';setTimeDialogInputsFromMinutes(currentMinutes);setTimeDialogError('');timeDialogSaving=false;updateTimeDialogUI();TimeDialog.overlay.classList.add('is-open');TimeDialog.overlay.setAttribute('aria-hidden','false');document.body.classList.add('time-dialog-open');updateTimeControlsState(taskId);const focusTarget=TimeDialog.minutes||TimeDialog.hours;setTimeout(()=>{if(!focusTarget)return;try{focusTarget.focus({preventScroll:true})}catch{focusTarget.focus()}},60)}
 function closeTimeDialog({syncDeferred=true}={}){if(!TimeDialog.overlay)return;const taskId=timeDialogTaskId;const shouldSyncDeferred=syncDeferred&&timeDialogDeferredTimerSyncTaskId&&taskId===timeDialogDeferredTimerSyncTaskId;timeDialogTaskId=null;timeDialogSaving=false;timeDialogEditedMinutes=0;TimeDialog.overlay.classList.remove('is-open');TimeDialog.overlay.setAttribute('aria-hidden','true');document.body.classList.remove('time-dialog-open');setTimeDialogError('');if(TimeDialog.save)TimeDialog.save.disabled=false;if(shouldSyncDeferred){const task=findTask(taskId);if(task&&isServerMode()){queueTaskUpdate(task.id,{timeSpent:task.timeSpent})}}timeDialogDeferredTimerSyncTaskId=null;updateTimeControlsState(taskId)}
+function openProjectDeleteDialog(projectId,items){
+  if(!ProjectDeleteDialog.overlay||!ProjectDeleteDialog.list)return;
+  ProjectDeleteDialog.projectId=projectId;
+  ProjectDeleteDialog.items=Array.isArray(items)?items:[];
+  ProjectDeleteDialog.list.innerHTML='';
+  for(const item of ProjectDeleteDialog.items){
+    const row=document.createElement('div');
+    row.className='project-delete-item';
+    const title=document.createElement('div');
+    title.className='project-delete-item-title';
+    title.textContent=item.title||YEAR_PLAN_DEFAULT_TITLE;
+    const dates=document.createElement('div');
+    dates.className='project-delete-item-dates';
+    dates.textContent=formatYearPlanRangeLabel(item);
+    row.append(title,dates);
+    ProjectDeleteDialog.list.appendChild(row);
+  }
+  ProjectDeleteDialog.overlay.classList.add('is-open');
+  ProjectDeleteDialog.overlay.setAttribute('aria-hidden','false');
+}
+function closeProjectDeleteDialog(){
+  if(!ProjectDeleteDialog.overlay)return;
+  ProjectDeleteDialog.projectId=null;
+  ProjectDeleteDialog.items=[];
+  ProjectDeleteDialog.overlay.classList.remove('is-open');
+  ProjectDeleteDialog.overlay.setAttribute('aria-hidden','true');
+}
 function submitTimeDialog(){if(!timeDialogTaskId||timeDialogSaving)return;const task=findTask(timeDialogTaskId);if(!task){closeTimeDialog();return}const state=updateTimeDialogUI({showValidationError:true});if(!state.valid){return}timeDialogSaving=true;updateTimeDialogUI({preserveError:true});setTimeDialogError('');setTimeUpdatePending(task.id,true);saveTaskTimeMinutes(task.id,state.totalMinutes,{showSuccessToast:true}).then(()=>{timeDialogDeferredTimerSyncTaskId=null;closeTimeDialog({syncDeferred:false})}).catch(()=>{setTimeDialogError('Не удалось сохранить. Проверь соединение и попробуй ещё раз.')}).finally(()=>{timeDialogSaving=false;setTimeUpdatePending(task.id,false);updateTimeDialogUI({preserveError:true});updateTimerDisplays()})}
 function initTimeDialogPresets(){if(!TimeDialog.presets)return;TimeDialog.presets.innerHTML='';for(const delta of TIME_PRESETS){const btn=document.createElement('button');btn.type='button';btn.className='time-preset-btn';btn.textContent=formatPresetLabel(delta);btn.title=`Добавить ${formatDuration(minutesToMs(delta))}`;btn.onclick=e=>{e.preventDefault();applyTimeDialogPreset(delta)};TimeDialog.presets.appendChild(btn)}}
 function openContextMenu(taskId,x,y){
@@ -1259,7 +1388,20 @@ window.addEventListener('keydown',e=>{
     closeNotesPanel();
     closeDuePicker();
     closeWorkdayDialog();
+    closeProjectDeleteDialog();
     closeTimeDialog();
+  }
+  if(YearPlanCtx.el.style.display==='block'&&(e.key==='p'||e.key==='P'||e.code==='KeyP')){
+    const itemId=YearPlanCtx.activityId;
+    const item=itemId?findYearPlanItem(itemId):null;
+    const projectId=item?item.projectId:null;
+    if(projectId){
+      e.preventDefault();
+      closeYearPlanContextMenu();
+      currentView='project';
+      currentProjectId=projectId;
+      render();
+    }
   }
   if((e.key==='Delete'||e.key==='Backspace')&&currentView==='year'&&yearPlanSelectedId){
     const active=document.activeElement;
@@ -1303,12 +1445,27 @@ TimeDialog.cancel&&TimeDialog.cancel.addEventListener('click',()=>closeTimeDialo
 TimeDialog.form&&TimeDialog.form.addEventListener('submit',e=>{e.preventDefault();submitTimeDialog()});
 for(const input of[TimeDialog.hours,TimeDialog.minutes]){if(!input)continue;input.addEventListener('input',()=>updateTimeDialogUI());input.addEventListener('blur',()=>{const state=getTimeDialogState();if(state.valid)setTimeDialogInputsFromMinutes(state.totalMinutes);updateTimeDialogUI({showValidationError:true})})}
 initTimeDialogPresets();
+ProjectDeleteDialog.overlay&&ProjectDeleteDialog.overlay.addEventListener('click',e=>{if(e.target===ProjectDeleteDialog.overlay)closeProjectDeleteDialog()});
+ProjectDeleteDialog.confirm&&ProjectDeleteDialog.confirm.addEventListener('click',async()=>{
+  const projectId=ProjectDeleteDialog.projectId;
+  const items=ProjectDeleteDialog.items.slice();
+  closeProjectDeleteDialog();
+  if(!projectId)return;
+  await finalizeProjectDelete(projectId,{items,mode:'delete'});
+});
+ProjectDeleteDialog.detach&&ProjectDeleteDialog.detach.addEventListener('click',async()=>{
+  const projectId=ProjectDeleteDialog.projectId;
+  const items=ProjectDeleteDialog.items.slice();
+  closeProjectDeleteDialog();
+  if(!projectId)return;
+  await finalizeProjectDelete(projectId,{items,mode:'detach'});
+});
 
 function formatArchiveDateTime(ms){if(typeof ms!=='number'||!isFinite(ms)||ms<=0)return null;const date=new Date(ms);if(isNaN(date))return null;const timestamp=date.getTime();return`${formatDateDMY(timestamp)} ${formatTimeHM(timestamp)}`}
 function renderArchivedNode(node,depth,container){if(!node)return;const row=document.createElement('div');row.className='archive-task';row.dataset.id=node.id;row.dataset.depth=String(depth);if(depth>0)row.style.marginLeft=`${depth*18}px`;const status=document.createElement('div');status.className='archive-status';status.textContent='✔';const main=document.createElement('div');main.className='archive-main';const title=document.createElement('div');title.className='archive-title';title.textContent=node.title||'Без названия';main.appendChild(title);const tags=document.createElement('div');tags.className='archive-tags';if(node.due){const dueTag=document.createElement('span');dueTag.className='due-tag';if(isDueToday(node.due))dueTag.classList.add('is-today');else if(isDuePast(node.due))dueTag.classList.add('is-overdue');dueTag.textContent=formatDue(node.due);if(dueTag.textContent)tags.appendChild(dueTag)}if(node.project){const projectMeta=getProjectMeta(node.project);const projTag=document.createElement('span');projTag.className='proj-tag';const emoji=projectMeta.emoji?`${projectMeta.emoji} `:'';projTag.textContent=`${emoji}${projectMeta.title}`.trim();tags.appendChild(projTag)}if(tags.childElementCount)main.appendChild(tags);const meta=document.createElement('div');meta.className='archive-meta';const completedText=formatArchiveDateTime(node.completedAt);if(completedText)meta.appendChild(document.createTextNode(`Завершено: ${completedText}`));const archivedText=formatArchiveDateTime(node.archivedAt);if(archivedText){if(meta.textContent)meta.appendChild(document.createTextNode(' • '));meta.appendChild(document.createTextNode(`В архиве: ${archivedText}`))}if(meta.textContent)main.appendChild(meta);const actions=document.createElement('div');actions.className='archive-actions';const time=document.createElement('div');time.className='archive-time';time.textContent=formatDuration(node.timeSpent);actions.appendChild(time);const noteBtn=document.createElement('button');noteBtn.className='note-btn';noteBtn.type='button';noteBtn.textContent='📝';noteBtn.title='Открыть заметки';noteBtn.setAttribute('aria-label','Заметки задачи');noteBtn.dataset.hasNotes=node.notes&&node.notes.trim()? 'true':'false';noteBtn.onclick=e=>{e.stopPropagation();openNotesPanel(node.id,{source:'archive'})};actions.appendChild(noteBtn);const deleteBtn=document.createElement('button');deleteBtn.className='archive-delete';deleteBtn.type='button';deleteBtn.textContent='✕';deleteBtn.title='Удалить из архива';deleteBtn.setAttribute('aria-label','Удалить задачу из архива');deleteBtn.onclick=e=>{e.stopPropagation();const removed=removeArchivedTask(node.id);if(removed){ArchiveStore.write(archivedTasks);if(isServerMode())queueArchiveDelete(node.id);if(currentView==='archive')render()}};actions.appendChild(deleteBtn);row.append(status,main,actions);container.appendChild(row);if(Array.isArray(node.children)&&node.children.length){for(const child of node.children){renderArchivedNode(child,depth+1,container)}}}
 function renderArchive(container){const wrap=document.createElement('div');wrap.className='archive-container';const items=[...archivedTasks];items.sort((a,b)=>(b.archivedAt||0)-(a.archivedAt||0)||(b.completedAt||0)-(a.completedAt||0));if(!items.length){const empty=document.createElement('div');empty.className='archive-empty';empty.textContent='Архив пока пуст.';container.appendChild(empty);return}for(const item of items){renderArchivedNode(item,0,wrap)}container.appendChild(wrap)}
 
-function renderYearPlanIfVisible(){if(currentView==='year')render()}
+function renderYearPlanIfVisible(){if(currentView==='year'||currentView==='project')render()}
 function getYearPlanItems(year=yearPlanYear){return yearPlanCache.get(year)||[]}
 function findYearPlanItem(id,year=yearPlanYear){const list=getYearPlanItems(year);return list.find(item=>item&&item.id===id)||null}
 function upsertYearPlanItem(item){
@@ -1324,6 +1481,37 @@ function upsertYearPlanItem(item){
 function updateYearPlanItemTitle(id,title){const list=getYearPlanItems(yearPlanYear);const item=list.find(entry=>entry&&entry.id===id);if(!item)return;item.title=title;sortYearPlanItems(list);yearPlanCache.set(yearPlanYear,list)}
 function updateYearPlanItemRange(id,{startMonth,startDay,endMonth,endDay}){const list=getYearPlanItems(yearPlanYear);const item=list.find(entry=>entry&&entry.id===id);if(!item)return;item.startMonth=startMonth;item.startDay=startDay;item.endMonth=endMonth;item.endDay=endDay;sortYearPlanItems(list);yearPlanCache.set(yearPlanYear,list)}
 function removeYearPlanItem(id){const list=getYearPlanItems(yearPlanYear);const idx=list.findIndex(entry=>entry&&entry.id===id);if(idx===-1)return false;list.splice(idx,1);yearPlanCache.set(yearPlanYear,list);return true}
+function removeYearPlanItemFromCache(id,year){
+  const list=getYearPlanItems(year);
+  const idx=list.findIndex(entry=>entry&&entry.id===id);
+  if(idx===-1)return false;
+  list.splice(idx,1);
+  yearPlanCache.set(year,list);
+  return true;
+}
+function updateYearPlanItemInCache(id,year,patch){
+  const list=getYearPlanItems(year);
+  const item=list.find(entry=>entry&&entry.id===id);
+  if(!item)return false;
+  Object.assign(item,patch);
+  sortYearPlanItems(list);
+  yearPlanCache.set(year,list);
+  return true;
+}
+function requestYearPlanFocus(id){yearPlanFocusId=id}
+function applyYearPlanFocus(){
+  if(!yearPlanFocusId)return;
+  const id=yearPlanFocusId;
+  requestAnimationFrame(()=>{
+    if(!id)return;
+    const safe=typeof CSS!=='undefined'&&CSS.escape?CSS.escape(String(id)):String(id);
+    const el=document.querySelector(`[data-year-activity-id="${safe}"]`);
+    if(el&&typeof el.scrollIntoView==='function'){
+      yearPlanFocusId=null;
+      el.scrollIntoView({block:'center',behavior:'smooth'});
+    }
+  });
+}
 function setYearPlanSelected(id){
   if(yearPlanSelectedId===id)return;
   if(yearPlanResizeState&&yearPlanResizeState.id!==id)resetYearPlanResizeState({render:false});
@@ -1346,16 +1534,103 @@ function clearYearPlanHover(id){
   yearPlanHoverId=null;
   renderYearPlanIfVisible();
 }
-function closeYearPlanContextMenu(){YearPlanCtx.activityId=null;YearPlanCtx.el.style.display='none';YearPlanCtx.el.setAttribute('aria-hidden','true')}
+async function setYearPlanProject(id,projectId){
+  const item=findYearPlanItem(id);
+  if(!item)return;
+  const year=item.year;
+  const previous=item.projectId??null;
+  updateYearPlanItemInCache(id,year,{projectId});
+  renderYearPlanIfVisible();
+  try{
+    const updated=await yearPlanProvider.update(id,{projectId});
+    if(updated)upsertYearPlanItem(updated);
+  }catch(err){
+    toast('Не удалось назначить проект');
+    updateYearPlanItemInCache(id,year,{projectId:previous});
+    renderYearPlanIfVisible();
+  }
+}
+async function setYearPlanColor(id,color){
+  const item=findYearPlanItem(id);
+  if(!item)return;
+  const year=item.year;
+  const nextColor=normalizeYearPlanColor(color);
+  const previous=normalizeYearPlanColor(item.color);
+  if(nextColor===previous)return;
+  updateYearPlanItemInCache(id,year,{color:nextColor});
+  renderYearPlanIfVisible();
+  try{
+    const updated=await yearPlanProvider.update(id,{color:nextColor});
+    if(updated)upsertYearPlanItem(updated);
+  }catch(err){
+    toast('Не удалось изменить цвет');
+    updateYearPlanItemInCache(id,year,{color:previous});
+    renderYearPlanIfVisible();
+  }
+}
+function openYearPlanAssignSubmenu(id,anchorItem){
+  const item=findYearPlanItem(id);
+  const currentProjectId=item?item.projectId??null:null;
+  openProjectAssignSubmenu({
+    anchorItem,
+    currentProjectId,
+    onAssign:projId=>{setYearPlanProject(id,projId);closeYearPlanContextMenu()},
+    onClear:()=>{setYearPlanProject(id,null);closeYearPlanContextMenu()}
+  });
+}
+function closeYearPlanContextMenu(){YearPlanCtx.activityId=null;YearPlanCtx.el.style.display='none';YearPlanCtx.el.setAttribute('aria-hidden','true');closeAssignSubmenu()}
 function openYearPlanContextMenu(id,x,y){
   setYearPlanSelected(id);
+  closeAssignSubmenu();
   YearPlanCtx.activityId=id;
   YearPlanCtx.el.innerHTML='';
+  const item=findYearPlanItem(id);
+  if(item&&item.projectId){
+    const goToProject=document.createElement('div');
+    goToProject.className='context-item';
+    goToProject.textContent='Перейти в проект';
+    goToProject.onclick=()=>{
+      const targetProjectId=item.projectId;
+      closeYearPlanContextMenu();
+      if(targetProjectId){
+        currentView='project';
+        currentProjectId=targetProjectId;
+        render();
+      }
+    };
+    YearPlanCtx.el.appendChild(goToProject);
+  }
+  const assign=document.createElement('div');
+  assign.className='context-item';
+  assign.textContent='Назначить проект ▸';
+  assign.addEventListener('mouseenter',()=>{openYearPlanAssignSubmenu(id,assign)});
+  assign.addEventListener('mouseleave',()=>maybeCloseSubmenu());
+  YearPlanCtx.el.appendChild(assign);
   const rename=document.createElement('div');
   rename.className='context-item';
   rename.textContent='Переименовать';
   rename.onclick=()=>{closeYearPlanContextMenu();startYearPlanRename(id)};
   YearPlanCtx.el.appendChild(rename);
+  const remove=document.createElement('div');
+  remove.className='context-item';
+  remove.textContent='Удалить';
+  remove.onclick=()=>{closeYearPlanContextMenu();deleteYearPlanItem(id)};
+  YearPlanCtx.el.appendChild(remove);
+  const palette=document.createElement('div');
+  palette.className='year-plan-color-palette';
+  const currentColor=normalizeYearPlanColor(item?item.color:null);
+  for(const color of YEAR_PLAN_COLORS){
+    const swatch=document.createElement('button');
+    swatch.type='button';
+    swatch.className='year-plan-color-swatch';
+    if(color.toLowerCase()===currentColor.toLowerCase())swatch.classList.add('is-active');
+    swatch.style.background=color;
+    swatch.title='Изменить цвет';
+    swatch.setAttribute('aria-label','Изменить цвет');
+    swatch.onclick=e=>{e.stopPropagation();setYearPlanColor(id,color)};
+    palette.appendChild(swatch);
+  }
+  YearPlanCtx.el.appendChild(palette);
   YearPlanCtx.el.style.display='block';
   const mw=YearPlanCtx.el.offsetWidth;
   const mh=YearPlanCtx.el.offsetHeight;
@@ -1629,6 +1904,8 @@ function normalizeYearPlanItem(raw,year){
   const title=typeof raw.title==='string'?raw.title:'';
   const createdTs=Number.isFinite(raw.createdTs)?raw.createdTs:null;
   const updatedTs=Number.isFinite(raw.updatedTs)?raw.updatedTs:null;
+  const projectId=normalizeYearPlanProjectId(raw.projectId);
+  const color=normalizeYearPlanColor(raw.color);
   return{
     id,
     year:normalizedYear,
@@ -1639,7 +1916,9 @@ function normalizeYearPlanItem(raw,year){
     title,
     isDone:raw.isDone===true,
     createdTs,
-    updatedTs
+    updatedTs,
+    projectId,
+    color
   }
 }
 
@@ -1676,7 +1955,7 @@ async function submitYearPlanDraft(){
   yearPlanDraftSubmitting=true;
   renderYearPlanIfVisible();
   const range=getYearPlanDraftRange();
-  const payload={year:yearPlanYear,startMonth:range.startMonth,startDay:range.startDay,endMonth:range.endMonth,endDay:range.endDay,title:(yearPlanDraft.title||'').trim()||YEAR_PLAN_DEFAULT_TITLE};
+  const payload={year:yearPlanYear,startMonth:range.startMonth,startDay:range.startDay,endMonth:range.endMonth,endDay:range.endDay,title:(yearPlanDraft.title||'').trim()||YEAR_PLAN_DEFAULT_TITLE,color:normalizeYearPlanColor(yearPlanDraft.color)};
   try{
     const created=await yearPlanProvider.create(payload);
     if(created)upsertYearPlanItem(created);
@@ -1723,7 +2002,7 @@ async function submitYearPlanForm(event){
   yearPlanFormSubmitting=true;
   yearPlanFormError='';
   renderYearPlanIfVisible();
-  const payload={year:yearPlanYear,startMonth:yearPlanFormState.month,startDay:yearPlanFormState.startDay,endMonth:yearPlanFormState.month,endDay:yearPlanFormState.endDay,title:yearPlanFormState.title||''};
+  const payload={year:yearPlanYear,startMonth:yearPlanFormState.month,startDay:yearPlanFormState.startDay,endMonth:yearPlanFormState.month,endDay:yearPlanFormState.endDay,title:yearPlanFormState.title||'',color:normalizeYearPlanColor(yearPlanFormState.color)};
   try{
     const created=await yearPlanProvider.create(payload);
     if(created)upsertYearPlanItem(created);
@@ -1791,6 +2070,7 @@ function renderYearPlanActivities(monthMeta,items){
     for(const group of orderedGroups){
       const wrapper=document.createElement('div');
       wrapper.className='year-activity';
+      applyYearPlanColorStyles(wrapper,group.item.color);
       wrapper.style.top=`${(group.start-1)*YEAR_PLAN_DAY_HEIGHT}px`;
       wrapper.style.height=`${(group.end-group.start+1)*YEAR_PLAN_DAY_HEIGHT}px`;
       wrapper.style.left='0';
@@ -1897,7 +2177,15 @@ function renderYearPlanActivities(monthMeta,items){
             setTimeout(()=>{try{input.focus({preventScroll:true});input.select()}catch{input.focus();input.select()}},0);
           }
         }else{
-          title.textContent=yearPlanEditingId===group.item.id?editingValue:group.item.title||'Без названия';
+          const titleText=yearPlanEditingId===group.item.id?editingValue:group.item.title||'Без названия';
+          const projectId=group.item.projectId;
+          if(projectId){
+            const emojiSpan=document.createElement('span');
+            emojiSpan.className='year-activity-emoji';
+            emojiSpan.textContent=getProjectEmoji(projectId);
+            title.appendChild(emojiSpan);
+          }
+          title.appendChild(document.createTextNode(titleText));
         }
         label.appendChild(title);
         if(group.slice.isFirstSlice){
@@ -1917,6 +2205,8 @@ function getYearPlanDayFromEvent(event,meta){if(!meta||!meta.daysWrap)return nul
 
 function renderYearPlanMovePreview(monthMeta){
   if(!yearPlanMoveState||!yearPlanMoveState.active||!Array.isArray(monthMeta))return;
+  const item=findYearPlanItem(yearPlanMoveState.id);
+  const itemColor=item?item.color:null;
   const range=normalizeYearPlanRange(yearPlanMoveState.targetStartMonth,yearPlanMoveState.targetStartDay,yearPlanMoveState.targetEndMonth,yearPlanMoveState.targetEndDay);
   const slices=getYearPlanSlicesForRange(range);
   const rowOffset=YEAR_PLAN_ROW_GAP/2;
@@ -1927,6 +2217,7 @@ function renderYearPlanMovePreview(monthMeta){
     const end=Math.max(start,Math.min(slice.endDay,target.daysInMonth));
     const block=document.createElement('div');
     block.className='year-activity year-activity--move-preview';
+    applyYearPlanColorStyles(block,itemColor);
     block.style.top=`${(start-1)*YEAR_PLAN_DAY_HEIGHT+rowOffset}px`;
     block.style.height=`${(end-start+1)*YEAR_PLAN_DAY_HEIGHT-YEAR_PLAN_ROW_GAP}px`;
     if(slice.isFirstSlice){
@@ -2132,7 +2423,8 @@ function renderYearPlan(container){
 
   content.appendChild(grid);
   root.appendChild(content);
-  container.appendChild(root)
+  container.appendChild(root);
+  applyYearPlanFocus();
 }
 function render(){
   $$('.nav-btn').forEach(b=>b.classList.toggle('is-active',b.dataset.view===currentView));
@@ -2159,10 +2451,88 @@ function render(){
   document.body.classList.toggle('view-archive',currentView==='archive');
   document.body.classList.toggle('view-year',currentView==='year');
   const wrap=$('#tasks');wrap.innerHTML='';
+  wrap.classList.toggle('is-project-view',currentView==='project');
   if(currentView==='archive'){document.getElementById('viewTitle').textContent='Архив';renderArchive(wrap);updateWorkdayUI();return}
   if(currentView==='sprint'){document.getElementById('viewTitle').textContent='Спринт';renderSprint(wrap);syncTimerLoop();return}
   if(currentView==='year'){document.getElementById('viewTitle').textContent='План года';renderYearPlan(wrap);updateWorkdayUI();return}
-  if(currentView==='project'){const proj=projects.find(p=>p.id===currentProjectId);document.getElementById('viewTitle').textContent=proj?proj.title:'Проект';const dataList=filterTree(tasks,t=>t.project===currentProjectId);if(!dataList.length){const empty=document.createElement('div');empty.className='task';empty.innerHTML='<div></div><div class="task-title">Нет задач этого проекта.</div><div></div>';wrap.appendChild(empty);syncTimerLoop();return}for(const t of dataList){renderTaskRow(t,0,wrap)}if(pendingEditId){const rowEl=document.querySelector(`[data-id="${pendingEditId}"]`);const taskObj=findTask(pendingEditId);if(rowEl&&taskObj)startEdit(rowEl,taskObj);pendingEditId=null}syncTimerLoop();return}
+  if(currentView==='project'){
+    const proj=projects.find(p=>p.id===currentProjectId);
+    document.getElementById('viewTitle').textContent=proj?proj.title:'Проект';
+    const layout=document.createElement('div');
+    layout.className='project-layout';
+    const tasksWrap=document.createElement('div');
+    tasksWrap.className='project-tasks';
+    const yearSide=document.createElement('div');
+    yearSide.className='year-side';
+    const yearHeader=document.createElement('div');
+    yearHeader.className='year-side-header';
+    yearHeader.textContent='Год';
+    const yearList=document.createElement('div');
+    yearList.className='year-side-list';
+    yearSide.append(yearHeader,yearList);
+    layout.append(tasksWrap,yearSide);
+    wrap.appendChild(layout);
+    ensureYearPlanData(yearPlanYear);
+    const loading=yearPlanLoadingYears.has(yearPlanYear);
+    const error=yearPlanErrors.get(yearPlanYear)||'';
+    const items=(yearPlanCache.get(yearPlanYear)||[]).filter(item=>item&&item.projectId===currentProjectId);
+    items.sort((a,b)=>a.startMonth-b.startMonth||a.startDay-b.startDay||a.endMonth-b.endMonth||a.endDay-b.endDay||String(a.id).localeCompare(String(b.id)));
+    if(loading){
+      const status=document.createElement('div');
+      status.className='year-side-status';
+      status.textContent='Загрузка…';
+      yearList.appendChild(status);
+    }else if(error){
+      const status=document.createElement('div');
+      status.className='year-side-status is-error';
+      status.textContent=error;
+      yearList.appendChild(status);
+    }else if(!items.length){
+      const status=document.createElement('div');
+      status.className='year-side-status';
+      status.textContent='Нет инициатив';
+      yearList.appendChild(status);
+    }else{
+      for(const item of items){
+        const row=document.createElement('button');
+        row.type='button';
+        row.className='year-side-item';
+        const title=document.createElement('div');
+        title.className='year-side-item-title';
+        title.textContent=item.title||YEAR_PLAN_DEFAULT_TITLE;
+        const dates=document.createElement('div');
+        dates.className='year-side-item-dates';
+        dates.textContent=formatYearPlanRangeLabel(item);
+        row.append(title,dates);
+        row.onclick=()=>{
+          yearPlanYear=item.year||yearPlanYear;
+          yearPlanSelectedId=item.id;
+          requestYearPlanFocus(item.id);
+          currentView='year';
+          render();
+        };
+        yearList.appendChild(row);
+      }
+    }
+    const dataList=filterTree(tasks,t=>t.project===currentProjectId);
+    if(!dataList.length){
+      const empty=document.createElement('div');
+      empty.className='task';
+      empty.innerHTML='<div></div><div class="task-title">Нет задач этого проекта.</div><div></div>';
+      tasksWrap.appendChild(empty);
+      syncTimerLoop();
+      return;
+    }
+    for(const t of dataList){renderTaskRow(t,0,tasksWrap)}
+    if(pendingEditId){
+      const rowEl=document.querySelector(`[data-id="${pendingEditId}"]`);
+      const taskObj=findTask(pendingEditId);
+      if(rowEl&&taskObj)startEdit(rowEl,taskObj);
+      pendingEditId=null;
+    }
+    syncTimerLoop();
+    return
+  }
   document.getElementById('viewTitle').textContent=currentView==='today'?'Сегодня':'Все задачи';
   const dataList=currentView==='today'?filterTree(tasks,t=>isDueToday(t.due)):tasks;
   if(!dataList.length){const empty=document.createElement('div');empty.className='task';empty.innerHTML='<div></div><div class="task-title">Здесь пусто.</div><div></div>';wrap.appendChild(empty);syncTimerLoop();return}
@@ -2512,7 +2882,81 @@ window.addEventListener('resize',closeEmojiPicker);
 window.addEventListener('scroll',closeEmojiPicker,true);
 
 function startProjectRename(id,row){closeEmojiPicker();if(!projList)return;const p=projects.find(pr=>pr.id===id);if(!p)return;const target=row?.querySelector('.name')||[...projList.children].find(n=>n.dataset.id===id)?.querySelector('.name');if(!target)return;const input=document.createElement('input');input.className='proj-input';input.value=p.title;target.replaceWith(input);input.focus();input.select();let finished=false;const save=()=>{if(finished)return;finished=true;const v=(input.value||'').trim();if(!v){toast('Назови проект');input.focus();finished=false;return}p.title=v;ProjectsStore.write(projects);if(isServerMode())queueProjectUpdate(id,{title:v});renderProjects()};const cancel=()=>{if(finished)return;finished=true;renderProjects()};input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();save()}else if(e.key==='Escape'){e.preventDefault();cancel()}});input.addEventListener('blur',()=>{if(!finished)save()})}
-function deleteProject(id){closeEmojiPicker();const idx=projects.findIndex(p=>p.id===id);if(idx===-1)return;projects.splice(idx,1);ProjectsStore.write(projects);if(isServerMode())queueProjectDelete(id);renderProjects();toast('Проект удалён')}
+function getYearPlanItemsForProject(projectId){
+  if(!projectId)return[];
+  if(!isServerMode()){
+    const stored=readYearPlanStorage();
+    const items=[];
+    for(const entry of stored.items){
+      const item=normalizeStoredYearPlanItem(entry);
+      if(item&&item.projectId===projectId)items.push(item);
+    }
+    sortYearPlanItems(items);
+    return items;
+  }
+  const items=[];
+  for(const list of yearPlanCache.values()){
+    if(!Array.isArray(list))continue;
+    for(const item of list){
+      if(item&&item.projectId===projectId)items.push(item);
+    }
+  }
+  sortYearPlanItems(items);
+  return items;
+}
+function removeProjectById(id){
+  const idx=projects.findIndex(p=>p.id===id);
+  if(idx===-1)return;
+  projects.splice(idx,1);
+  ProjectsStore.write(projects);
+  if(isServerMode())queueProjectDelete(id);
+  renderProjects();
+  if(currentProjectId===id){
+    currentProjectId=null;
+    if(currentView==='project')currentView='all';
+  }
+  render();
+  toast('Проект удалён');
+}
+async function finalizeProjectDelete(projectId,{items,mode}={}){
+  const initiatives=Array.isArray(items)?items:[];
+  removeProjectById(projectId);
+  if(!initiatives.length)return;
+  if(mode==='delete'){
+    for(const item of initiatives){
+      try{
+        await yearPlanProvider.remove(item.id);
+        removeYearPlanItemFromCache(item.id,item.year);
+      }catch(err){
+        toast('Не удалось удалить инициативу');
+      }
+    }
+  }else if(mode==='detach'){
+    for(const item of initiatives){
+      try{
+        const updated=await yearPlanProvider.update(item.id,{projectId:null});
+        if(updated)upsertYearPlanItem(updated);
+        else updateYearPlanItemInCache(item.id,item.year,{projectId:null});
+      }catch(err){
+        toast('Не удалось отвязать инициативу');
+      }
+    }
+  }
+  renderYearPlanIfVisible();
+  render();
+}
+async function deleteProject(id){
+  closeEmojiPicker();
+  if(isServerMode()&&!yearPlanCache.has(yearPlanYear)){
+    await ensureYearPlanData(yearPlanYear);
+  }
+  const initiatives=getYearPlanItemsForProject(id);
+  if(initiatives.length){
+    openProjectDeleteDialog(id,initiatives);
+    return;
+  }
+  removeProjectById(id);
+}
 if(projAdd&&projList){projAdd.addEventListener('click',()=>{closeEmojiPicker();const placeholder=projList.firstElementChild;if(placeholder&&placeholder.classList.contains('is-empty')){placeholder.remove()}const row=document.createElement('div');row.className='proj-item';const input=document.createElement('input');input.className='proj-input';input.placeholder='Название проекта…';row.appendChild(input);if(projList.firstChild){projList.prepend(row)}else{projList.appendChild(row)}input.focus();let saved=false;const finish=save=>{if(saved)return;saved=true;const v=(input.value||'').trim();if(save){if(!v){toast('Назови проект');input.focus();saved=false;return}const project={id:uid(),title:v,emoji:null};projects.unshift(project);ProjectsStore.write(projects);if(isServerMode())queueProjectCreate(project)}renderProjects()};input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();finish(true)}else if(e.key==='Escape'){e.preventDefault();finish(false)}});input.addEventListener('blur',()=>{if(!saved)finish(true)})})}
 
 document.addEventListener('keydown',e=>{
@@ -2602,7 +3046,7 @@ function renderSprintFiltersBar(entries){
 }
 function assignProject(taskId,projId){const t=findTask(taskId);if(!t)return;t.project=projId;Store.write(tasks);if(isServerMode())queueTaskUpdate(taskId,{project:projId});render();toast('Назначено в проект: '+getProjectTitle(projId))}
 function clearProject(taskId){const t=findTask(taskId);if(!t)return;t.project=null;Store.write(tasks);if(isServerMode())queueTaskUpdate(taskId,{project:null});render()}
-function openAssignSubmenu(taskId,anchorItem){
+function openProjectAssignSubmenu({anchorItem,currentProjectId,onAssign,onClear}={}){
   closeDuePicker();
   if(!anchorItem)return;
   const sub=Ctx.sub;
@@ -2618,19 +3062,18 @@ function openAssignSubmenu(taskId,anchorItem){
       const it=document.createElement('div');
       it.className='ctx-submenu-item';
       it.textContent=`${getProjectEmoji(p.id)} ${p.title}`;
-      it.onclick=e=>{e.stopPropagation();assignProject(taskId,p.id);closeContextMenu()};
+      it.onclick=e=>{e.stopPropagation();if(typeof onAssign==='function')onAssign(p.id)};
       sub.appendChild(it);
     }
   }
-  const t=findTask(taskId);
-  if(t&&t.project){
+  if(currentProjectId){
     const sep=document.createElement('div');
     sep.style.height='6px';
     sub.appendChild(sep);
     const clr=document.createElement('div');
     clr.className='ctx-submenu-item';
     clr.textContent='Снять проект';
-    clr.onclick=e=>{e.stopPropagation();clearProject(taskId);closeContextMenu()};
+    clr.onclick=e=>{e.stopPropagation();if(typeof onClear==='function')onClear()};
     sub.appendChild(clr);
   }
   if(Ctx.submenuAnchor&&Ctx.submenuAnchor!==anchorItem){
@@ -2649,6 +3092,16 @@ function openAssignSubmenu(taskId,anchorItem){
   sub.style.left=left+'px';
   sub.style.top=top+'px';
   sub.setAttribute('aria-hidden','false');
+}
+function openAssignSubmenu(taskId,anchorItem){
+  const t=findTask(taskId);
+  const currentProjectId=t?t.project:null;
+  openProjectAssignSubmenu({
+    anchorItem,
+    currentProjectId,
+    onAssign:projId=>{assignProject(taskId,projId);closeContextMenu()},
+    onClear:()=>{clearProject(taskId);closeContextMenu()}
+  });
 }
 function closeAssignSubmenu(){
   if(Ctx.submenuAnchor){
