@@ -14,52 +14,54 @@
 </head>
 <body>
   <aside class="sidebar">
-    <div>
-      <h2>Отображения</h2>
-      <div class="nav">
-        <button class="nav-btn is-active" data-view="all">Все задачи</button>
-        <button class="nav-btn" data-view="today">Сегодня</button>
-        <button class="nav-btn" data-view="sprint">Спринт</button>
+    <div class="sidebar-content">
+      <div>
+        <h2>Отображения</h2>
+        <div class="nav">
+          <button class="nav-btn is-active" data-view="all">Все задачи</button>
+          <button class="nav-btn" data-view="today">Сегодня</button>
+          <button class="nav-btn" data-view="sprint">Спринт</button>
 
-        <div class="projects" id="projectsBlock">
-          <div class="proj-header">
-            <div class="proj-title">Проекты</div>
-            <button class="proj-add" id="projAdd" title="Добавить проект">＋</button>
+          <div class="projects" id="projectsBlock">
+            <div class="proj-header">
+              <div class="proj-title">Проекты</div>
+              <button class="proj-add" id="projAdd" title="Добавить проект">＋</button>
+            </div>
+            <div class="proj-list" id="projList"></div>
           </div>
-          <div class="proj-list" id="projList"></div>
-        </div>
 
-      </div>
-    </div>
-
-    <div class="archive-access">
-      <button type="button" class="archive-btn" id="archiveBtn">Архив</button>
-    </div>
-
-    <section class="calendar" id="calendar">
-      <div class="cal-header">
-        <button class="cal-today" id="calToday" aria-label="Текущий месяц" title="Перейти к текущему месяцу"></button>
-        <div class="cal-title" id="calTitle">Месяц ГГГГ</div>
-        <div class="cal-ctrls">
-          <button class="cal-arrow" id="calPrev" aria-label="Предыдущий месяц">‹</button>
-          <button class="cal-arrow" id="calNext" aria-label="Следующий месяц">›</button>
-          <button class="cal-collapse" id="calToggle" aria-label="Свернуть календарь" aria-pressed="false" title="Свернуть календарь">▾</button>
         </div>
       </div>
-      <div class="cal-legend">
-        <div>Wk</div><div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div>
-      </div>
-      <div class="cal-viewport">
-        <div class="cal-track" id="calTrack">
-          <div class="cal-month" id="calCurr"></div>
-          <div class="cal-month" id="calNextBuf"></div>
-        </div>
-        <div class="cal-spacer"></div>
-      </div>
-    </section>
 
-    <div class="yearplan-access">
-      <button class="nav-btn yearplan-btn" id="yearPlanNav" data-view="year">Год</button>
+      <div class="archive-access">
+        <button type="button" class="archive-btn" id="archiveBtn">Архив</button>
+      </div>
+
+      <section class="calendar" id="calendar">
+        <div class="cal-header">
+          <button class="cal-today" id="calToday" aria-label="Текущий месяц" title="Перейти к текущему месяцу"></button>
+          <div class="cal-title" id="calTitle">Месяц ГГГГ</div>
+          <div class="cal-ctrls">
+            <button class="cal-arrow" id="calPrev" aria-label="Предыдущий месяц">‹</button>
+            <button class="cal-arrow" id="calNext" aria-label="Следующий месяц">›</button>
+            <button class="cal-collapse" id="calToggle" aria-label="Свернуть календарь" aria-pressed="false" title="Свернуть календарь">▾</button>
+          </div>
+        </div>
+        <div class="cal-legend">
+          <div>Wk</div><div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div>
+        </div>
+        <div class="cal-viewport">
+          <div class="cal-track" id="calTrack">
+            <div class="cal-month" id="calCurr"></div>
+            <div class="cal-month" id="calNextBuf"></div>
+          </div>
+          <div class="cal-spacer"></div>
+        </div>
+      </section>
+
+      <div class="yearplan-access">
+        <button class="nav-btn yearplan-btn" id="yearPlanNav" data-view="year">Год</button>
+      </div>
     </div>
 
     <div class="sidebar-resizer" id="sidebarResizer" aria-hidden="true"></div>
