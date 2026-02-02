@@ -1181,7 +1181,7 @@ function setTimeUpdatePending(taskId,value){if(!taskId)return;const before=pendi
 
 function formatPresetLabel(minutes){if(minutes%60===0&&minutes>=60){const hours=minutes/60;return`+${hours}ч`}return`+${minutes} мин`}
 
-function applyInlineTimeControls(container,task){if(!container||!task)return;const disabled=!!task.timerActive||isTimeUpdatePending(task.id);container.classList.toggle('is-disabled',disabled);container.querySelectorAll('.time-preset-btn').forEach(btn=>btn.disabled=disabled);const presets=container.querySelector('.time-presets');if(presets)presets.dataset.disabled=disabled?'true':'false';const loader=container.querySelector('.time-loading');if(loader)loader.classList.toggle('is-visible',isTimeUpdatePending(task.id))}
+function applyInlineTimeControls(container,task){if(!container||!task)return;const disabled=!!task.timerActive||isTimeUpdatePending(task.id);container.classList.toggle('is-disabled',disabled);const trigger=container.querySelector('.time-preset-trigger');if(trigger){trigger.disabled=disabled;trigger.setAttribute('aria-disabled',disabled?'true':'false')}const loader=container.querySelector('.time-loading');if(loader)loader.classList.toggle('is-visible',isTimeUpdatePending(task.id))}
 
 function updateTimeControlsState(taskId){const row=getTaskRowById(taskId);const task=findTask(taskId);if(!row||!task)return;const inline=row.querySelector('.time-inline-controls');if(inline)applyInlineTimeControls(inline,task);const timerBtn=row.querySelector('.timer-btn');if(timerBtn){const disabled=isTimeUpdatePending(task.id)||(timeDialogTaskId===task.id&&isTimeDialogOpen());timerBtn.disabled=disabled}}
 
@@ -1299,6 +1299,11 @@ function renameTask(id,title){const t=findTask(id);if(!t) return;const v=String(
 function toggleCollapse(id){const t=findTask(id);if(!t) return;t.collapsed=!t.collapsed;Store.write(tasks);render()}
 
 const Ctx={el:$('#ctxMenu'),taskId:null,sub:document.getElementById('ctxSub'),submenuAnchor:null};
+const TimePresetMenu={el:document.createElement('div'),taskId:null,anchor:null};
+TimePresetMenu.el.className='context-menu time-preset-menu';
+TimePresetMenu.el.setAttribute('role','menu');
+TimePresetMenu.el.setAttribute('aria-hidden','true');
+document.body.appendChild(TimePresetMenu.el);
 const YearPlanCtx={el:document.createElement('div'),activityId:null};
 YearPlanCtx.el.className='context-menu year-plan-context-menu';
 YearPlanCtx.el.setAttribute('role','menu');
@@ -1353,8 +1358,44 @@ function closeProjectDeleteDialog(){
 }
 function submitTimeDialog(){if(!timeDialogTaskId||timeDialogSaving)return;const task=findTask(timeDialogTaskId);if(!task){closeTimeDialog();return}const state=updateTimeDialogUI({showValidationError:true});if(!state.valid){return}timeDialogSaving=true;updateTimeDialogUI({preserveError:true});setTimeDialogError('');setTimeUpdatePending(task.id,true);saveTaskTimeMinutes(task.id,state.totalMinutes,{showSuccessToast:true}).then(()=>{timeDialogDeferredTimerSyncTaskId=null;closeTimeDialog({syncDeferred:false})}).catch(()=>{setTimeDialogError('Не удалось сохранить. Проверь соединение и попробуй ещё раз.')}).finally(()=>{timeDialogSaving=false;setTimeUpdatePending(task.id,false);updateTimeDialogUI({preserveError:true});updateTimerDisplays()})}
 function initTimeDialogPresets(){if(!TimeDialog.presets)return;TimeDialog.presets.innerHTML='';for(const delta of TIME_PRESETS){const btn=document.createElement('button');btn.type='button';btn.className='time-preset-btn';btn.textContent=formatPresetLabel(delta);btn.title=`Добавить ${formatDuration(minutesToMs(delta))}`;btn.onclick=e=>{e.preventDefault();applyTimeDialogPreset(delta)};TimeDialog.presets.appendChild(btn)}}
+function openTimePresetMenu(taskId,anchor){
+  const task=findTask(taskId);
+  if(!task)return;
+  if(task.timerActive||isTimeUpdatePending(task.id))return;
+  const menu=TimePresetMenu.el;
+  if(!menu)return;
+  if(TimePresetMenu.taskId===taskId&&menu.style.display==='block'){closeTimePresetMenu();return}
+  closeContextMenu();
+  closeDuePicker();
+  TimePresetMenu.taskId=taskId;
+  TimePresetMenu.anchor=anchor||null;
+  menu.innerHTML='';
+  for(const delta of TIME_PRESETS){
+    const item=document.createElement('div');
+    item.className='context-item';
+    item.textContent=formatPresetLabel(delta);
+    item.title=`Добавить ${formatDuration(minutesToMs(delta))}`;
+    item.onclick=()=>{closeTimePresetMenu();handleInlinePreset(taskId,delta)};
+    menu.appendChild(item);
+  }
+  menu.style.display='block';
+  menu.setAttribute('aria-hidden','false');
+  const r=anchor&&anchor.getBoundingClientRect?anchor.getBoundingClientRect():{left:0,right:0,top:0,bottom:0};
+  const mw=menu.offsetWidth||160;
+  const mh=menu.offsetHeight||120;
+  let px=Math.min(r.left,window.innerWidth-mw-8);
+  let py=r.bottom+6;
+  if(py+mh>window.innerHeight-8)py=Math.max(8,r.top-mh-6);
+  menu.style.left=px+'px';
+  menu.style.top=py+'px';
+}
+function closeTimePresetMenu(){
+  TimePresetMenu.taskId=null;
+  TimePresetMenu.anchor=null;
+  if(TimePresetMenu.el){TimePresetMenu.el.style.display='none';TimePresetMenu.el.setAttribute('aria-hidden','true')}
+}
 function openContextMenu(taskId,x,y){
-  Ctx.taskId=taskId;const menu=Ctx.el;menu.innerHTML='';closeAssignSubmenu();closeDuePicker();
+  Ctx.taskId=taskId;const menu=Ctx.el;menu.innerHTML='';closeAssignSubmenu();closeDuePicker();closeTimePresetMenu();
   const btnEdit=document.createElement('div');btnEdit.className='context-item';btnEdit.textContent='Редактировать';
   btnEdit.onclick=()=>{closeContextMenu();const row=document.querySelector(`.task[data-id="${taskId}"]`);const t=findTask(taskId);if(!t)return;if(row)startEdit(row,t);else{const next=prompt('Название задачи',t.title||'');if(next!==null)renameTask(taskId,next)}};
   const btnComplete=document.createElement('div');btnComplete.className='context-item';btnComplete.textContent='Отметить выполненной';
@@ -1381,11 +1422,18 @@ window.addEventListener('click',e=>{
     if(anchor&&anchor.contains(e.target))return;
   }
   if(!Ctx.el.contains(e.target)&&!Ctx.sub.contains(e.target))closeContextMenu();
+  if(TimePresetMenu.el.style.display==='block'){
+    if(TimePresetMenu.el.contains(e.target))return;
+    const anchor=TimePresetMenu.anchor;
+    if(anchor&&anchor.contains(e.target))return;
+    closeTimePresetMenu();
+  }
   if(YearPlanCtx.el.style.display==='block'&&!YearPlanCtx.el.contains(e.target))closeYearPlanContextMenu();
 });
 window.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
     closeContextMenu();
+    closeTimePresetMenu();
     closeYearPlanContextMenu();
     closeNotesPanel();
     closeDuePicker();
@@ -1413,8 +1461,8 @@ window.addEventListener('keydown',e=>{
     deleteYearPlanItem(yearPlanSelectedId);
   }
 });
-window.addEventListener('resize',()=>{closeContextMenu();closeYearPlanContextMenu()});
-window.addEventListener('scroll',()=>{closeContextMenu();closeYearPlanContextMenu()},true);
+window.addEventListener('resize',()=>{closeContextMenu();closeTimePresetMenu();closeYearPlanContextMenu()});
+window.addEventListener('scroll',()=>{closeContextMenu();closeTimePresetMenu();closeYearPlanContextMenu()},true);
 window.addEventListener('mousemove',e=>{
   if(yearPlanMoveState){
     updateYearPlanMove(e);
@@ -2589,13 +2637,17 @@ function renderTaskRow(t,depth,container){
     timeBadge.textContent='';
     timeBadge.hidden=true;
   }
-  const presetWrap=document.createElement('div');
-  presetWrap.className='time-presets';
-  for(const delta of TIME_PRESETS){const btn=document.createElement('button');btn.type='button';btn.className='time-preset-btn';btn.textContent=formatPresetLabel(delta);btn.title=`Добавить ${formatDuration(minutesToMs(delta))}`;btn.onclick=e=>{e.stopPropagation();handleInlinePreset(t.id,delta)};presetWrap.appendChild(btn)}
+  const timePresetTrigger=document.createElement('button');
+  timePresetTrigger.type='button';
+  timePresetTrigger.className='time-preset-trigger';
+  timePresetTrigger.textContent='+';
+  timePresetTrigger.title='Добавить время';
+  timePresetTrigger.setAttribute('aria-label','Добавить время');
+  timePresetTrigger.onclick=e=>{e.stopPropagation();openTimePresetMenu(t.id,timePresetTrigger)};
   const timeLoader=document.createElement('span');timeLoader.className='time-loading';timeLoader.setAttribute('aria-hidden','true');
   const timeBox=document.createElement('div');
   timeBox.className='time-inline-controls';
-  timeBox.append(timeBadge,presetWrap,timeLoader);
+  timeBox.append(timeBadge,timePresetTrigger,timeLoader);
   applyInlineTimeControls(timeBox,t);
   const timerBtn=document.createElement('button');timerBtn.className='timer-btn task-btn--timer';timerBtn.type='button';timerBtn.dataset.active=t.timerActive?'true':'false';timerBtn.title=t.timerActive?'Остановить таймер':'Запустить таймер';timerBtn.setAttribute('aria-label','Таймер задачи');timerBtn.setAttribute('aria-pressed',t.timerActive?'true':'false');timerBtn.onclick=e=>{e.stopPropagation();toggleTaskTimer(t.id)};timerBtn.disabled=isTimeUpdatePending(t.id)||(timeDialogTaskId===t.id&&isTimeDialogOpen());
   const noteBtn=document.createElement('button');noteBtn.className='note-btn task-btn--note';noteBtn.type='button';noteBtn.setAttribute('aria-label','Заметки задачи');noteBtn.title='Открыть заметки';noteBtn.onclick=e=>{e.stopPropagation();openNotesPanel(t.id)};noteBtn.dataset.hasNotes=t.notes&&t.notes.trim()? 'true':'false';
