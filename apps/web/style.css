@@ -20,7 +20,7 @@ body.sidebar-resizing{cursor:ew-resize}
 .archive-btn:hover{background:var(--hover);border-color:var(--muted)}
 .archive-btn:active{transform:translateY(1px)}
 .archive-btn.is-active{background:var(--hover-strong);border-color:var(--text)}
-.calendar{margin-top:6px;margin-bottom:4px;border-radius:12px;overflow:hidden;width:100%;min-width:0;flex:0 0 auto}
+.calendar{margin-top:6px;margin-bottom:0;border-radius:12px;overflow:hidden;width:100%;min-width:0;flex:0 0 auto}
 .cal-header{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:6px;padding:6px 4px 8px}
 .cal-title{font-size:13px;font-weight:700;justify-self:center}
 .cal-ctrls{display:flex;align-items:center;gap:6px;justify-self:end}
@@ -46,7 +46,7 @@ body.sidebar-resizing{cursor:ew-resize}
 .calendar.is-collapsed .cal-viewport{height:calc(var(--cal-cell-size) + 8px);min-height:calc(var(--cal-cell-size) + 8px)}
 .calendar.is-collapsed .cal-week{display:none}
 .calendar.is-collapsed .cal-week.is-active{display:grid}
-.yearplan-access{margin:4px 6px 0}
+.yearplan-access{margin:0 6px 0}
 .yearplan-btn{width:100%}
 .year-plan{display:flex;flex-direction:column;gap:12px;padding:6px}
 .year-plan-header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
