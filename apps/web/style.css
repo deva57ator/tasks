@@ -31,7 +31,6 @@ body.sidebar-resizing{cursor:ew-resize}
 .cal-legend div{padding:2px 0;text-align:center}
 .cal-viewport{overflow:hidden;position:relative;height:auto;min-height:calc(5*var(--cal-cell-size) + 16px)}
 .calendar .cal-viewport{display:flex;flex-direction:column;justify-content:flex-end}
-.cal-spacer{height:8px}
 .cal-track{display:flex;transition:transform .24s ease;will-change:transform}
 .calendar .cal-track{align-items:flex-end}
 .cal-month{min-width:100%;display:flex;flex-direction:column;justify-content:flex-end}
