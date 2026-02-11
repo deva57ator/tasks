@@ -20,7 +20,7 @@ body.sidebar-resizing{cursor:ew-resize}
 .archive-btn:hover{background:var(--hover);border-color:var(--muted)}
 .archive-btn:active{transform:translateY(1px)}
 .archive-btn.is-active{background:var(--hover-strong);border-color:var(--text)}
-.calendar{margin-top:6px;margin-bottom:4px;border-radius:12px;overflow:hidden;width:100%;min-width:0;flex:0 0 auto}
+.calendar{margin-top:6px;margin-bottom:12px;border-radius:12px;overflow:hidden;width:100%;min-width:0;flex:0 0 auto}
 .cal-header{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:6px;padding:6px 4px 8px}
 .cal-title{font-size:13px;font-weight:700;justify-self:center}
 .cal-ctrls{display:flex;align-items:center;gap:6px;justify-self:end}
@@ -31,7 +31,6 @@ body.sidebar-resizing{cursor:ew-resize}
 .cal-legend div{padding:2px 0;text-align:center}
 .cal-viewport{overflow:hidden;position:relative;height:auto;min-height:calc(5*var(--cal-cell-size) + 16px)}
 .calendar .cal-viewport{display:flex;flex-direction:column;justify-content:flex-end}
-.cal-spacer{height:8px}
 .cal-track{display:flex;transition:transform .24s ease;will-change:transform}
 .calendar .cal-track{align-items:flex-end}
 .cal-month{min-width:100%;display:flex;flex-direction:column;justify-content:flex-end}
