@@ -1210,8 +1210,9 @@ function clearDragIndicators(){if(draggingTaskId){const dragEl=document.querySel
 function rowClass(t){return'task'+(selectedTaskId===t.id?' is-selected':'')+(t.done?' done':'')+(t.timerActive?' is-timer-active':'')}
 function getVisibleTaskIds(){return $$('#tasks .task[data-id]').map(el=>el.dataset.id)}
 function collectVisibleTaskMeta(list,visibleTaskIds,visibleTaskMap){if(!Array.isArray(list))return;for(const item of list){if(!item||typeof item!=='object')continue;visibleTaskIds.add(item.id);visibleTaskMap.set(item.id,item);if(Array.isArray(item.children)&&item.children.length)collectVisibleTaskMeta(item.children,visibleTaskIds,visibleTaskMap)}}
-function collectVisibleDescendantIds(task,acc){if(!task||!Array.isArray(task.children))return acc;for(const child of task.children){if(!child||!child.id)continue;acc.add(child.id);if(Array.isArray(child.children)&&child.children.length)collectVisibleDescendantIds(child,acc)}return acc}
+function collectVisibleAncestorIds(task,visibleTaskMap){const ids=[];if(!task||!visibleTaskMap)return ids;let parentId=task.parentId||null;while(parentId&&visibleTaskMap.has(parentId)){ids.push(parentId);const parentTask=visibleTaskMap.get(parentId);parentId=parentTask&&parentTask.parentId?parentTask.parentId:null}return ids}
 function collectVisibleAncestorLevels(task,visibleTaskMap){const levels=[];if(!task||!visibleTaskMap)return levels;let level=1;let parentId=task.parentId||null;while(parentId&&visibleTaskMap.has(parentId)){levels.push(level);const parentTask=visibleTaskMap.get(parentId);parentId=parentTask&&parentTask.parentId?parentTask.parentId:null;level++}return levels}
+function setInheritedHover(parentId){hoveredParentTaskId=parentId||null;const rows=$$('#tasks .task-row[data-id]');for(const row of rows){const ancestors=(row.dataset.ancestorIds||'').split(',').filter(Boolean);row.classList.toggle('is-inherited-hover',!!(hoveredParentTaskId&&ancestors.includes(hoveredParentTaskId)))}}
 function addTask(title){
   title=String(title||'').trim();
   if(!title) return;
@@ -1232,7 +1233,7 @@ function addTask(title){
   if(isServerMode())queueTaskCreate(task);
   render()
 }
-function addSubtask(parentId){const p=findTask(parentId);if(!p) return;const depth=getTaskDepth(parentId);if(depth===-1||depth>=MAX_TASK_DEPTH){toast('Максимальная вложенность — три уровня');return}const inheritedProject=typeof p.project==='undefined'?null:p.project;const inheritedDue=typeof p.due==='string'&&p.due?p.due:null;const child={id:uid(),title:'',done:false,children:[],collapsed:false,due:inheritedDue,project:inheritedProject,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:parentId};p.children.push(child);p.collapsed=false;Store.write(tasks);if(isServerMode())pendingServerCreates.add(child.id);pendingEditId=child.id;render()}
+function addSubtask(parentId){const p=findTask(parentId);if(!p) return;const depth=getTaskDepth(parentId);if(depth===-1||depth>=MAX_TASK_DEPTH){toast('Максимальная вложенность — три уровня');return}const inheritedProject=typeof p.project==='undefined'?null:p.project;const inheritedDue=typeof p.due==='string'&&p.due?p.due:null;const child={id:uid(),title:'',done:false,children:[],collapsed:false,due:inheritedDue,project:inheritedProject,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:parentId};p.children.push(child);p.collapsed=false;selectedTaskId=child.id;Store.write(tasks);if(isServerMode())pendingServerCreates.add(child.id);pendingEditId=child.id;render()}
 function toggleTask(id){const t=findTask(id);if(!t) return;const now=Date.now();const wasDone=t.done;const nextDone=!wasDone;t.done=nextDone;updateWorkdayCompletionState(t,nextDone,now);if(nextDone)stopTaskTimer(t,{silent:true});Store.write(tasks);if(isServerMode()){const payload={done:nextDone};if(nextDone&&typeof t.timeSpent==='number')payload.timeSpent=t.timeSpent;queueTaskUpdate(id,payload)}syncTimerLoop();render();handleTaskCompletionEffects(id,{completed:!wasDone&&nextDone,undone:wasDone&&!nextDone});toast(nextDone?'Отмечено как выполнено':'Снята отметка выполнения')}
 function markTaskDone(id){const t=findTask(id);if(!t)return;if(t.done){toast('Задача уже выполнена');return}const now=Date.now();t.done=true;updateWorkdayCompletionState(t,true,now);stopTaskTimer(t,{silent:true});Store.write(tasks);if(isServerMode()){const payload={done:true};if(typeof t.timeSpent==='number')payload.timeSpent=t.timeSpent;queueTaskUpdate(id,payload)}syncTimerLoop();render();handleTaskCompletionEffects(id,{completed:true});toast('Отмечено как выполнено')}
 function cloneTaskForArchive(task,{archivedAt,completedLookup,children=[]}){
@@ -2587,8 +2588,7 @@ function render(){
     const visibleTaskIds=new Set();
     const visibleTaskMap=new Map();
     collectVisibleTaskMeta(dataList,visibleTaskIds,visibleTaskMap);
-    const hoveredDescendantIds=hoveredParentTaskId&&visibleTaskMap.has(hoveredParentTaskId)?collectVisibleDescendantIds(visibleTaskMap.get(hoveredParentTaskId),new Set()):new Set();
-    const renderContext={visibleTaskIds,visibleTaskMap,hoveredDescendantIds};
+    const renderContext={visibleTaskIds,visibleTaskMap};
     if(!dataList.length){
       const empty=document.createElement('div');
       empty.className='task';
@@ -2604,6 +2604,7 @@ function render(){
       if(rowEl&&taskObj)startEdit(rowEl,taskObj);
       pendingEditId=null;
     }
+    if(hoveredParentTaskId)setInheritedHover(hoveredParentTaskId);
     syncTimerLoop();
     return
   }
@@ -2612,26 +2613,27 @@ function render(){
   const visibleTaskIds=new Set();
   const visibleTaskMap=new Map();
   collectVisibleTaskMeta(dataList,visibleTaskIds,visibleTaskMap);
-  const hoveredDescendantIds=hoveredParentTaskId&&visibleTaskMap.has(hoveredParentTaskId)?collectVisibleDescendantIds(visibleTaskMap.get(hoveredParentTaskId),new Set()):new Set();
-  const renderContext={visibleTaskIds,visibleTaskMap,hoveredDescendantIds};
+  const renderContext={visibleTaskIds,visibleTaskMap};
   if(!dataList.length){const empty=document.createElement('div');empty.className='task';empty.innerHTML='<div></div><div class="task-title">Здесь пусто.</div><div></div>';wrap.appendChild(empty);syncTimerLoop();return}
   for(const t of dataList){renderTaskRow(t,0,wrap,renderContext)}
   if(pendingEditId){const rowEl=document.querySelector(`[data-id="${pendingEditId}"]`);const taskObj=findTask(pendingEditId);if(rowEl&&taskObj)startEdit(rowEl,taskObj);pendingEditId=null}
+  if(hoveredParentTaskId)setInheritedHover(hoveredParentTaskId);
   syncTimerLoop();
   updateWorkdayUI()
 }
 
-function renderTaskRow(t,depth,container,renderContext={visibleTaskIds:new Set(),visibleTaskMap:new Map(),hoveredDescendantIds:new Set()}){
+function renderTaskRow(t,depth,container,renderContext={visibleTaskIds:new Set(),visibleTaskMap:new Map()}){
   const canAcceptChildren=depth<MAX_TASK_DEPTH;
   const childList=Array.isArray(t.children)?t.children:[];
   const hasChildren=canAcceptChildren&&childList.length>0;
   const parentId=t.parentId||null;
   const hasVisibleParent=!!(parentId&&renderContext.visibleTaskIds.has(parentId));
   const visibleAncestorLevels=collectVisibleAncestorLevels(t,renderContext.visibleTaskMap);
-  const isHoveredDescendant=renderContext.hoveredDescendantIds.has(t.id);
+  const visibleAncestorIds=collectVisibleAncestorIds(t,renderContext.visibleTaskMap);
   const row=document.createElement('div');row.className=rowClass(t);row.dataset.id=t.id;row.dataset.depth=depth;row.classList.add('task-row');
   row.dataset.taskId=t.id;
   row.dataset.level=String(depth);
+  row.dataset.ancestorIds=visibleAncestorIds.join(',');
   if(parentId)row.dataset.parentId=parentId;
   if(hasVisibleParent){row.classList.add('has-visible-parent');row.dataset.hasVisibleParent='true'}
   if(visibleAncestorLevels.length){
@@ -2645,9 +2647,9 @@ function renderTaskRow(t,depth,container,renderContext={visibleTaskIds:new Set()
     }
     row.appendChild(guides);
   }
-  if(isHoveredDescendant)row.classList.add('is-inherited-hover');
-  row.addEventListener('mouseenter',()=>{if(hoveredParentTaskId===t.id)return;hoveredParentTaskId=t.id;render()});
-  row.addEventListener('mouseleave',()=>{if(hoveredParentTaskId!==t.id)return;hoveredParentTaskId=null;render()});
+  if(hoveredParentTaskId&&visibleAncestorIds.includes(hoveredParentTaskId))row.classList.add('is-inherited-hover');
+  row.addEventListener('mouseenter',()=>{if(hoveredParentTaskId===t.id)return;setInheritedHover(t.id)});
+  row.addEventListener('mouseleave',()=>{if(hoveredParentTaskId!==t.id)return;setInheritedHover(null)});
   row.setAttribute('draggable','true');
   row.addEventListener('dragstart',e=>{draggingTaskId=t.id;row.classList.add('is-dragging');try{e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',t.id)}catch{}closeContextMenu()});
   row.addEventListener('dragend',()=>{clearDragIndicators()});
@@ -2697,6 +2699,13 @@ function renderTaskRow(t,depth,container,renderContext={visibleTaskIds:new Set()
   row.addEventListener('click',()=>{
     if(activeEditId&&activeEditId!==t.id){const v=(activeInputEl?.value||'').trim();if(!v){toast('Напиши, что нужно сделать');activeInputEl&&activeInputEl.focus();return}const id=activeEditId;activeEditId=null;activeInputEl=null;selectedTaskId=t.id;renameTask(id,v);return}
     selectedTaskId=t.id;render()
+  });
+  row.addEventListener('dblclick',e=>{
+    const target=e.target&&typeof e.target.closest==='function'?e.target:null;
+    if(target&&(target.closest('.task-checkbox')||target.closest('.task-actions')||target.closest('.delete-btn')))return;
+    e.stopPropagation();
+    selectedTaskId=t.id;
+    startEdit(row,t);
   });
   container.appendChild(row);
   if(hasChildren){row.classList.add('has-children');const subWrap=document.createElement('div');subWrap.className='subtasks';const inner=document.createElement('div');inner.className='subtasks-inner';for(const c of childList){renderTaskRow(c,depth+1,inner,renderContext)}subWrap.appendChild(inner);container.appendChild(subWrap)}
