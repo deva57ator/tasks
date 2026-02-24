@@ -174,6 +174,7 @@ const yearPlanPendingDeletes=new Set();
 let yearPlanFocusId=null;
 let activeEditId=null;
 let activeInputEl=null;
+let hoveredParentTaskId=null;
 let projects=ProjectsStore.read();
 if(!Array.isArray(projects))projects=[];
 let activeTimersState=ActiveTimersStore.read({mode:storageMode});
@@ -1208,6 +1209,9 @@ function setDropTarget(id){if(dropTargetId===id||dropTargetId===null&&id===null)
 function clearDragIndicators(){if(draggingTaskId){const dragEl=document.querySelector(`.task[data-id="${draggingTaskId}"]`);dragEl&&dragEl.classList.remove('is-dragging')}setDropTarget(null);draggingTaskId=null}
 function rowClass(t){return'task'+(selectedTaskId===t.id?' is-selected':'')+(t.done?' done':'')+(t.timerActive?' is-timer-active':'')}
 function getVisibleTaskIds(){return $$('#tasks .task[data-id]').map(el=>el.dataset.id)}
+function collectVisibleTaskMeta(list,visibleTaskIds,visibleTaskMap){if(!Array.isArray(list))return;for(const item of list){if(!item||typeof item!=='object')continue;visibleTaskIds.add(item.id);visibleTaskMap.set(item.id,item);if(Array.isArray(item.children)&&item.children.length)collectVisibleTaskMeta(item.children,visibleTaskIds,visibleTaskMap)}}
+function collectVisibleDescendantIds(task,acc){if(!task||!Array.isArray(task.children))return acc;for(const child of task.children){if(!child||!child.id)continue;acc.add(child.id);if(Array.isArray(child.children)&&child.children.length)collectVisibleDescendantIds(child,acc)}return acc}
+function collectVisibleAncestorLevels(task,visibleTaskMap){const levels=[];if(!task||!visibleTaskMap)return levels;let level=1;let parentId=task.parentId||null;while(parentId&&visibleTaskMap.has(parentId)){levels.push(level);const parentTask=visibleTaskMap.get(parentId);parentId=parentTask&&parentTask.parentId?parentTask.parentId:null;level++}return levels}
 function addTask(title){
   title=String(title||'').trim();
   if(!title) return;
@@ -2580,6 +2584,11 @@ function render(){
       }
     }
     const dataList=filterTree(tasks,t=>t.project===currentProjectId);
+    const visibleTaskIds=new Set();
+    const visibleTaskMap=new Map();
+    collectVisibleTaskMeta(dataList,visibleTaskIds,visibleTaskMap);
+    const hoveredDescendantIds=hoveredParentTaskId&&visibleTaskMap.has(hoveredParentTaskId)?collectVisibleDescendantIds(visibleTaskMap.get(hoveredParentTaskId),new Set()):new Set();
+    const renderContext={visibleTaskIds,visibleTaskMap,hoveredDescendantIds};
     if(!dataList.length){
       const empty=document.createElement('div');
       empty.className='task';
@@ -2588,7 +2597,7 @@ function render(){
       syncTimerLoop();
       return;
     }
-    for(const t of dataList){renderTaskRow(t,0,tasksWrap)}
+    for(const t of dataList){renderTaskRow(t,0,tasksWrap,renderContext)}
     if(pendingEditId){
       const rowEl=document.querySelector(`[data-id="${pendingEditId}"]`);
       const taskObj=findTask(pendingEditId);
@@ -2600,18 +2609,45 @@ function render(){
   }
   document.getElementById('viewTitle').textContent=currentView==='today'?'Сегодня':'Все задачи';
   const dataList=currentView==='today'?filterTree(tasks,t=>isDueToday(t.due)):tasks;
+  const visibleTaskIds=new Set();
+  const visibleTaskMap=new Map();
+  collectVisibleTaskMeta(dataList,visibleTaskIds,visibleTaskMap);
+  const hoveredDescendantIds=hoveredParentTaskId&&visibleTaskMap.has(hoveredParentTaskId)?collectVisibleDescendantIds(visibleTaskMap.get(hoveredParentTaskId),new Set()):new Set();
+  const renderContext={visibleTaskIds,visibleTaskMap,hoveredDescendantIds};
   if(!dataList.length){const empty=document.createElement('div');empty.className='task';empty.innerHTML='<div></div><div class="task-title">Здесь пусто.</div><div></div>';wrap.appendChild(empty);syncTimerLoop();return}
-  for(const t of dataList){renderTaskRow(t,0,wrap)}
+  for(const t of dataList){renderTaskRow(t,0,wrap,renderContext)}
   if(pendingEditId){const rowEl=document.querySelector(`[data-id="${pendingEditId}"]`);const taskObj=findTask(pendingEditId);if(rowEl&&taskObj)startEdit(rowEl,taskObj);pendingEditId=null}
   syncTimerLoop();
   updateWorkdayUI()
 }
 
-function renderTaskRow(t,depth,container){
+function renderTaskRow(t,depth,container,renderContext={visibleTaskIds:new Set(),visibleTaskMap:new Map(),hoveredDescendantIds:new Set()}){
   const canAcceptChildren=depth<MAX_TASK_DEPTH;
   const childList=Array.isArray(t.children)?t.children:[];
   const hasChildren=canAcceptChildren&&childList.length>0;
+  const parentId=t.parentId||null;
+  const hasVisibleParent=!!(parentId&&renderContext.visibleTaskIds.has(parentId));
+  const visibleAncestorLevels=collectVisibleAncestorLevels(t,renderContext.visibleTaskMap);
+  const isHoveredDescendant=renderContext.hoveredDescendantIds.has(t.id);
   const row=document.createElement('div');row.className=rowClass(t);row.dataset.id=t.id;row.dataset.depth=depth;row.classList.add('task-row');
+  row.dataset.taskId=t.id;
+  row.dataset.level=String(depth);
+  if(parentId)row.dataset.parentId=parentId;
+  if(hasVisibleParent){row.classList.add('has-visible-parent');row.dataset.hasVisibleParent='true'}
+  if(visibleAncestorLevels.length){
+    const guides=document.createElement('div');
+    guides.className='task-inheritance-guides';
+    for(const level of visibleAncestorLevels){
+      const line=document.createElement('span');
+      line.className='task-inheritance-line';
+      line.style.left=`${-14-((level-1)*28)}px`;
+      guides.appendChild(line);
+    }
+    row.appendChild(guides);
+  }
+  if(isHoveredDescendant)row.classList.add('is-inherited-hover');
+  row.addEventListener('mouseenter',()=>{if(hoveredParentTaskId===t.id)return;hoveredParentTaskId=t.id;render()});
+  row.addEventListener('mouseleave',()=>{if(hoveredParentTaskId!==t.id)return;hoveredParentTaskId=null;render()});
   row.setAttribute('draggable','true');
   row.addEventListener('dragstart',e=>{draggingTaskId=t.id;row.classList.add('is-dragging');try{e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',t.id)}catch{}closeContextMenu()});
   row.addEventListener('dragend',()=>{clearDragIndicators()});
@@ -2663,7 +2699,7 @@ function renderTaskRow(t,depth,container){
     selectedTaskId=t.id;render()
   });
   container.appendChild(row);
-  if(hasChildren){row.classList.add('has-children');const subWrap=document.createElement('div');subWrap.className='subtasks';const inner=document.createElement('div');inner.className='subtasks-inner';for(const c of childList){renderTaskRow(c,depth+1,inner)}subWrap.appendChild(inner);container.appendChild(subWrap)}
+  if(hasChildren){row.classList.add('has-children');const subWrap=document.createElement('div');subWrap.className='subtasks';const inner=document.createElement('div');inner.className='subtasks-inner';for(const c of childList){renderTaskRow(c,depth+1,inner,renderContext)}subWrap.appendChild(inner);container.appendChild(subWrap)}
 }
 
 function startEdit(row,t){
