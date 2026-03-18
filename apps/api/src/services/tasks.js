@@ -61,6 +61,26 @@ function normalizeProjectId(raw) {
   return null;
 }
 
+function toAstronomicalDayStartIso(value) {
+  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  date.setHours(0, 0, 0, 0);
+  return date.toISOString();
+}
+
+function isDueBeforeDay(task, dayStartTs) {
+  if (!task || task.done || !task.due) {
+    return false;
+  }
+  const dueTs = Date.parse(task.due);
+  if (Number.isNaN(dueTs)) {
+    return false;
+  }
+  return dueTs < dayStartTs;
+}
+
 async function list(filters = {}, options = {}) {
   const rows = await fetchAllRows();
   const { roots } = buildTaskTree(rows);
@@ -205,6 +225,51 @@ async function archiveAndRemove(ids) {
   return { payloads, removed: Array.from(removeIds) };
 }
 
+async function rescheduleOverduePendingTasks(targetDate = new Date()) {
+  const targetDue = toAstronomicalDayStartIso(targetDate);
+  if (!targetDue) {
+    return { updatedIds: [], due: null };
+  }
+
+  const dayStartTs = Date.parse(targetDue);
+  const rows = await fetchAllRows();
+  const overdue = rows.filter((row) => isDueBeforeDay(row, dayStartTs));
+  if (!overdue.length) {
+    return { updatedIds: [], due: targetDue };
+  }
+
+  const timestamp = nowIso();
+  await db.transaction(async (tx) => {
+    for (const row of overdue) {
+      tx.run('UPDATE tasks SET due = ?, updatedAt = ? WHERE id = ?', [targetDue, timestamp, row.id]);
+    }
+  });
+
+  return {
+    updatedIds: overdue.map((row) => row.id),
+    due: targetDue
+  };
+}
+
+async function collectDoneTaskRootIds() {
+  const rows = await fetchAllRows();
+  const { map } = buildTaskTree(rows);
+  const rootIds = [];
+
+  for (const task of map.values()) {
+    if (!task.done) {
+      continue;
+    }
+    const parent = task.parentId ? map.get(task.parentId) : null;
+    if (parent && parent.done) {
+      continue;
+    }
+    rootIds.push(task.id);
+  }
+
+  return rootIds;
+}
+
 module.exports = {
   list,
   getById,
@@ -214,5 +279,8 @@ module.exports = {
   removeMany,
   importMany,
   selectSubtree,
-  archiveAndRemove
+  archiveAndRemove,
+  rescheduleOverduePendingTasks,
+  collectDoneTaskRootIds,
+  toAstronomicalDayStartIso
 };

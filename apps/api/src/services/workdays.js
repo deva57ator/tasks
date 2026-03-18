@@ -1,4 +1,6 @@
 const db = require('../db/client');
+const tasks = require('./tasks');
+const archive = require('./archive');
 const { nowIso } = require('../lib/time');
 const logger = require('../lib/logger');
 
@@ -288,11 +290,12 @@ async function computeFinalStats(row, options = {}) {
     return null;
   }
   const manual = extractManualStats(payload);
-  const closedManually = options.closedManually === true || payload.closedManually === true;
+  const closedManually = options.closedManually === true;
+  const hasManualSnapshot = manual.timeMs > 0 || manual.doneCount > 0;
   let summaryTimeMs = manual.timeMs;
   let summaryDone = manual.doneCount;
 
-  if (!closedManually) {
+  if (!closedManually || !hasManualSnapshot) {
     const delta = await computeWorkdayDelta(payload);
     const deltaTime = Math.max(0, coerceNumber(delta.timeMs));
     const deltaDone = Math.max(0, Math.round(coerceNumber(delta.doneCount)));
@@ -358,6 +361,37 @@ async function finalizeWorkdayRow(row, closedAtValue, options = {}) {
   );
 }
 
+async function runAutoDayCloseMaintenance(nowTs = Date.now()) {
+  const archivedAt = nowIso();
+  const archivedPayloads = [];
+  const archivedIds = await tasks.collectDoneTaskRootIds();
+
+  if (archivedIds.length) {
+    const snapshot = await tasks.archiveAndRemove(archivedIds);
+    for (const item of snapshot.payloads) {
+      const payload = applyArchivedAt(item, archivedAt);
+      archivedPayloads.push(payload);
+      await archive.insert({ id: payload.id, payload, archivedAt });
+    }
+  }
+
+  const overdue = await tasks.rescheduleOverduePendingTasks(nowTs);
+
+  return {
+    archivedIds: archivedPayloads.map((item) => item.id),
+    rescheduledIds: overdue.updatedIds,
+    rescheduledDue: overdue.due
+  };
+}
+
+function applyArchivedAt(node, archivedAt) {
+  return {
+    ...node,
+    archivedAt,
+    children: Array.isArray(node.children) ? node.children.map((child) => applyArchivedAt(child, archivedAt)) : []
+  };
+}
+
 async function finalizeExpiredWorkdays(nowTs = Date.now()) {
   const staleRows = await db.all(
     'SELECT * FROM workdays WHERE closedAt IS NULL AND endTs IS NOT NULL AND endTs <= ?',
@@ -375,8 +409,9 @@ async function finalizeExpiredWorkdays(nowTs = Date.now()) {
     closedIds.push(row.id);
   }
 
+  const maintenance = await runAutoDayCloseMaintenance(nowTs);
   const backlogOpenDays = await countBacklogOpenDays(nowTs);
-  logger.info('workdays.finalizeExpired', { closedIds, backlogOpenDays });
+  logger.info('workdays.finalizeExpired', { closedIds, backlogOpenDays, ...maintenance });
 }
 
 async function countBacklogOpenDays(nowTs = Date.now()) {
