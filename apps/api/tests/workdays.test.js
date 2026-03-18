@@ -621,3 +621,76 @@ test('task listing accepts numeric project identifiers', async () => {
   assert.equal(flat.length, 1);
   assert.equal(flat[0].id, matching.id);
 });
+
+
+test('automatic close moves overdue pending tasks to current astronomical day', async () => {
+  const now = new Date('2026-03-18T03:05:00.000Z').getTime();
+  const realNow = Date.now;
+  Date.now = () => now;
+
+  try {
+    const overdue = await tasks.create({ title: 'Overdue', due: '2026-03-17T00:00:00.000Z' });
+    const today = await tasks.create({ title: 'Already today', due: '2026-03-18T00:00:00.000Z' });
+    await tasks.create({ title: 'Done overdue', due: '2026-03-17T00:00:00.000Z', done: true });
+
+    await workdays.upsert({
+      id: 'day-rollover',
+      startTs: now - 10 * 3600000,
+      endTs: now - 5 * 60 * 1000,
+      summaryTimeMs: 0,
+      summaryDone: 0,
+      payload: { id: 'day-rollover', baseline: {}, completed: {}, manualClosedStats: { timeMs: 0, doneCount: 0 }, closedManually: false },
+      closedAt: null
+    });
+
+    await workdays.getCurrent();
+
+    const overdueTask = await tasks.getById(overdue.id);
+    const todayTask = await tasks.getById(today.id);
+    assert.ok(overdueTask);
+    assert.equal(overdueTask.due, '2026-03-18T00:00:00.000Z');
+    assert.ok(todayTask);
+    assert.equal(todayTask.due, '2026-03-18T00:00:00.000Z');
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test('automatic close archives completed tasks and removes them from active list', async () => {
+  const now = new Date('2026-03-18T03:10:00.000Z').getTime();
+  const realNow = Date.now;
+  Date.now = () => now;
+
+  try {
+    const root = await tasks.create({ title: 'Done root', done: true });
+    const child = await tasks.create({ title: 'Done child', parentId: root.id, done: true });
+    const active = await tasks.create({ title: 'Active task', done: false });
+
+    await workdays.upsert({
+      id: 'day-archive-auto',
+      startTs: now - 8 * 3600000,
+      endTs: now - 60 * 1000,
+      summaryTimeMs: 0,
+      summaryDone: 0,
+      payload: { id: 'day-archive-auto', baseline: {}, completed: {}, manualClosedStats: { timeMs: 0, doneCount: 0 }, closedManually: false },
+      closedAt: null
+    });
+
+    await workdays.getCurrent();
+
+    assert.equal(await tasks.getById(root.id), null);
+    assert.equal(await tasks.getById(child.id), null);
+    assert.ok(await tasks.getById(active.id));
+
+    const archived = await db.all('SELECT id, payload FROM archive ORDER BY archivedAt DESC');
+    assert.equal(archived.length, 1);
+    assert.equal(archived[0].id, root.id);
+    const payload = JSON.parse(archived[0].payload);
+    assert.equal(payload.id, root.id);
+    assert.equal(payload.children.length, 1);
+    assert.equal(payload.children[0].id, child.id);
+    assert.ok(payload.archivedAt);
+  } finally {
+    Date.now = realNow;
+  }
+});
