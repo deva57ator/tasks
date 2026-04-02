@@ -1,9 +1,7 @@
+import { STORAGE_MODES, API_PREFIX, API_BASE, api, API_ENV_LABEL, MIN_TASK_MINUTES, MAX_TASK_MINUTES, MAX_TASK_TIME_MS, TIME_PRESETS, WORKDAY_REFRESH_INTERVAL, TIME_UPDATE_INTERVAL, MAX_TASK_DEPTH, MONTH_NAMES, DEFAULT_PROJECT_EMOJI, SPRINT_UNASSIGNED_KEY, YEAR_PLAN_MAX_DAYS, YEAR_PLAN_DAY_HEIGHT, YEAR_PLAN_DEFAULT_TITLE, YEAR_PLAN_COLUMN_GAP, YEAR_PLAN_ROW_GAP, YEAR_PLAN_MOVE_THRESHOLD, YEAR_PLAN_STORAGE_KEY, YEAR_PLAN_COLORS } from './src/config.js';
+import { $, $$, escapeAttributeValue, getTaskRowById, NON_TEXT_INPUT_TYPES, isEditableShortcutTarget, uid, isDueToday, isDuePast, filterTree, isoWeekInfo } from './src/utils.js';
+
 const StorageModeStore={key:'mini-task-tracker:storage-mode',read(){return localStorage.getItem(this.key)||'local'},write(mode){localStorage.setItem(this.key,mode)}};
-const STORAGE_MODES={LOCAL:'local',SERVER:'server'};
-const API_PREFIX=location.pathname.startsWith('/tasks-stg')?'/tasks-stg':'/tasks';
-const API_BASE=`${API_PREFIX}/api`;
-const api=path=>`${API_BASE}${path}`;
-const API_ENV_LABEL=API_PREFIX==='/tasks-stg'?'STG':'PROD';
 
 const ApiKeyStore={
   keyPrefix:'tasks_api_key:',
@@ -13,10 +11,6 @@ const ApiKeyStore={
   clear(){localStorage.removeItem(this.storageKey())}
 };
 
-const MIN_TASK_MINUTES=0;
-const MAX_TASK_MINUTES=1440;
-const MAX_TASK_TIME_MS=MAX_TASK_MINUTES*60000;
-const TIME_PRESETS=[5,15,30,45,60,120];
 
 let storageMode=StorageModeStore.read();
 if(storageMode!==STORAGE_MODES.SERVER)storageMode=STORAGE_MODES.LOCAL;
@@ -179,23 +173,7 @@ let projects=ProjectsStore.read();
 if(!Array.isArray(projects))projects=[];
 let activeTimersState=ActiveTimersStore.read({mode:storageMode});
 const pendingTimeUpdates=new Set();
-const DEFAULT_PROJECT_EMOJI='📁';
-const SPRINT_UNASSIGNED_KEY='__none__';
 let sprintVisibleProjects=new Map();
-const YEAR_PLAN_COLORS=[
-  '#3A82F6',
-  '#6C5CE7',
-  '#00B894',
-  '#0984E3',
-  '#E17055',
-  '#D63031',
-  '#FDCB6E',
-  '#00CEC9',
-  '#E84393',
-  '#636E72',
-  '#2D3436',
-  '#FAB1A0'
-];
 
 function normalizeProjectsList(list,{persist=false}={}){
   if(!Array.isArray(list))return[];
@@ -259,27 +237,9 @@ const ApiSettingsUI={
   openBtn:document.getElementById('apiSettingsBtn')
 };
 
-const WORKDAY_REFRESH_INTERVAL=60000;
-
-const $=s=>document.querySelector(s),$$=s=>Array.from(document.querySelectorAll(s));
-function escapeAttributeValue(value){return String(value).replace(/\\/g,'\\\\').replace(/"/g,'\\"');}
-function getTaskRowById(id){if(!id)return null;const safe=escapeAttributeValue(id);return document.querySelector(`.task[data-id="${safe}"]`)}
-const NON_TEXT_INPUT_TYPES=new Set(['button','submit','reset','checkbox','radio','range','color','file']);
-function isEditableShortcutTarget(target){if(!target)return false;const element=target instanceof Element?target:target.parentElement;if(!element)return false;if(element.isContentEditable)return true;const el=element.closest('input, textarea, select');if(!el)return false;if(el.tagName==='INPUT'){const type=(el.getAttribute('type')||'text').toLowerCase();return!NON_TEXT_INPUT_TYPES.has(type)}return true}
-const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
 function normalizeArchivedNode(node){if(!node||typeof node!=='object')return null;const normalized={id:typeof node.id==='string'&&node.id.trim()?node.id.trim():uid(),title:typeof node.title==='string'?node.title:'',done:true,due:typeof node.due==='string'&&node.due?node.due:null,project:typeof node.project==='string'&&node.project?node.project:null,notes:typeof node.notes==='string'?node.notes:'',timeSpent:clampTimeSpentMs(node.timeSpent),archivedAt:typeof node.archivedAt==='number'&&isFinite(node.archivedAt)?node.archivedAt:0,completedAt:typeof node.completedAt==='number'&&isFinite(node.completedAt)?node.completedAt:null,children:[]};if(Array.isArray(node.children)){const kids=[];for(const child of node.children){const normalizedChild=normalizeArchivedNode(child);if(normalizedChild)kids.push(normalizedChild)}normalized.children=kids}return normalized}
 function normalizeArchiveList(list,{persist=false}={}){if(!Array.isArray(list))return[];const normalizedArchive=[];let patched=false;for(const entry of list){const normalized=normalizeArchivedNode(entry);if(normalized){normalizedArchive.push(normalized);if(normalized!==entry)patched=true}else patched=true}if((patched||normalizedArchive.length!==list.length)&&persist){ArchiveStore.write(normalizedArchive)}return normalizedArchive}
 if(!Array.isArray(archivedTasks))archivedTasks=[];else archivedTasks=normalizeArchiveList(archivedTasks,{persist:!isServerMode()});
-const MAX_TASK_DEPTH=2;
-const MONTH_NAMES=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
-const TIME_UPDATE_INTERVAL=1000;
-const YEAR_PLAN_MAX_DAYS=31;
-const YEAR_PLAN_DAY_HEIGHT=14;
-const YEAR_PLAN_DEFAULT_TITLE='активность';
-const YEAR_PLAN_COLUMN_GAP=4;
-const YEAR_PLAN_ROW_GAP=4;
-const YEAR_PLAN_MOVE_THRESHOLD=4;
-const YEAR_PLAN_STORAGE_KEY='mini-task-tracker:yearplan:v1';
 const yearPlanCache=new Map();
 const yearPlanLoadingYears=new Set();
 const yearPlanErrors=new Map();
@@ -3252,10 +3212,6 @@ function maybeCloseSubmenu(){setTimeout(()=>{const anchor=Ctx.submenuAnchor;if(a
 
 try{console.assert(monthTitle(2025,0)==='Январь 2025');const weeks=buildMonthMatrix(2025,0,{minVisibleDays:2,maxWeeks:5});console.assert(weeks.length>=4&&weeks.length<=5);console.assert(rowClass({collapsed:false,done:false,id:'x'})==='task');const sprintSample=buildSprintData([{id:'a',title:'t',due:new Date().toISOString(),children:[]}]);console.assert(Array.isArray(sprintSample));}catch(e){console.warn('Self-tests failed:',e)}
 
-function isDueToday(iso){if(!iso)return false;const d=new Date(iso);if(isNaN(d))return false;const now=new Date();return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth()&&d.getDate()===now.getDate()}
-function isDuePast(iso){if(!iso)return false;const d=new Date(iso);if(isNaN(d))return false;if(isDueToday(iso))return false;const todayStart=new Date();todayStart.setHours(0,0,0,0);return d.getTime()<todayStart.getTime()}
-function filterTree(list,pred){const out=[];for(const t of list){const kids=t.children||[];const fk=filterTree(kids,pred);if(pred(t)||fk.length){out.push({...t,children:fk})}}return out}
-function isoWeekInfo(d){const date=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));const dayNum=(date.getUTCDay()+6)%7;date.setUTCDate(date.getUTCDate()-dayNum+3);const weekYear=date.getUTCFullYear();const firstThursday=new Date(Date.UTC(weekYear,0,4));const diff=date-firstThursday;const week=1+Math.round(diff/(7*24*3600*1000));return{week,year:weekYear}}
 function isoWeekStartDate(year,week){const simple=new Date(year,0,4);const day=(simple.getDay()+6)%7;const monday=new Date(simple);monday.setDate(simple.getDate()-day+(week-1)*7);return normalizeDate(monday)}
 function buildSprintData(list){const map=new Map();function visit(t){if(t.due){const d=new Date(t.due);if(!isNaN(d)){const wd=d.getDay();if(wd>=1&&wd<=5){const{week,year}=isoWeekInfo(d);const key=year+':'+week;if(!map.has(key))map.set(key,{week,year,startDate:isoWeekStartDate(year,week),days:{1:[],2:[],3:[],4:[],5:[]}});map.get(key).days[wd].push(t)}}}for(const c of t.children||[])visit(c)}for(const t of list)visit(t);return Array.from(map.values()).sort((a,b)=>a.year===b.year?a.week-b.week:a.year-b.year)}
 function renderSprint(container){

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"^const STORAGE_MODES\\\\|^const API_PREFIX\\\\|^const API_BASE\\\\|^const api=\\\\|^const MIN_TASK_MINUTES\\\\|^const MAX_TASK_MINUTES\\\\|^const DEFAULT_PROJECT_EMOJI\\\\|^const SPRINT_UNASSIGNED_KEY\\\\|^const YEAR_PLAN_COLORS\\\\|^const WORKDAY_REFRESH_INTERVAL\\\\|^const MAX_TASK_DEPTH\\\\|^const MONTH_NAMES\\\\|^const TIME_UPDATE_INTERVAL\\\\|^const YEAR_PLAN_MAX_DAYS\\\\|^const \\\\$=\\\\|^function escapeAttributeValue\\\\|^function getTaskRowById\\\\|^const NON_TEXT_INPUT_TYPES\\\\|^function isEditableShortcutTarget\\\\|^const uid=\\\\|^function isDueToday\\\\|^function isDuePast\\\\|^function filterTree\\\\|^function isoWeekInfo\" /home/deva57ator/Documents/repo/tasks/apps/web/main.js)"
+    ]
+  }
+}
