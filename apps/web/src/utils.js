@@ -65,6 +65,14 @@ export function filterTree(list, pred) {
   return out;
 }
 
+// Ограничение времени задачи в допустимый диапазон [0, MAX_TASK_TIME_MS]
+import { MAX_TASK_TIME_MS } from './config.js';
+export function clampTimeSpentMs(value) {
+  const ms = Number(value);
+  if (!Number.isFinite(ms)) return 0;
+  return Math.min(MAX_TASK_TIME_MS, Math.max(0, ms));
+}
+
 // ISO-неделя по дате (ISO 8601)
 export function isoWeekInfo(d) {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));

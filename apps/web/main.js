@@ -1,10 +1,7 @@
-import { STORAGE_MODES, API_PREFIX, API_BASE, api, API_ENV_LABEL, MIN_TASK_MINUTES, MAX_TASK_MINUTES, MAX_TASK_TIME_MS, TIME_PRESETS, WORKDAY_REFRESH_INTERVAL, TIME_UPDATE_INTERVAL, MAX_TASK_DEPTH, MONTH_NAMES, DEFAULT_PROJECT_EMOJI, SPRINT_UNASSIGNED_KEY, YEAR_PLAN_MAX_DAYS, YEAR_PLAN_DAY_HEIGHT, YEAR_PLAN_DEFAULT_TITLE, YEAR_PLAN_COLUMN_GAP, YEAR_PLAN_ROW_GAP, YEAR_PLAN_MOVE_THRESHOLD, YEAR_PLAN_STORAGE_KEY, YEAR_PLAN_COLORS } from './src/config.js';
+import { STORAGE_MODES, API_PREFIX, API_BASE, api, MIN_TASK_MINUTES, MAX_TASK_MINUTES, MAX_TASK_TIME_MS, TIME_PRESETS, WORKDAY_REFRESH_INTERVAL, TIME_UPDATE_INTERVAL, MAX_TASK_DEPTH, MONTH_NAMES, DEFAULT_PROJECT_EMOJI, SPRINT_UNASSIGNED_KEY, YEAR_PLAN_MAX_DAYS, YEAR_PLAN_DAY_HEIGHT, YEAR_PLAN_DEFAULT_TITLE, YEAR_PLAN_COLUMN_GAP, YEAR_PLAN_ROW_GAP, YEAR_PLAN_MOVE_THRESHOLD, YEAR_PLAN_STORAGE_KEY, YEAR_PLAN_COLORS } from './src/config.js';
 import { $, $$, escapeAttributeValue, getTaskRowById, NON_TEXT_INPUT_TYPES, isEditableShortcutTarget, uid, isDueToday, isDuePast, filterTree, isoWeekInfo } from './src/utils.js';
 import { storageMode, setStorageMode, isServerMode, StorageModeStore, ApiKeyStore, Store, ThemeStore, ProjectsStore, WorkdayStore, persistLocalWorkdayState, normalizeWorkdayState, ArchiveStore, ActiveTimersStore, registerStorageCallbacks } from './src/storage.js';
-
-let apiAuthLocked=false;
-let apiAuthMessage='';
-let apiAuthReason=null;
+import { apiAuthLocked, apiAuthMessage, apiAuthReason, resetApiAuthLock, lockApiAuth, apiRequest, handleApiError, runServerAction, queueTaskCreate, queueTaskUpdate, queueTaskDelete, flushPendingTaskUpdates, queueProjectCreate, queueProjectUpdate, queueProjectDelete, queueArchiveDelete, handleServerWorkdayWrite, flushPendingWorkdaySync, ApiSettingsUI, apiSettingsBlocking, openApiSettings, closeApiSettings, isApiSettingsOpen, toggleApiKeyVisibility, saveApiKey, clearApiKey, switchToLocalMode, registerApiCallbacks } from './src/api.js';
 
 let tasks=Store.read();
 let archivedTasks=ArchiveStore.read();
@@ -81,23 +78,6 @@ const WorkdayUI={
   closeBtn:document.getElementById('workdayDialogClose'),
   closeAction:document.getElementById('workdayDialogDone'),
   title:document.getElementById('workdayDialogTitle')
-};
-
-const ApiSettingsUI={
-  overlay:document.getElementById('apiSettingsOverlay'),
-  dialog:document.getElementById('apiSettingsDialog'),
-  closeBtn:document.getElementById('apiSettingsClose'),
-  form:document.getElementById('apiSettingsForm'),
-  input:document.getElementById('apiKeyInput'),
-  toggle:document.getElementById('apiKeyToggle'),
-  error:document.getElementById('apiSettingsError'),
-  env:document.getElementById('apiSettingsEnv'),
-  hint:document.getElementById('apiSettingsHint'),
-  message:document.getElementById('apiSettingsMessage'),
-  saveBtn:document.getElementById('apiSettingsSave'),
-  clearBtn:document.getElementById('apiKeyClear'),
-  toLocalBtn:document.getElementById('apiKeyToLocal'),
-  openBtn:document.getElementById('apiSettingsBtn')
 };
 
 function normalizeArchivedNode(node){if(!node||typeof node!=='object')return null;const normalized={id:typeof node.id==='string'&&node.id.trim()?node.id.trim():uid(),title:typeof node.title==='string'?node.title:'',done:true,due:typeof node.due==='string'&&node.due?node.due:null,project:typeof node.project==='string'&&node.project?node.project:null,notes:typeof node.notes==='string'?node.notes:'',timeSpent:clampTimeSpentMs(node.timeSpent),archivedAt:typeof node.archivedAt==='number'&&isFinite(node.archivedAt)?node.archivedAt:0,completedAt:typeof node.completedAt==='number'&&isFinite(node.completedAt)?node.completedAt:null,children:[]};if(Array.isArray(node.children)){const kids=[];for(const child of node.children){const normalizedChild=normalizeArchivedNode(child);if(normalizedChild)kids.push(normalizedChild)}normalized.children=kids}return normalized}
@@ -334,45 +314,15 @@ function removeActiveTimerState(taskId){if(!activeTimersState||typeof activeTime
 const API_DEFAULT_LIMIT=200;
 let isDataLoading=false;
 let dataInitialized=false;
-const pendingTaskUpdates=new Map();
 const pendingServerCreates=new Set();
-let pendingWorkdaySync=null;
-let workdaySyncTimer=null;
-let workdaySyncInFlight=false;
-let lastWorkdaySyncPayload=null;
-
-const API_KEY_HINT='Возьми ключ на сервере в /etc/tasks-*.env';
-let apiSettingsBlocking=false;
-
-function apiError(message,code){const err=new Error(message);if(code)err.code=code;return err}
-
-function resetApiAuthLock(){apiAuthLocked=false;apiAuthReason=null;apiAuthMessage='';}
-
-function lockApiAuth(reason,message){apiAuthLocked=true;apiAuthReason=reason||null;apiAuthMessage=message||'';openApiSettings({blocking:true,reason,message})}
-
-function ensureApiKeyAvailable(reason){if(!isServerMode())return null;if(apiAuthLocked&&apiAuthReason){lockApiAuth(apiAuthReason,apiAuthMessage);throw apiError(apiAuthMessage||'Требуется API key','auth-locked')}const key=ApiKeyStore.read();if(!key){lockApiAuth(reason||'missing','Нужен API key для доступа к API');throw apiError('API key не указан','missing-key')}return key}
-
-async function apiRequest(path,{method='GET',body}={}){const url=api(path);const init={method,headers:{}};if(body!==undefined){init.body=typeof body==='string'?body:JSON.stringify(body);init.headers['Content-Type']='application/json'}if(isServerMode()){const key=ensureApiKeyAvailable('missing');if(key)init.headers['X-API-Key']=key}if(!Object.keys(init.headers).length)delete init.headers;let response;try{response=await fetch(url,init)}catch(err){lockApiAuth('network','API недоступен');throw apiError('Нет соединения с API','network')}if(response.status===401){lockApiAuth('unauthorized','Ключ неверный или не подходит для этого окружения');throw apiError('Требуется корректный API key','unauthorized')}if(!response.ok){let message=`Ошибка API (${response.status})`;try{const errBody=await response.json();if(errBody&&errBody.error&&errBody.error.message)message=errBody.error.message}catch{}throw apiError(message,'api')}if(response.status===204)return null;const text=await response.text();if(!text)return null;try{return JSON.parse(text)}catch{return null}}
-
-function handleApiError(err,fallback){const message=err&&err.message?err.message:fallback||'Ошибка при работе с API';console.error(err);toast(message)}
-
-function runServerAction(fn,{onSuccess,onError,silent=false}={}){const promise=Promise.resolve().then(fn);promise.then(result=>{if(typeof onSuccess==='function')onSuccess(result)}).catch(err=>{if(!silent)handleApiError(err);if(typeof onError==='function')onError(err)});return promise}
-
-function clampTimeSpentMs(value){const ms=Number(value);if(!Number.isFinite(ms))return 0;return Math.min(MAX_TASK_TIME_MS,Math.max(0,ms))}
 function minutesToMs(minutes){return clampTimeSpentMs(Math.round(minutes||0)*60000)}
 function msToMinutes(ms){return Math.round(clampTimeSpentMs(ms)/60000)}
 function isMinutesWithinBounds(minutes){return Number.isFinite(minutes)&&minutes>=MIN_TASK_MINUTES&&minutes<=MAX_TASK_MINUTES}
 function normalizeMinutes(value){const minutes=Math.round(Number(value));if(!Number.isFinite(minutes))return null;return isMinutesWithinBounds(minutes)?minutes:null}
 
-function mapTaskForServer(task){return{id:task.id,title:task.title||'',done:task.done===true,due:task.due||null,project:task.project||null,notes:task.notes||'',timeSpent:clampTimeSpentMs(task.timeSpent),parentId:task.parentId||null}}
-
-function normalizeTaskPatch(patch){const payload={};if(patch.title!==undefined)payload.title=String(patch.title);if(patch.done!==undefined)payload.done=!!patch.done;if(patch.due!==undefined)payload.due=patch.due||null;if(patch.project!==undefined)payload.project=patch.project||null;if(patch.notes!==undefined)payload.notes=patch.notes||'';if(patch.timeSpent!==undefined)payload.timeSpent=clampTimeSpentMs(patch.timeSpent);if(patch.parentId!==undefined)payload.parentId=patch.parentId||null;if(patch.completedAt!==undefined)payload.completedAt=patch.completedAt;return payload}
-
 function normalizeTaskTree(list,parentId=null){if(!Array.isArray(list))return[];const normalized=[];for(const item of list){if(!item||typeof item!=='object')continue;const node={id:typeof item.id==='string'?item.id:uid(),title:typeof item.title==='string'?item.title:'',done:item.done===true,due:typeof item.due==='string'&&item.due?item.due:null,project:typeof item.project==='string'&&item.project?item.project:null,notes:typeof item.notes==='string'?item.notes:'',timeSpent:clampTimeSpentMs(item.timeSpent),parentId:parentId,children:normalizeTaskTree(item.children||[],typeof item.id==='string'?item.id:null),collapsed:item.collapsed===true,timerActive:false,timerStart:null};normalized.push(node)}return normalized}
 
 function ensureTaskParentIds(list,parentId=null){if(!Array.isArray(list))return;for(const item of list){if(!item||typeof item!=='object')continue;item.parentId=parentId;if(Array.isArray(item.children))ensureTaskParentIds(item.children,item.id)}}
-
-function normalizeProjectPayload(project){return{id:project.id,title:project.title||'',emoji:typeof project.emoji==='string'&&project.emoji.trim()?project.emoji.trim():null}}
 
 function normalizeArchivePayload(items){if(!Array.isArray(items))return[];return items.map(entry=>entry&&entry.payload?entry.payload:entry).filter(Boolean)}
 
@@ -386,8 +336,6 @@ async function loadDataFromServer({silent=false}={}){if(isDataLoading)return;if(
 
 async function refreshDataForCurrentMode(options={}){if(isServerMode())return loadDataFromServer(options);return loadDataFromLocal()}
 
-function flushPendingTaskUpdates(){for(const [id,entry]of pendingTaskUpdates.entries()){if(entry&&entry.timer)clearTimeout(entry.timer);if(entry&&entry.patch){runServerAction(()=>apiRequest(`/tasks/${encodeURIComponent(id)}`,{method:'PUT',body:entry.patch}),{silent:true,onError:()=>refreshDataForCurrentMode({silent:true})})}}pendingTaskUpdates.clear()}
-
 function collectActiveTimerTasks(list=tasks,acc=[]){if(!Array.isArray(list))return acc;for(const item of list){if(!item)continue;if(item.timerActive)acc.push(item);if(Array.isArray(item.children)&&item.children.length)collectActiveTimerTasks(item.children,acc)}return acc}
 
 function finalizeActiveTimersBeforeModeChange(mode=storageMode){const targetMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:STORAGE_MODES.LOCAL;const activeTasks=collectActiveTimerTasks();if(!activeTasks.length)return false;for(const task of activeTasks){stopTaskTimer(task,{silent:true})}Store.write(tasks);if(targetMode===STORAGE_MODES.SERVER){for(const task of activeTasks){if(task&&task.id)queueTaskUpdate(task.id,{timeSpent:task.timeSpent})}}syncTimerLoop();return true}
@@ -398,24 +346,25 @@ function handleServerTaskWrite(){afterTasksPersisted()}
 function handleServerProjectsWrite(data){if(Array.isArray(data)){projects=data}}
 function handleServerArchiveWrite(data){if(Array.isArray(data))archivedTasks=normalizeArchiveList(data,{persist:false})}
 
-// Регистрируем коллбэки для storage.js — выполняется после определения всех handleServer* функций.
-// handleServerWorkdayWrite определена ниже (в блоке workday sync), поэтому registration
-// выполняется через хелпер, который вызывается после её определения.
-function _registerStorageCallbacksOnce(){
-  registerStorageCallbacks({
-    onServerTaskWrite:handleServerTaskWrite,
-    onServerProjectsWrite:handleServerProjectsWrite,
-    onServerArchiveWrite:handleServerArchiveWrite,
-    onServerWorkdayWrite:handleServerWorkdayWrite,
-    afterTasksPersisted:afterTasksPersisted
-  });
-}
+// Регистрируем коллбэки — все зависимости являются function declaration и доступны через hoisting.
+registerStorageCallbacks({
+  onServerTaskWrite: handleServerTaskWrite,
+  onServerProjectsWrite: handleServerProjectsWrite,
+  onServerArchiveWrite: handleServerArchiveWrite,
+  onServerWorkdayWrite: handleServerWorkdayWrite,
+  afterTasksPersisted: afterTasksPersisted
+});
+registerApiCallbacks({
+  toast: toast,
+  buildWorkdayPayload: buildWorkdayPayloadForServer,
+  refreshData: refreshDataForCurrentMode,
+  setStorageModeAndReload: setStorageModeAndReload
+});
 
 function cloneWorkdayStateForTransport(state){if(!state||typeof state!=='object')return null;try{return JSON.parse(JSON.stringify(state))}catch{return{...state}}}
 
 function buildWorkdayPayloadForServer(state){if(!state||!state.id)return null;const summary=computeAggregatedWorkdayStats(Date.now(),{persist:false,allowBaselineUpdate:false})||{timeMs:0,doneCount:0};const payloadState=cloneWorkdayStateForTransport(state);if(!payloadState)return null;return{id:state.id,startTs:typeof state.start==='number'&&isFinite(state.start)?state.start:null,endTs:typeof state.end==='number'&&isFinite(state.end)?state.end:null,summaryTimeMs:Math.max(0,Number(summary.timeMs)||0),summaryDone:Math.max(0,Number(summary.doneCount)||0),payload:payloadState,closedAt:typeof state.closedAt==='number'&&isFinite(state.closedAt)?state.closedAt:null}}
 
-function stringifyWorkdayPayload(payload){try{return JSON.stringify(payload)}catch{return null}}
 
 function hydrateWorkdayStateFromServer(record){
   if(!record){
@@ -583,31 +532,6 @@ function ensureWorkdayInteractionGuards(){
   document.addEventListener('click',handleClosedWorkdayClick,true);
   document.addEventListener('keydown',handleClosedWorkdayKey,true);
 }
-
-function scheduleWorkdaySync(delay=400){if(workdaySyncTimer)clearTimeout(workdaySyncTimer);workdaySyncTimer=setTimeout(()=>{workdaySyncTimer=null;if(workdaySyncInFlight){scheduleWorkdaySync(delay);return}sendPendingWorkdaySync()},delay)}
-
-function sendPendingWorkdaySync(){if(workdaySyncInFlight||!pendingWorkdaySync)return;const entry=pendingWorkdaySync;workdaySyncInFlight=true;runServerAction(()=>apiRequest('/workday/sync',{method:'POST',body:{workday:entry.payload}}),{silent:true,onSuccess:()=>{if(pendingWorkdaySync===entry)pendingWorkdaySync=null;lastWorkdaySyncPayload=entry.serialized;workdaySyncInFlight=false;if(pendingWorkdaySync){scheduleWorkdaySync(150)}},onError:()=>{workdaySyncInFlight=false;if(pendingWorkdaySync){scheduleWorkdaySync(2000)}else{lastWorkdaySyncPayload=null}}})}
-
-function flushPendingWorkdaySync(){if(workdaySyncTimer){clearTimeout(workdaySyncTimer);workdaySyncTimer=null}if(workdaySyncInFlight)return;sendPendingWorkdaySync()}
-
-function resetWorkdaySyncState(){if(workdaySyncTimer){clearTimeout(workdaySyncTimer);workdaySyncTimer=null}pendingWorkdaySync=null;workdaySyncInFlight=false;lastWorkdaySyncPayload=null}
-
-function handleServerWorkdayWrite(state){if(!isServerMode())return;if(!state||!state.id){resetWorkdaySyncState();return}const payload=buildWorkdayPayloadForServer(state);if(!payload)return;const serialized=stringifyWorkdayPayload(payload);if(!serialized)return;if(serialized===lastWorkdaySyncPayload&&!pendingWorkdaySync)return;if(pendingWorkdaySync&&pendingWorkdaySync.serialized===serialized)return;pendingWorkdaySync={payload,serialized};if(!workdaySyncInFlight){scheduleWorkdaySync()}}
-_registerStorageCallbacksOnce();
-
-function queueTaskCreate(task){if(!isServerMode())return;const payload=mapTaskForServer(task);runServerAction(()=>apiRequest('/tasks',{method:'POST',body:payload}),{onError:()=>refreshDataForCurrentMode({silent:true})})}
-
-function queueTaskUpdate(id,patch,{debounce=false}={}){if(!isServerMode()||!id)return;const payload=normalizeTaskPatch(patch||{});if(debounce){const entry=pendingTaskUpdates.get(id)||{patch:{},timer:null};entry.patch={...entry.patch,...payload};if(entry.timer)clearTimeout(entry.timer);entry.timer=setTimeout(()=>{pendingTaskUpdates.delete(id);runServerAction(()=>apiRequest(`/tasks/${encodeURIComponent(id)}`,{method:'PUT',body:entry.patch}),{silent:true,onError:()=>refreshDataForCurrentMode({silent:true})})},320);pendingTaskUpdates.set(id,entry);return}runServerAction(()=>apiRequest(`/tasks/${encodeURIComponent(id)}`,{method:'PUT',body:payload}),{onError:()=>refreshDataForCurrentMode({silent:true})})}
-
-function queueTaskDelete(id){if(!isServerMode()||!id)return;runServerAction(()=>apiRequest(`/tasks/${encodeURIComponent(id)}`,{method:'DELETE'}),{onError:()=>refreshDataForCurrentMode({silent:true})})}
-
-function queueProjectCreate(project){if(!isServerMode())return;const payload=normalizeProjectPayload(project);runServerAction(()=>apiRequest('/projects',{method:'POST',body:payload}),{onError:()=>refreshDataForCurrentMode({silent:true})})}
-
-function queueProjectUpdate(id,patch){if(!isServerMode()||!id)return;const payload={};if(patch.title!==undefined)payload.title=String(patch.title);if(patch.emoji!==undefined)payload.emoji=typeof patch.emoji==='string'&&patch.emoji.trim()?patch.emoji.trim():null;runServerAction(()=>apiRequest(`/projects/${encodeURIComponent(id)}`,{method:'PUT',body:payload}),{onError:()=>refreshDataForCurrentMode({silent:true})})}
-
-function queueProjectDelete(id){if(!isServerMode()||!id)return;runServerAction(()=>apiRequest(`/projects/${encodeURIComponent(id)}`,{method:'DELETE'}),{onError:()=>refreshDataForCurrentMode({silent:true})})}
-
-function queueArchiveDelete(id){if(!isServerMode()||!id)return;runServerAction(()=>apiRequest(`/archive/${encodeURIComponent(id)}`,{method:'DELETE'}),{onError:()=>refreshDataForCurrentMode({silent:true})})}
 
 const EffectsStore={key:'mini-task-tracker:effects',read(){try{return JSON.parse(localStorage.getItem(this.key))||{}}catch{return{}}},write(d){try{localStorage.setItem(this.key,JSON.stringify(d))}catch{}}};
 const DEFAULT_EFFECTS_SETTINGS={sound:true,confetti:true};
@@ -816,31 +740,7 @@ function handleTaskCompletionEffects(taskId,{completed=false,undone=false}={}){i
 
 function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('show'),1400)}
 
-function apiEnvDescription(){return`Окружение: ${API_ENV_LABEL}`}
-function setApiSettingsError(message){if(ApiSettingsUI.error)ApiSettingsUI.error.textContent=message||''}
-function setApiSettingsMessage(message){if(!ApiSettingsUI.message)return;ApiSettingsUI.message.textContent=message||'';ApiSettingsUI.message.style.display=message?'block':'none'}
-function isApiSettingsOpen(){return ApiSettingsUI.overlay&&ApiSettingsUI.overlay.classList.contains('is-open')}
-function syncApiSettingsStaticText(){if(ApiSettingsUI.env)ApiSettingsUI.env.textContent=apiEnvDescription();if(ApiSettingsUI.hint)ApiSettingsUI.hint.textContent=API_KEY_HINT}
 
-function openApiSettings({blocking=false,reason=null,message=null,resetInput=false}={}){syncApiSettingsStaticText();apiSettingsBlocking=!!blocking;const overlay=ApiSettingsUI.overlay;if(!overlay)return;const defaultMessage=reason==='unauthorized'?'Ключ неверный или не подходит для этого окружения':reason==='network'?'API недоступен':reason==='missing'?'Укажи ключ для этого окружения':'Добавь или обнови ключ для серверного режима';setApiSettingsMessage(message||defaultMessage);setApiSettingsError('');const currentValue=ApiKeyStore.read();if(ApiSettingsUI.input){ApiSettingsUI.input.value=resetInput?'':currentValue;ApiSettingsUI.input.type='password'}if(ApiSettingsUI.toggle){ApiSettingsUI.toggle.setAttribute('aria-label','Показать API key');ApiSettingsUI.toggle.setAttribute('title','Показать API key');ApiSettingsUI.toggle.classList.remove('is-active')}if(ApiSettingsUI.closeBtn)ApiSettingsUI.closeBtn.style.display=apiSettingsBlocking?'none':'block';overlay.classList.add('is-open');overlay.setAttribute('aria-hidden','false');document.body.classList.add('api-settings-open');const target=ApiSettingsUI.input||ApiSettingsUI.dialog;setTimeout(()=>{if(target){try{target.focus({preventScroll:true})}catch{try{target.focus()}catch{}}}},50)}
-
-function closeApiSettings({force=false}={}){if(!isApiSettingsOpen())return;if(apiSettingsBlocking&&!force&&isServerMode()&&!ApiKeyStore.read())return;apiSettingsBlocking=false;const overlay=ApiSettingsUI.overlay;overlay.classList.remove('is-open');overlay.setAttribute('aria-hidden','true');document.body.classList.remove('api-settings-open');setApiSettingsError('')}
-
-function toggleApiKeyVisibility(){
-  if(!ApiSettingsUI.input||!ApiSettingsUI.toggle)return;
-  const showing=ApiSettingsUI.input.type==='text';
-  ApiSettingsUI.input.type=showing?'password':'text';
-  const label=showing?'Показать API key':'Скрыть API key';
-  ApiSettingsUI.toggle.setAttribute('aria-label',label);
-  ApiSettingsUI.toggle.setAttribute('title',label);
-  ApiSettingsUI.toggle.classList.toggle('is-active',!showing)
-}
-
-async function saveApiKey(event){event&&event.preventDefault();if(!ApiSettingsUI.input)return;const value=(ApiSettingsUI.input.value||'').trim();if(!value){setApiSettingsError('Введите API key');return}ApiKeyStore.write(value);setApiSettingsError('');const reset=()=>{if(ApiSettingsUI.saveBtn)ApiSettingsUI.saveBtn.disabled=false};if(ApiSettingsUI.saveBtn)ApiSettingsUI.saveBtn.disabled=true;try{resetApiAuthLock();if(isServerMode()){await apiRequest('/tasks?limit=1')}apiSettingsBlocking=false;closeApiSettings({force:true});toast('API key сохранён');if(isServerMode())await refreshDataForCurrentMode({silent:true})}catch(err){if(err&&err.code==='unauthorized'){setApiSettingsError('Ключ неверный или не подходит для этого окружения');lockApiAuth('unauthorized','Ключ неверный или не подходит для этого окружения');return}else if(err&&err.code==='network'){setApiSettingsError('API недоступен');lockApiAuth('network','API недоступен');return}setApiSettingsError(err&&err.message?err.message:'Не удалось сохранить ключ')}finally{reset()}}
-
-function clearApiKey(){ApiKeyStore.clear();if(ApiSettingsUI.input)ApiSettingsUI.input.value='';setApiSettingsError('Ключ очищен');if(isServerMode())lockApiAuth('missing','Нужен API key для доступа к API')}
-
-async function switchToLocalMode(){await setStorageModeAndReload(STORAGE_MODES.LOCAL,{forceReload:true});apiSettingsBlocking=false;closeApiSettings({force:true});toast('Режим: localStorage')}
 function migrate(list,depth=0){const extras=[];for(const t of list){if(!Array.isArray(t.children)) t.children=[];if(typeof t.collapsed!=='boolean') t.collapsed=false;if(typeof t.done!=='boolean') t.done=false;if(!('due' in t)) t.due=null;if(!('project' in t)) t.project=null;if(typeof t.notes!=='string') t.notes='';if(typeof t.timeSpent!=='number'||!isFinite(t.timeSpent)||t.timeSpent<0)t.timeSpent=0;t.timeSpent=clampTimeSpentMs(t.timeSpent);if(typeof t.timerActive!=='boolean')t.timerActive=false;if(typeof t.timerStart!=='number'||!isFinite(t.timerStart))t.timerStart=null;if(t.children.length){migrate(t.children,depth+1);if(depth>=MAX_TASK_DEPTH){extras.push(...t.children);t.children=[]}}}if(extras.length) list.push(...extras);return list}
 tasks=migrate(tasks);
 ensureTaskParentIds(tasks,null);

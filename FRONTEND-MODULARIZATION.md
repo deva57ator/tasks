@@ -109,18 +109,15 @@ config.js
 
 ---
 
-### Фаза 2: Хранилища (1 PR)
+### ✅ Фаза 2: Хранилища
 
-**Извлекаем:** `storage.js`
+**Создано:** `src/storage.js` (225 строк)
 
-**Что идёт в `storage.js`:**
-- `StorageModeStore`, `ApiKeyStore`
-- `Store` (tasks), `ThemeStore`, `ProjectsStore`
-- `WorkdayStore` + `persistLocalWorkdayState()`
-- `ArchiveStore`, `ActiveTimersStore`
-- `storageMode`, `isServerMode()`
+**Содержит:** `StorageModeStore`, `ApiKeyStore`, `Store`, `ThemeStore`, `ProjectsStore`, `WorkdayStore`, `persistLocalWorkdayState()`, `normalizeWorkdayState()`, `ArchiveStore`, `ActiveTimersStore`, `storageMode`, `isServerMode()`
 
-**Сложность:** `WorkdayStore.write()` вызывает `handleServerWorkdayWrite()` — функцию из `api.js`, которого ещё нет. Решение: принять коллбэк при инициализации или временно оставить вызов через глобальную переменную (убрать в фазе 3).
+**Решение циклической зависимости storage ↔ api:** реестр коллбэков `registerStorageCallbacks()`. `storage.js` вызывает `_cb.onServerTaskWrite?.()` и т.д. — не зная про `api.js` напрямую. Коллбэки регистрируются из `main.js` после определения всех `handleServer*` функций.
+
+**`storageMode`:** экспортируется как live binding (`export let`). Единственная запись заменена на `setStorageMode()` в `setStorageModeAndReload`. Проверено на STG — серверный режим работает.
 
 ---
 
