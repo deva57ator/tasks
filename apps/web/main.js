@@ -1,147 +1,10 @@
 import { STORAGE_MODES, API_PREFIX, API_BASE, api, API_ENV_LABEL, MIN_TASK_MINUTES, MAX_TASK_MINUTES, MAX_TASK_TIME_MS, TIME_PRESETS, WORKDAY_REFRESH_INTERVAL, TIME_UPDATE_INTERVAL, MAX_TASK_DEPTH, MONTH_NAMES, DEFAULT_PROJECT_EMOJI, SPRINT_UNASSIGNED_KEY, YEAR_PLAN_MAX_DAYS, YEAR_PLAN_DAY_HEIGHT, YEAR_PLAN_DEFAULT_TITLE, YEAR_PLAN_COLUMN_GAP, YEAR_PLAN_ROW_GAP, YEAR_PLAN_MOVE_THRESHOLD, YEAR_PLAN_STORAGE_KEY, YEAR_PLAN_COLORS } from './src/config.js';
 import { $, $$, escapeAttributeValue, getTaskRowById, NON_TEXT_INPUT_TYPES, isEditableShortcutTarget, uid, isDueToday, isDuePast, filterTree, isoWeekInfo } from './src/utils.js';
-
-const StorageModeStore={key:'mini-task-tracker:storage-mode',read(){return localStorage.getItem(this.key)||'local'},write(mode){localStorage.setItem(this.key,mode)}};
-
-const ApiKeyStore={
-  keyPrefix:'tasks_api_key:',
-  storageKey(){return`${this.keyPrefix}${API_PREFIX}`},
-  read(){return localStorage.getItem(this.storageKey())||''},
-  write(value){if(!value){localStorage.removeItem(this.storageKey());return}localStorage.setItem(this.storageKey(),value)},
-  clear(){localStorage.removeItem(this.storageKey())}
-};
-
-
-let storageMode=StorageModeStore.read();
-if(storageMode!==STORAGE_MODES.SERVER)storageMode=STORAGE_MODES.LOCAL;
-
-function isServerMode(){return storageMode===STORAGE_MODES.SERVER}
+import { storageMode, setStorageMode, isServerMode, StorageModeStore, ApiKeyStore, Store, ThemeStore, ProjectsStore, WorkdayStore, persistLocalWorkdayState, normalizeWorkdayState, ArchiveStore, ActiveTimersStore, registerStorageCallbacks } from './src/storage.js';
 
 let apiAuthLocked=false;
 let apiAuthMessage='';
 let apiAuthReason=null;
-
-const Store={key:'mini-task-tracker:text:min:v14',read(){try{return JSON.parse(localStorage.getItem(this.key))||[]}catch{return[]}},write(d){if(isServerMode()){handleServerTaskWrite(d);return}localStorage.setItem(this.key,JSON.stringify(d));afterTasksPersisted()}};
-const ThemeStore={key:'mini-task-tracker:theme',read(){return localStorage.getItem(this.key)||'light'},write(v){localStorage.setItem(this.key,v)}};
-const ProjectsStore={key:'mini-task-tracker:projects',read(){try{return JSON.parse(localStorage.getItem(this.key))||[]}catch{return[]}},write(d){if(isServerMode()){handleServerProjectsWrite(d);return}localStorage.setItem(this.key,JSON.stringify(d))}};
-function normalizeWorkdayState(raw){
-  if(!raw||typeof raw!=='object'||!raw.id)return null;
-  const normalized={...raw};
-  if(typeof normalized.start!=='number'||!isFinite(normalized.start))normalized.start=null;
-  if(typeof normalized.end!=='number'||!isFinite(normalized.end))normalized.end=null;
-  if(typeof normalized.closedAt!=='number'||!isFinite(normalized.closedAt))normalized.closedAt=null;
-  if(typeof normalized.finalTimeMs!=='number'||!isFinite(normalized.finalTimeMs))normalized.finalTimeMs=0;
-  if(typeof normalized.finalDoneCount!=='number'||!isFinite(normalized.finalDoneCount))normalized.finalDoneCount=0;
-  if(!normalized.baseline||typeof normalized.baseline!=='object')normalized.baseline={};
-  if(!normalized.completed||typeof normalized.completed!=='object')normalized.completed={};
-  normalized.locked=normalized.locked===true;
-  const manualStats=normalized.manualClosedStats;
-  const manualTime=manualStats&&typeof manualStats.timeMs==='number'&&isFinite(manualStats.timeMs)?Math.max(0,manualStats.timeMs):0;
-  const manualDone=manualStats&&typeof manualStats.doneCount==='number'&&isFinite(manualStats.doneCount)?Math.max(0,Math.round(manualStats.doneCount)):0;
-  normalized.manualClosedStats={timeMs:manualTime,doneCount:manualDone};
-  normalized.closedManually=normalized.closedManually===true;
-  if(typeof normalized.reopenedAt!=='number'||!isFinite(normalized.reopenedAt))normalized.reopenedAt=null;
-  return normalized;
-}
-
-const WORKDAY_STORAGE_KEY='mini-task-tracker:workday';
-const WORKDAY_SERVER_STORAGE_KEY=`${WORKDAY_STORAGE_KEY}:server`;
-const WorkdayStore={
-  key:WORKDAY_STORAGE_KEY,
-  serverKey:WORKDAY_SERVER_STORAGE_KEY,
-  getKey(mode=storageMode){return mode===STORAGE_MODES.SERVER?this.serverKey:this.key},
-  read({mode,allowLegacyFallback=true}={}){
-    const targetMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:mode===STORAGE_MODES.LOCAL?STORAGE_MODES.LOCAL:storageMode;
-    const key=this.getKey(targetMode);
-    try{
-      const raw=localStorage.getItem(key);
-      if(raw){
-        const parsed=normalizeWorkdayState(JSON.parse(raw));
-        if(parsed)return parsed;
-      }
-    }catch{}
-    if(targetMode===STORAGE_MODES.SERVER&&allowLegacyFallback){
-      try{
-        const legacyRaw=localStorage.getItem(this.key);
-        if(legacyRaw){
-          const legacyState=normalizeWorkdayState(JSON.parse(legacyRaw));
-          if(legacyState){
-            this.write(legacyState,{mode:STORAGE_MODES.SERVER,skipServerSync:true});
-            return legacyState;
-          }
-        }
-      }catch{}
-    }
-    return null;
-  },
-  write(state,{mode,skipServerSync=false}={}){
-    const targetMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:mode===STORAGE_MODES.LOCAL?STORAGE_MODES.LOCAL:storageMode;
-    const key=this.getKey(targetMode);
-    if(!state){
-      localStorage.removeItem(key);
-      if(targetMode===STORAGE_MODES.SERVER&&!skipServerSync&&storageMode===STORAGE_MODES.SERVER){
-        handleServerWorkdayWrite(null);
-      }
-      return;
-    }
-    try{localStorage.setItem(key,JSON.stringify(state));}catch{}
-    if(targetMode===STORAGE_MODES.SERVER&&!skipServerSync&&storageMode===STORAGE_MODES.SERVER){
-      handleServerWorkdayWrite(state);
-    }
-  }
-};
-
-function persistLocalWorkdayState(state,{mode}={}){
-  const targetMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:mode===STORAGE_MODES.LOCAL?STORAGE_MODES.LOCAL:storageMode;
-  try{
-    const normalized=normalizeWorkdayState(state);
-    if(!normalized){
-      WorkdayStore.write(null,{mode:targetMode,skipServerSync:true});
-    }else{
-      WorkdayStore.write(normalized,{mode:targetMode,skipServerSync:true});
-    }
-  }catch{
-    WorkdayStore.write(null,{mode:targetMode,skipServerSync:true});
-  }
-}
-const ArchiveStore={key:'mini-task-tracker:archive:v1',read(){try{const raw=JSON.parse(localStorage.getItem(this.key));if(!Array.isArray(raw))return[];return raw.filter(item=>item&&typeof item==='object')}catch{return[]}},write(d){if(isServerMode()){handleServerArchiveWrite(d);return}localStorage.setItem(this.key,JSON.stringify(d))}};
-const ActiveTimersStore={
-  key:'mini-task-tracker:active-timers:v1',
-  serverKey:'mini-task-tracker:active-timers:v1:server',
-  getKey(mode=storageMode){return mode===STORAGE_MODES.SERVER?this.serverKey:this.key},
-  read({mode}={}){
-    const targetMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:STORAGE_MODES.LOCAL;
-    const key=this.getKey(targetMode);
-    try{
-      const raw=localStorage.getItem(key);
-      if(!raw)return{};
-      const parsed=JSON.parse(raw);
-      if(!parsed||typeof parsed!=='object')return{};
-      const normalized={};
-      for(const [taskId,entry]of Object.entries(parsed)){
-        if(typeof taskId!=='string'||!taskId)continue;
-        const start=Number(entry&&entry.start);
-        if(!Number.isFinite(start))continue;
-        const base=Number(entry&&entry.base);
-        normalized[taskId]={start:Math.max(0,start),base:Number.isFinite(base)&&base>=0?Math.max(0,base):0};
-      }
-      return normalized;
-    }catch{
-      return{};
-    }
-  },
-  write(data,{mode}={}){
-    const targetMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:STORAGE_MODES.LOCAL;
-    const key=this.getKey(targetMode);
-    try{
-      if(!data||typeof data!=='object'||!Object.keys(data).length){
-        localStorage.removeItem(key);
-        return;
-      }
-      localStorage.setItem(key,JSON.stringify(data));
-    }catch{}
-  }
-};
 
 let tasks=Store.read();
 let archivedTasks=ArchiveStore.read();
@@ -529,11 +392,24 @@ function collectActiveTimerTasks(list=tasks,acc=[]){if(!Array.isArray(list))retu
 
 function finalizeActiveTimersBeforeModeChange(mode=storageMode){const targetMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:STORAGE_MODES.LOCAL;const activeTasks=collectActiveTimerTasks();if(!activeTasks.length)return false;for(const task of activeTasks){stopTaskTimer(task,{silent:true})}Store.write(tasks);if(targetMode===STORAGE_MODES.SERVER){for(const task of activeTasks){if(task&&task.id)queueTaskUpdate(task.id,{timeSpent:task.timeSpent})}}syncTimerLoop();return true}
 
-  async function setStorageModeAndReload(mode,{silent=false,forceReload=false,skipToggleUpdate=false}={}){const nextMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:STORAGE_MODES.LOCAL;const prevMode=storageMode;const changed=prevMode!==nextMode;if(changed)finalizeActiveTimersBeforeModeChange(prevMode);storageMode=nextMode;syncYearPlanDataMode();StorageModeStore.write(storageMode);if(!skipToggleUpdate)updateStorageToggle();if(changed){activeTimersState=ActiveTimersStore.read({mode:storageMode});ensureActiveTimersState();if(storageMode===STORAGE_MODES.LOCAL)resetApiAuthLock();resetYearPlanCache()}flushPendingTaskUpdates();flushPendingWorkdaySync();if(!changed&&!forceReload)return;await refreshDataForCurrentMode({silent})}
+  async function setStorageModeAndReload(mode,{silent=false,forceReload=false,skipToggleUpdate=false}={}){const nextMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:STORAGE_MODES.LOCAL;const prevMode=storageMode;const changed=prevMode!==nextMode;if(changed)finalizeActiveTimersBeforeModeChange(prevMode);setStorageMode(nextMode);syncYearPlanDataMode();StorageModeStore.write(storageMode);if(!skipToggleUpdate)updateStorageToggle();if(changed){activeTimersState=ActiveTimersStore.read({mode:storageMode});ensureActiveTimersState();if(storageMode===STORAGE_MODES.LOCAL)resetApiAuthLock();resetYearPlanCache()}flushPendingTaskUpdates();flushPendingWorkdaySync();if(!changed&&!forceReload)return;await refreshDataForCurrentMode({silent})}
 
 function handleServerTaskWrite(){afterTasksPersisted()}
 function handleServerProjectsWrite(data){if(Array.isArray(data)){projects=data}}
 function handleServerArchiveWrite(data){if(Array.isArray(data))archivedTasks=normalizeArchiveList(data,{persist:false})}
+
+// Регистрируем коллбэки для storage.js — выполняется после определения всех handleServer* функций.
+// handleServerWorkdayWrite определена ниже (в блоке workday sync), поэтому registration
+// выполняется через хелпер, который вызывается после её определения.
+function _registerStorageCallbacksOnce(){
+  registerStorageCallbacks({
+    onServerTaskWrite:handleServerTaskWrite,
+    onServerProjectsWrite:handleServerProjectsWrite,
+    onServerArchiveWrite:handleServerArchiveWrite,
+    onServerWorkdayWrite:handleServerWorkdayWrite,
+    afterTasksPersisted:afterTasksPersisted
+  });
+}
 
 function cloneWorkdayStateForTransport(state){if(!state||typeof state!=='object')return null;try{return JSON.parse(JSON.stringify(state))}catch{return{...state}}}
 
@@ -717,6 +593,7 @@ function flushPendingWorkdaySync(){if(workdaySyncTimer){clearTimeout(workdaySync
 function resetWorkdaySyncState(){if(workdaySyncTimer){clearTimeout(workdaySyncTimer);workdaySyncTimer=null}pendingWorkdaySync=null;workdaySyncInFlight=false;lastWorkdaySyncPayload=null}
 
 function handleServerWorkdayWrite(state){if(!isServerMode())return;if(!state||!state.id){resetWorkdaySyncState();return}const payload=buildWorkdayPayloadForServer(state);if(!payload)return;const serialized=stringifyWorkdayPayload(payload);if(!serialized)return;if(serialized===lastWorkdaySyncPayload&&!pendingWorkdaySync)return;if(pendingWorkdaySync&&pendingWorkdaySync.serialized===serialized)return;pendingWorkdaySync={payload,serialized};if(!workdaySyncInFlight){scheduleWorkdaySync()}}
+_registerStorageCallbacksOnce();
 
 function queueTaskCreate(task){if(!isServerMode())return;const payload=mapTaskForServer(task);runServerAction(()=>apiRequest('/tasks',{method:'POST',body:payload}),{onError:()=>refreshDataForCurrentMode({silent:true})})}
 

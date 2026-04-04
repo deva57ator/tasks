@@ -78,41 +78,34 @@ config.js
 
 ---
 
-### Фаза 0: Подготовка (1 PR)
+### ✅ Фаза 0: Подготовка
 
-**Что делаем:**
-
-1. Переименовать текущий `main.js` → `main.legacy.js`.
-2. Создать новый `main.js` с одной строкой: `import './main.legacy.js'` (пока не работает без `type="module"`, но пишем ради следующего шага).
-3. Добавить `type="module"` к тегу `<script>` в `index.html`.
-4. Проверить — приложение работает как раньше.
-
-**Зачем:** Переключаем браузер в режим ES Modules без изменения кода.
-
-> Риск: `type="module"` меняет поведение — скрипт грузится с `defer`, глобальный стейт недоступен из консоли браузера. Проверить в браузере вручную.
+**Сделано:**
+- `index.html`: `<script src="main.js?v=2025-11-04" defer>` → `<script type="module" src="main.js?v=2026-04-03">`
+- `type="module"` автоматически включает `defer` — дублирование убрано
+- Приложение проверено в браузере — работает
 
 ---
 
-### Фаза 1: Утилиты и конфиги (1 PR)
+### ✅ Фаза 1: Утилиты и конфиги
 
-**Извлекаем:** `config.js`, `utils.js`
+**Создано:** `src/config.js` (53 строки), `src/utils.js` (78 строк)
 
-**Что идёт в `config.js`:**
-- `API_PREFIX`, `API_BASE`, `api()`, `API_ENV_LABEL`
-- `STORAGE_MODES`
-- Константы: `MIN_TASK_MINUTES`, `MAX_TASK_MINUTES`, `MAX_TASK_TIME_MS`, `TIME_PRESETS`
-- `MAX_TASK_DEPTH`, `MONTH_NAMES`, `DEFAULT_PROJECT_EMOJI`, `SPRINT_UNASSIGNED_KEY`
+**`src/config.js` содержит:**
+- `STORAGE_MODES`, `API_PREFIX`, `API_BASE`, `api()`, `API_ENV_LABEL`
+- `MIN_TASK_MINUTES`, `MAX_TASK_MINUTES`, `MAX_TASK_TIME_MS`, `TIME_PRESETS`
+- `WORKDAY_REFRESH_INTERVAL`, `TIME_UPDATE_INTERVAL`, `MAX_TASK_DEPTH`, `MONTH_NAMES`
+- `DEFAULT_PROJECT_EMOJI`, `SPRINT_UNASSIGNED_KEY`
+- Все `YEAR_PLAN_*` константы и `YEAR_PLAN_COLORS`
 
-**Что идёт в `utils.js`:**
-- `$()`, `$$()`
-- `uid()`
-- `escapeAttributeValue()`
-- `getTaskRowById()`
-- `isEditableShortcutTarget()`
-- `isDueToday()`, `isDuePast()`, `isoWeekInfo()`, `isoWeekStartDate()`
-- `filterTree()`
+**`src/utils.js` содержит:**
+- `$()`, `$$()`, `uid()`, `escapeAttributeValue()`, `getTaskRowById()`
+- `NON_TEXT_INPUT_TYPES`, `isEditableShortcutTarget()`
+- `isDueToday()`, `isDuePast()`, `filterTree()`, `isoWeekInfo()`
 
-**Зачем начинать здесь:** Эти функции ни от чего не зависят — нет риска циклических импортов. Вытащить безопасно.
+> `isoWeekStartDate()` оставлена в `main.js` — зависит от `normalizeDate()`, которая глубоко встроена в логику календаря.
+
+**В `main.js`:** добавлены 2 строки `import` вверху, удалены оригинальные определения. Проверено — работает.
 
 ---
 
