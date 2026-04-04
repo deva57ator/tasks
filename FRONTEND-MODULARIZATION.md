@@ -121,18 +121,26 @@ config.js
 
 ---
 
-### Фаза 3: API-клиент (1 PR)
+### ✅ Фаза 3: API-клиент
 
-**Извлекаем:** `api.js`
+**Создано:** `src/api.js` (~430 строк)
 
-**Что идёт в `api.js`:**
-- `apiRequest()` — базовый fetch с заголовком авторизации
-- `handleServerTaskWrite()`, `handleServerWorkdayWrite()`, `handleServerArchiveWrite()`, `handleServerProjectsWrite()`
-- Очереди: `queueTaskUpdate()`, `queueProjectCreate()`, `queueProjectDelete()`, `queueArchiveDelete()`
-- `apiAuthLocked`, `apiAuthMessage`, `apiAuthReason`
-- Логика API-настроек: `ApiSettingsUI`, открытие/закрытие диалога, форма
+**`src/api.js` содержит:**
+- `apiRequest()`, `handleApiError()`, `runServerAction()` — базовый fetch, обработка ошибок
+- `mapTaskForServer()`, `normalizeTaskPatch()`, `normalizeProjectPayload()` — нормализация данных
+- `pendingTaskUpdates` (Map), `queueTaskCreate/Update/Delete()`, `flushPendingTaskUpdates()` — очередь задач
+- `queueProjectCreate/Update/Delete()`, `queueArchiveDelete()` — очереди проектов и архива
+- `stringifyWorkdayPayload()`, `scheduleWorkdaySync()`, `flushPendingWorkdaySync()`, `handleServerWorkdayWrite()` — синхронизация рабочего дня
+- `apiAuthLocked`, `apiAuthMessage`, `apiAuthReason`, `lockApiAuth()`, `resetApiAuthLock()` — auth-состояние
+- `ApiSettingsUI`, `apiSettingsBlocking`, `openApiSettings()`, `closeApiSettings()`, `saveApiKey()`, `clearApiKey()`, `switchToLocalMode()`, `toggleApiKeyVisibility()` — UI настроек API
 
-**Зависит от:** `config.js`, `storage.js`
+**В `src/utils.js` добавлено:** `clampTimeSpentMs()` — нужна и api.js, и main.js
+
+**Коллбэки из main.js** (через `registerApiCallbacks()`): `toast`, `buildWorkdayPayload`, `refreshData`, `setStorageModeAndReload`
+
+**Что осталось в `main.js`:** `handleServerTaskWrite`, `handleServerProjectsWrite`, `handleServerArchiveWrite` (мутируют стейт), `buildWorkdayPayloadForServer` (зависит от `computeAggregatedWorkdayStats`), `refreshDataForCurrentMode`, `loadDataFromServer`, `loadDataFromLocal`, `setStorageModeAndReload`
+
+**Зависит от:** `config.js`, `storage.js`, `utils.js`
 
 ---
 
