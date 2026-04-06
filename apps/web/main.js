@@ -1,6 +1,7 @@
 import { STORAGE_MODES, API_PREFIX, API_BASE, api, MIN_TASK_MINUTES, MAX_TASK_MINUTES, MAX_TASK_TIME_MS, TIME_PRESETS, WORKDAY_REFRESH_INTERVAL, TIME_UPDATE_INTERVAL, MAX_TASK_DEPTH, MONTH_NAMES, DEFAULT_PROJECT_EMOJI, SPRINT_UNASSIGNED_KEY, YEAR_PLAN_MAX_DAYS, YEAR_PLAN_DAY_HEIGHT, YEAR_PLAN_DEFAULT_TITLE, YEAR_PLAN_COLUMN_GAP, YEAR_PLAN_ROW_GAP, YEAR_PLAN_MOVE_THRESHOLD, YEAR_PLAN_STORAGE_KEY, YEAR_PLAN_COLORS } from './src/config.js';
-import { $, $$, escapeAttributeValue, getTaskRowById, NON_TEXT_INPUT_TYPES, isEditableShortcutTarget, uid, isDueToday, isDuePast, filterTree, isoWeekInfo } from './src/utils.js';
+import { $, $$, escapeAttributeValue, getTaskRowById, NON_TEXT_INPUT_TYPES, isEditableShortcutTarget, uid, isDueToday, isDuePast, filterTree, isoWeekInfo, clampTimeSpentMs } from './src/utils.js';
 import { storageMode, setStorageMode, isServerMode, StorageModeStore, ApiKeyStore, Store, ThemeStore, ProjectsStore, WorkdayStore, persistLocalWorkdayState, normalizeWorkdayState, ArchiveStore, ActiveTimersStore, registerStorageCallbacks } from './src/storage.js';
+import { setupSidebarResize } from './src/sidebar.js';
 import { apiAuthLocked, apiAuthMessage, apiAuthReason, resetApiAuthLock, lockApiAuth, apiRequest, handleApiError, runServerAction, queueTaskCreate, queueTaskUpdate, queueTaskDelete, flushPendingTaskUpdates, queueProjectCreate, queueProjectUpdate, queueProjectDelete, queueArchiveDelete, handleServerWorkdayWrite, flushPendingWorkdaySync, ApiSettingsUI, apiSettingsBlocking, openApiSettings, closeApiSettings, isApiSettingsOpen, toggleApiKeyVisibility, saveApiKey, clearApiKey, switchToLocalMode, registerApiCallbacks } from './src/api.js';
 
 let tasks=Store.read();
@@ -3180,104 +3181,7 @@ function closeDuePicker(){
 }
 window.addEventListener('click',e=>{if(Due.el.style.display==='block'&&!Due.el.contains(e.target)&&!(Due.anchor&&Due.anchor.contains(e.target))&&!e.target.closest('.due-btn'))closeDuePicker()},true);
 
-(function setupSidebarResize(){
-  const SIDEBAR_BREAKPOINT=860;
-  const SIDEBAR_MAX_RATIO=0.3;
-  const root=document.documentElement;
-  const body=document.body;
-  const sidebar=document.querySelector('.sidebar');
-  const resizer=document.getElementById('sidebarResizer');
-  if(!sidebar||!resizer)return;
-  let resizing=false;
-  let startX=0;
-  let startWidth=0;
-  let activePointerId=null;
-
-  function isDesktop(){
-    return window.innerWidth>SIDEBAR_BREAKPOINT;
-  }
-
-  function getMinWidth(){
-    const fromVar=parseFloat(getComputedStyle(root).getPropertyValue('--sidebar-min-width'));
-    return Number.isFinite(fromVar)&&fromVar>0?fromVar:220;
-  }
-
-  function getMaxWidth(){
-    const min=getMinWidth();
-    const maxFromViewport=Math.max(min,Math.floor(window.innerWidth*SIDEBAR_MAX_RATIO));
-    return maxFromViewport;
-  }
-
-  function clampWidth(width){
-    const min=getMinWidth();
-    const max=getMaxWidth();
-    return Math.min(Math.max(width,min),max);
-  }
-
-  function applyWidth(width){
-    const next=clampWidth(width);
-    root.style.setProperty('--sidebar-width',`${next}px`);
-    sidebar.style.width=`${next}px`;
-  }
-
-  function stopResize(pointerId){
-    if(!resizing)return;
-    resizing=false;
-    const id=pointerId!=null?pointerId:activePointerId;
-    if(id!=null){
-      try{resizer.releasePointerCapture(id)}catch{}
-    }
-    activePointerId=null;
-    body.classList.remove('sidebar-resizing');
-  }
-
-  function handlePointerDown(event){
-    if(!isDesktop())return;
-    event.preventDefault();
-    resizing=true;
-    startX=event.clientX;
-    startWidth=sidebar.getBoundingClientRect().width;
-    activePointerId=event.pointerId;
-    try{resizer.setPointerCapture(event.pointerId)}catch{}
-    body.classList.add('sidebar-resizing');
-  }
-
-  function handlePointerMove(event){
-    if(!resizing)return;
-    const delta=event.clientX-startX;
-    applyWidth(startWidth+delta);
-  }
-
-  function handlePointerUp(event){
-    stopResize(event.pointerId);
-  }
-
-  function syncMode(){
-    if(isDesktop()){
-      body.classList.add('desktop');
-      applyWidth(sidebar.getBoundingClientRect().width||getMinWidth());
-    }else{
-      body.classList.remove('desktop');
-      stopResize();
-      root.style.removeProperty('--sidebar-width');
-      sidebar.style.removeProperty('width');
-    }
-  }
-
-  resizer.addEventListener('pointerdown',handlePointerDown);
-  resizer.addEventListener('pointermove',handlePointerMove);
-  resizer.addEventListener('pointerup',handlePointerUp);
-  resizer.addEventListener('pointercancel',handlePointerUp);
-
-  window.addEventListener('pointermove',handlePointerMove);
-  window.addEventListener('pointerup',handlePointerUp);
-  window.addEventListener('pointercancel',handlePointerUp);
-  window.addEventListener('resize',()=>{
-    syncMode();
-  });
-
-  syncMode();
-})();
+setupSidebarResize();
 
 ensureWorkdayInteractionGuards();
 
