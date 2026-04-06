@@ -32,20 +32,19 @@ apps/web/
     ├── api.js           ← fetch-обёртка, очереди синхронизации, auth-состояние
     ├── state.js         ← глобальный реактивный стейт (задачи, проекты, вид, таймеры)
     ├── workday.js       ← логика рабочего дня: открытие, закрытие, нормализация, UI-обновления
-    ├── projects.js      ← CRUD проектов, назначение на задачи, сабменю
-    ├── tasks.js         ← CRUD задач, иерархия, тайм-трекинг, рендер строк
+    ├── projects.js      ← CRUD проектов, emoji picker, сабменю назначения
+    ├── tasks-data.js    ← CRUD задач, иерархия, тайм-трекинг, нормализация, миграция
+    ├── tasks-render.js  ← рендер строк задач, инлайн-редактирование, контекстное меню
     ├── archive.js       ← рендер архива, нормализация архивных нод
-    ├── sprint.js        ← buildSprintData, рендер спринт-сетки, drag-drop по дням
+    ├── sprint.js        ← buildSprintData, рендер спринт-сетки, фильтры
     ├── due-picker.js    ← виджет выбора даты: buildDuePicker, open/close
     ├── yearplan/
-    │   ├── config.js    ← константы year plan (цвета, ключи, размеры)
-    │   ├── normalize.js ← нормализация элементов и списков year plan
-    │   ├── data.js      ← yearPlanProvider, кэш, чтение/запись (local + server)
-    │   ├── state.js     ← selection, hover, resize, move, draft, editing состояния
-    │   ├── interactions.js ← контекстное меню, сабменю проектов, drag/resize-обработчики
-    │   └── render.js    ← renderActivity, renderCalendarGrid, draft/move preview
+    │   ├── normalize.js    ← нормализация, форматирование, цвета, даты
+    │   ├── data.js         ← yearPlanProvider, кэш, стейт, CRUD, форма
+    │   ├── interactions.js ← контекстное меню, цвета, drag/resize-обработчики
+    │   └── render.js       ← renderActivity, renderCalendarGrid, draft/move preview
     ├── keyboard.js      ← глобальные горячие клавиши
-    └── sidebar.js       ← resize-обработчик сайдбара (уже почти изолирован)
+    └── sidebar.js       ← resize-обработчик сайдбара
 ```
 
 ### Граф зависимостей (упрощённый)
@@ -173,45 +172,117 @@ config.js
 
 ---
 
-### Фаза 6: Year Plan (2 PR)
+### ✅ Фаза 6a: Year Plan — данные и стейт
 
-Самая большая и сложная часть. Разбивается на два PR:
+**Создано:** `src/yearplan/normalize.js` (~250 строк), `src/yearplan/data.js` (~350 строк)
 
-**PR 6a: Данные и стейт**
-- `yearplan/config.js` — все YEAR_PLAN_* константы
-- `yearplan/normalize.js` — `normalizeYearPlanItem()`, `normalizeYearPlanList()`, вспомогательные нормализаторы
-- `yearplan/data.js` — `yearPlanProvider`, кэш (`yearPlanCache`, `yearPlanLoadingYears`, `yearPlanErrors`), `ensureYearPlanData()`
-- `yearplan/state.js` — все `yearPlanEditing*`, `yearPlanResize*`, `yearPlanMove*`, `yearPlanDraft*` переменные и функции-мутаторы
-
-**PR 6b: Рендер и взаимодействия**
-- `yearplan/render.js` — `renderActivity()`, `renderCalendarGrid()`, preview-рендеры
-- `yearplan/interactions.js` — контекстное меню, цвета, переименование, drag/resize-обработчики, обработка событий мыши
+- `normalize.js` — чистые функции нормализации, форматирования, цветов, дат, позиционирования
+- `data.js` — состояние (`yearPlan*` переменные + сеттеры), `yearPlanProvider`, кэш, CRUD, форма
+- Callback-реестр `registerYearPlanDataCallbacks` для избегания циклических зависимостей
+- `getDaysInMonth` перенесена в `utils.js`
 
 ---
 
-### Фаза 7: Прикладные модули (2–3 PR)
+### Фаза 6b: Year Plan — взаимодействия
 
-Параллельно или последовательно:
+**Извлекаем:** `src/yearplan/interactions.js` (~250 строк)
 
-**PR 7a:**
-- `workday.js` — `normalizeWorkdayState()` переносится сюда, UI-обновления workday bar, диалог закрытия дня
-- `projects.js` — `normalizeProjectsList()`, CRUD, сабменю назначения, `removeProjectById()`
+- Контекстное меню (`openYearPlanContextMenu`, `closeYearPlanContextMenu`)
+- Выбор цвета (`renderYearPlanColorSubmenu`)
+- `bindYearPlanActivityHover`, `bindYearPlanActivitySelect`, `bindYearPlanActivityContext`
+- Обработчики drag/resize/rename на уровне элементов активности
 
-**PR 7b:**
-- `tasks.js` — рендер строк задач, CRUD задач, тайм-трекинг
-- `archive.js` — `renderArchivedNode()`, `renderArchive()`, `normalizeArchivedNode()`
+---
 
-**PR 7c:**
-- `sprint.js` — `buildSprintData()`, рендер, drag-drop
-- `due-picker.js` — `buildDuePicker()`, `openDuePicker()`, `closeDuePicker()`
-- `keyboard.js` — все глобальные `keydown`-обработчики
+### Фаза 6c: Year Plan — рендер
+
+**Извлекаем:** `src/yearplan/render.js` (~350 строк)
+
+- `renderYearPlanActivities` — рендер всех активностей в месяцах
+- `renderYearPlanMovePreview` — превью перетаскивания
+- `renderYearPlanDraft` — превью создаваемой активности
+- `renderYearPlan` — сборка всего year plan view
+- `getYearPlanSegmentsForMonth`, `getYearPlanSlicesForRange` — вспомогательные
+
+---
+
+### Фаза 7a: Рабочий день
+
+**Извлекаем:** `src/workday.js` (~200 строк)
+
+- `computeAggregatedWorkdayStats`, `updateWorkdayUI`, `updateWorkdayDialogContent`
+- `openWorkdayDialog`, `closeWorkdayDialog`
+- `buildWorkdayPayloadForServer`, `createWorkdaySnapshot`
+- `getWorkdayInfo`, `workdayDateKey`
+
+---
+
+### Фаза 7b: Проекты
+
+**Извлекаем:** `src/projects.js` (~200 строк)
+
+- `normalizeProjectsList`, `renderProjects`
+- `getProjectMeta`, `getProjectEmoji`, `getProjectTitle`
+- CRUD: `deleteProject`, `finalizeProjectDelete`, `removeProjectById`, `startProjectRename`
+- Emoji picker: `ensureEmojiPicker`, `openEmojiPicker`, `closeEmojiPicker`, `setProjectEmoji`
+- Контекстное меню проекта: `openProjMenu`, `closeProjMenu`
+
+---
+
+### Фаза 7c: Архив
+
+**Извлекаем:** `src/archive.js` (~150 строк)
+
+- `normalizeArchivedNode`, `normalizeArchiveList`
+- `renderArchivedNode`, `renderArchive`
+- `removeArchivedTask`
+
+---
+
+### Фаза 7d: Данные задач
+
+**Извлекаем:** `src/tasks-data.js` (~250–300 строк)
+
+- Нормализация и миграция: `normalizeTask`, `migrate`
+- Дерево: `findTask`, `buildTaskTree`, `walkTasks`, `filterTree`
+- CRUD: создание, обновление, удаление задачи, `handleServerTaskWrite`
+- Таймеры: `ensureActiveTimersState`, `setActiveTimerState`, `startTimer`, `stopTimer`, `totalTimeMs`, `syncTimerLoop`
+
+---
+
+### Фаза 7e: Рендер задач
+
+**Извлекаем:** `src/tasks-render.js` (~250–300 строк)
+
+- `renderTaskRow` — рендер одной строки задачи (~90 строк)
+- `startEdit`, `commitTaskInput`, `cancelTaskInput` — инлайн-редактирование
+- Контекстное меню задачи: `openContextMenu`, `closeContextMenu`
+- Notes panel: `openNotesPanel`, `closeNotesPanel`
+- Сабменю назначения проекта: `openAssignSubmenu`, `closeAssignSubmenu`, `openProjectAssignSubmenu`
+
+---
+
+### Фаза 7f: Sprint и due-picker
+
+**Извлекаем:** `src/sprint.js`, `src/due-picker.js` (~300 строк суммарно)
+
+- `sprint.js` — `buildSprintData`, `renderSprint`, `renderSprintFiltersBar`, фильтры по проектам
+- `due-picker.js` — `buildDuePicker`, `openDuePicker`, `closeDuePicker`, `ensureDuePickerWidth`
+
+---
+
+### Фаза 7g: Клавиатура
+
+**Извлекаем:** `src/keyboard.js` (~100 строк)
+
+- Глобальный `keydown`-обработчик
+- Все горячие клавиши (навигация, быстрые действия, модальные окна)
 
 ---
 
 ### Фаза 8: Финал (1 PR)
 
-- Удалить `main.legacy.js`
-- `main.js` становится точкой входа: импортирует все модули, инициализирует приложение
+- `main.js` становится точкой входа: импортирует все модули, инициализирует приложение (~100 строк)
 - Проверить что все `import` разрешаются корректно
 - Проверить браузерный кэш — убедиться, что отдельные модули кэшируются по-отдельности
 
@@ -258,7 +329,7 @@ config.js
 
 | Сейчас | После |
 |---|---|
-| 1 файл, 3551 строка | ~14 файлов, ~100–300 строк каждый |
+| 1 файл, 3551 строка | ~16 файлов, ~100–300 строк каждый |
 | Глобальная область видимости | Явные импорты/экспорты |
 | Найти код — скроллить | Открыть нужный файл |
 | Любое изменение — весь файл в диффе | PR трогает только нужные модули |

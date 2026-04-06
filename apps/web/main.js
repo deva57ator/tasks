@@ -1,4 +1,4 @@
-import { STORAGE_MODES, MIN_TASK_MINUTES, MAX_TASK_MINUTES, MAX_TASK_TIME_MS, TIME_PRESETS, WORKDAY_REFRESH_INTERVAL, TIME_UPDATE_INTERVAL, MAX_TASK_DEPTH, MONTH_NAMES, DEFAULT_PROJECT_EMOJI, SPRINT_UNASSIGNED_KEY, YEAR_PLAN_MAX_DAYS, YEAR_PLAN_DAY_HEIGHT, YEAR_PLAN_DEFAULT_TITLE, YEAR_PLAN_ROW_GAP, YEAR_PLAN_MOVE_THRESHOLD, YEAR_PLAN_COLORS } from './src/config.js';
+import { STORAGE_MODES, MIN_TASK_MINUTES, MAX_TASK_MINUTES, MAX_TASK_TIME_MS, TIME_PRESETS, WORKDAY_REFRESH_INTERVAL, TIME_UPDATE_INTERVAL, MAX_TASK_DEPTH, MONTH_NAMES, DEFAULT_PROJECT_EMOJI, SPRINT_UNASSIGNED_KEY, YEAR_PLAN_MAX_DAYS, YEAR_PLAN_DAY_HEIGHT, YEAR_PLAN_DEFAULT_TITLE, YEAR_PLAN_ROW_GAP, YEAR_PLAN_MOVE_THRESHOLD } from './src/config.js';
 import { $, $$, getTaskRowById, isEditableShortcutTarget, uid, isDueToday, isDuePast, filterTree, isoWeekInfo, clampTimeSpentMs, getDaysInMonth } from './src/utils.js';
 import {
   compareYearPlanDates, normalizeYearPlanRange,
@@ -39,6 +39,11 @@ import {
   getYearPlanItemsForProject,
   registerYearPlanDataCallbacks
 } from './src/yearplan/data.js';
+import {
+  YearPlanCtx, closeYearPlanContextMenu,
+  bindYearPlanActivityHover, bindYearPlanActivitySelect, bindYearPlanActivityContext,
+  registerYearPlanInteractionsCallbacks
+} from './src/yearplan/interactions.js';
 import { storageMode, setStorageMode, isServerMode, StorageModeStore, ApiKeyStore, Store, ThemeStore, ProjectsStore, WorkdayStore, persistLocalWorkdayState, normalizeWorkdayState, ArchiveStore, ActiveTimersStore, registerStorageCallbacks } from './src/storage.js';
 import { setupSidebarResize } from './src/sidebar.js';
 import { apiAuthLocked, apiAuthMessage, apiAuthReason, resetApiAuthLock, lockApiAuth, apiRequest, handleApiError, runServerAction, queueTaskCreate, queueTaskUpdate, queueTaskDelete, flushPendingTaskUpdates, queueProjectCreate, queueProjectUpdate, queueProjectDelete, queueArchiveDelete, handleServerWorkdayWrite, flushPendingWorkdaySync, ApiSettingsUI, apiSettingsBlocking, openApiSettings, closeApiSettings, isApiSettingsOpen, toggleApiKeyVisibility, saveApiKey, clearApiKey, switchToLocalMode, registerApiCallbacks } from './src/api.js';
@@ -848,11 +853,7 @@ TimePresetMenu.el.className='context-menu time-preset-menu';
 TimePresetMenu.el.setAttribute('role','menu');
 TimePresetMenu.el.setAttribute('aria-hidden','true');
 document.body.appendChild(TimePresetMenu.el);
-const YearPlanCtx={el:document.createElement('div'),activityId:null};
-YearPlanCtx.el.className='context-menu year-plan-context-menu';
-YearPlanCtx.el.setAttribute('role','menu');
-YearPlanCtx.el.setAttribute('aria-hidden','true');
-document.body.appendChild(YearPlanCtx.el);
+
 const NotesPanel={panel:document.getElementById('notesSidebar'),overlay:document.getElementById('notesOverlay'),close:document.getElementById('notesClose'),title:document.getElementById('notesTaskTitle'),input:document.getElementById('notesInput'),taskId:null,mode:'tasks'};
 const TimeDialog={overlay:document.getElementById('timeOverlay'),close:document.getElementById('timeDialogClose'),cancel:document.getElementById('timeDialogCancel'),form:document.getElementById('timeDialogForm'),hours:document.getElementById('timeInputHours'),minutes:document.getElementById('timeInputMinutes'),summary:document.getElementById('timeDialogSummary'),subtitle:document.getElementById('timeDialogSubtitle'),error:document.getElementById('timeDialogError'),save:document.getElementById('timeDialogSave'),presets:document.getElementById('timeDialogPresets')};
 const ProjectDeleteDialog={overlay:document.getElementById('projectDeleteOverlay'),dialog:document.getElementById('projectDeleteDialog'),list:document.getElementById('projectDeleteList'),confirm:document.getElementById('projectDeleteConfirm'),detach:document.getElementById('projectDeleteDetach'),projectId:null,items:[]};
@@ -1061,6 +1062,20 @@ function renderArchive(container){const wrap=document.createElement('div');wrap.
 
 function renderYearPlanIfVisible(){if(currentView==='year'||currentView==='project')render()}
 registerYearPlanDataCallbacks({render:renderYearPlanIfVisible,toast});
+registerYearPlanInteractionsCallbacks({
+  renderIfVisible:renderYearPlanIfVisible,
+  toast,
+  closeContextMenu,
+  openProjectAssignSubmenu,
+  closeAssignSubmenu,
+  maybeCloseSubmenu,
+  setYearPlanSelected,
+  clearYearPlanSelection,
+  setYearPlanHover,
+  clearYearPlanHover,
+  startYearPlanRename,
+  navigateToProject:(projectId)=>{currentView='project';currentProjectId=projectId;render()},
+});
 function requestYearPlanFocus(id){setYearPlanFocusId(id)}
 function applyYearPlanFocus(){
   if(!yearPlanFocusId)return;
@@ -1096,127 +1111,6 @@ function clearYearPlanHover(id){
   if(yearPlanHoverId!==id)return;
   setYearPlanHoverId(null);
   renderYearPlanIfVisible();
-}
-async function setYearPlanProject(id,projectId){
-  const item=findYearPlanItem(id);
-  if(!item)return;
-  const year=item.year;
-  const previous=item.projectId??null;
-  updateYearPlanItemInCache(id,year,{projectId});
-  renderYearPlanIfVisible();
-  try{
-    const updated=await yearPlanProvider.update(id,{projectId});
-    if(updated)upsertYearPlanItem(updated);
-  }catch(err){
-    toast('Не удалось назначить проект');
-    updateYearPlanItemInCache(id,year,{projectId:previous});
-    renderYearPlanIfVisible();
-  }
-}
-async function setYearPlanColor(id,color){
-  const item=findYearPlanItem(id);
-  if(!item)return;
-  const year=item.year;
-  const nextColor=normalizeYearPlanColor(color);
-  const previous=normalizeYearPlanColor(item.color);
-  if(nextColor===previous)return;
-  updateYearPlanItemInCache(id,year,{color:nextColor});
-  renderYearPlanIfVisible();
-  try{
-    const updated=await yearPlanProvider.update(id,{color:nextColor});
-    if(updated)upsertYearPlanItem(updated);
-  }catch(err){
-    toast('Не удалось изменить цвет');
-    updateYearPlanItemInCache(id,year,{color:previous});
-    renderYearPlanIfVisible();
-  }
-}
-function openYearPlanAssignSubmenu(id,anchorItem){
-  const item=findYearPlanItem(id);
-  const currentProjectId=item?item.projectId??null:null;
-  openProjectAssignSubmenu({
-    anchorItem,
-    currentProjectId,
-    onAssign:async projId=>{await setYearPlanProject(id,projId);closeYearPlanContextMenu()},
-    onClear:async()=>{await setYearPlanProject(id,null);closeYearPlanContextMenu()}
-  });
-}
-function closeYearPlanContextMenu(){YearPlanCtx.activityId=null;YearPlanCtx.el.style.display='none';YearPlanCtx.el.setAttribute('aria-hidden','true');closeAssignSubmenu()}
-function openYearPlanContextMenu(id,x,y){
-  setYearPlanSelected(id);
-  closeAssignSubmenu();
-  YearPlanCtx.activityId=id;
-  YearPlanCtx.el.innerHTML='';
-  const item=findYearPlanItem(id);
-  if(item&&item.projectId){
-    const goToProject=document.createElement('div');
-    goToProject.className='context-item';
-    goToProject.textContent='Перейти в проект';
-    goToProject.onclick=()=>{
-      const targetProjectId=item.projectId;
-      closeYearPlanContextMenu();
-      if(targetProjectId){
-        currentView='project';
-        currentProjectId=targetProjectId;
-        render();
-      }
-    };
-    YearPlanCtx.el.appendChild(goToProject);
-  }
-  const assign=document.createElement('div');
-  assign.className='context-item';
-  assign.textContent='Назначить проект ▸';
-  assign.addEventListener('mouseenter',()=>{openYearPlanAssignSubmenu(id,assign)});
-  assign.addEventListener('mouseleave',()=>maybeCloseSubmenu());
-  YearPlanCtx.el.appendChild(assign);
-  const rename=document.createElement('div');
-  rename.className='context-item';
-  rename.textContent='Переименовать';
-  rename.onclick=()=>{closeYearPlanContextMenu();startYearPlanRename(id)};
-  YearPlanCtx.el.appendChild(rename);
-  const remove=document.createElement('div');
-  remove.className='context-item';
-  remove.textContent='Удалить';
-  remove.onclick=()=>{closeYearPlanContextMenu();deleteYearPlanItem(id)};
-  YearPlanCtx.el.appendChild(remove);
-  const palette=document.createElement('div');
-  palette.className='year-plan-color-palette';
-  const currentColor=normalizeYearPlanColor(item?item.color:null);
-  for(const color of YEAR_PLAN_COLORS){
-    const swatch=document.createElement('button');
-    swatch.type='button';
-    swatch.className='year-plan-color-swatch';
-    if(color.toLowerCase()===currentColor.toLowerCase())swatch.classList.add('is-active');
-    swatch.style.background=color;
-    swatch.title='Изменить цвет';
-    swatch.setAttribute('aria-label','Изменить цвет');
-    const handleColorSelect=async()=>{
-      await setYearPlanColor(id,color);
-      closeYearPlanContextMenu();
-      clearYearPlanSelection();
-    };
-    swatch.addEventListener('mousedown',e=>{
-      if(e.button!==0)return;
-      e.preventDefault();
-      e.stopPropagation();
-      handleColorSelect();
-    });
-    swatch.addEventListener('click',e=>{
-      if(e.detail!==0)return;
-      e.stopPropagation();
-      handleColorSelect();
-    });
-    palette.appendChild(swatch);
-  }
-  YearPlanCtx.el.appendChild(palette);
-  YearPlanCtx.el.style.display='block';
-  const mw=YearPlanCtx.el.offsetWidth;
-  const mh=YearPlanCtx.el.offsetHeight;
-  const px=Math.min(x,window.innerWidth-mw-8);
-  const py=Math.min(y,window.innerHeight-mh-8);
-  YearPlanCtx.el.style.left=px+'px';
-  YearPlanCtx.el.style.top=py+'px';
-  YearPlanCtx.el.setAttribute('aria-hidden','false');
 }
 function resetYearPlanEditingState(){
   setYearPlanEditingId(null);
@@ -1482,24 +1376,7 @@ async function submitYearPlanDraft(){
   }
 } 
 
-function bindYearPlanActivityHover(el,id){
-  el.dataset.yearActivityId=String(id);
-  el.addEventListener('mouseenter',()=>setYearPlanHover(id));
-  el.addEventListener('mouseleave',event=>{
-    if(!event||!event.relatedTarget||typeof event.relatedTarget.closest!=='function'){clearYearPlanHover(id);return}
-    const related=event.relatedTarget.closest('[data-year-activity-id]');
-    if(related&&related.dataset.yearActivityId===String(id))return;
-    clearYearPlanHover(id);
-  });
-}
-function bindYearPlanActivitySelect(el,id){
-  el.dataset.yearActivityId=String(id);
-  el.addEventListener('click',e=>{e.stopPropagation();setYearPlanSelected(id)});
-}
-function bindYearPlanActivityContext(el,id){
-  el.dataset.yearActivityId=String(id);
-  el.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();closeContextMenu();openYearPlanContextMenu(id,e.clientX,e.clientY)});
-}
+
 function renderYearPlanActivities(monthMeta,items){
   if(!Array.isArray(monthMeta))return;
   if(!Array.isArray(items))return;
