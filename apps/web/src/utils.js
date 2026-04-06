@@ -73,6 +73,11 @@ export function clampTimeSpentMs(value) {
   return Math.min(MAX_TASK_TIME_MS, Math.max(0, ms));
 }
 
+// Количество дней в месяце (monthIndex: 0=январь)
+export function getDaysInMonth(year, monthIndex) {
+  return new Date(year, monthIndex + 1, 0).getDate();
+}
+
 // ISO-неделя по дате (ISO 8601)
 export function isoWeekInfo(d) {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));

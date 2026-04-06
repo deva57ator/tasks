@@ -1,5 +1,44 @@
-import { STORAGE_MODES, API_PREFIX, API_BASE, api, MIN_TASK_MINUTES, MAX_TASK_MINUTES, MAX_TASK_TIME_MS, TIME_PRESETS, WORKDAY_REFRESH_INTERVAL, TIME_UPDATE_INTERVAL, MAX_TASK_DEPTH, MONTH_NAMES, DEFAULT_PROJECT_EMOJI, SPRINT_UNASSIGNED_KEY, YEAR_PLAN_MAX_DAYS, YEAR_PLAN_DAY_HEIGHT, YEAR_PLAN_DEFAULT_TITLE, YEAR_PLAN_COLUMN_GAP, YEAR_PLAN_ROW_GAP, YEAR_PLAN_MOVE_THRESHOLD, YEAR_PLAN_STORAGE_KEY, YEAR_PLAN_COLORS } from './src/config.js';
-import { $, $$, escapeAttributeValue, getTaskRowById, NON_TEXT_INPUT_TYPES, isEditableShortcutTarget, uid, isDueToday, isDuePast, filterTree, isoWeekInfo, clampTimeSpentMs } from './src/utils.js';
+import { STORAGE_MODES, MIN_TASK_MINUTES, MAX_TASK_MINUTES, MAX_TASK_TIME_MS, TIME_PRESETS, WORKDAY_REFRESH_INTERVAL, TIME_UPDATE_INTERVAL, MAX_TASK_DEPTH, MONTH_NAMES, DEFAULT_PROJECT_EMOJI, SPRINT_UNASSIGNED_KEY, YEAR_PLAN_MAX_DAYS, YEAR_PLAN_DAY_HEIGHT, YEAR_PLAN_DEFAULT_TITLE, YEAR_PLAN_ROW_GAP, YEAR_PLAN_MOVE_THRESHOLD, YEAR_PLAN_COLORS } from './src/config.js';
+import { $, $$, getTaskRowById, isEditableShortcutTarget, uid, isDueToday, isDuePast, filterTree, isoWeekInfo, clampTimeSpentMs, getDaysInMonth } from './src/utils.js';
+import {
+  compareYearPlanDates, normalizeYearPlanRange,
+  normalizeYearPlanRangeForYear, normalizeYearPlanProjectId, normalizeYearPlanColor,
+  hexToRgb, rgbaFromRgb, getYearPlanColorTokens, applyYearPlanColorStyles,
+  formatYearPlanDateLabel, formatYearPlanRangeLabel, sortYearPlanItems,
+  normalizeStoredYearPlanItem, normalizeYearPlanPatchForStorage,
+  normalizeYearPlanItem, normalizeYearPlanList,
+  getYearPlanDayOfYear, getYearPlanDateFromDayOfYear, getYearPlanDaysInYear,
+  getYearPlanSegmentPosition
+} from './src/yearplan/normalize.js';
+import {
+  yearPlanYear, setYearPlanYear, yearPlanDataMode, getYearPlanDataMode, syncYearPlanDataMode,
+  yearPlanCache, yearPlanLoadingYears, yearPlanErrors, resetYearPlanCache,
+  yearPlanDraft, setYearPlanDraft, yearPlanDraftFocusRequested, setYearPlanDraftFocusRequested,
+  yearPlanDraftSubmitting, setYearPlanDraftSubmitting,
+  yearPlanSelectedId, setYearPlanSelectedId,
+  yearPlanHoverId, setYearPlanHoverId,
+  yearPlanEditingId, setYearPlanEditingId,
+  yearPlanEditingValue, setYearPlanEditingValue,
+  yearPlanEditingOriginal, setYearPlanEditingOriginal,
+  yearPlanEditingFocusRequested, setYearPlanEditingFocusRequested,
+  yearPlanEditingSubmitting, setYearPlanEditingSubmitting,
+  yearPlanResizeState, setYearPlanResizeState,
+  yearPlanResizeSubmitting, setYearPlanResizeSubmitting,
+  yearPlanMoveState, setYearPlanMoveState,
+  yearPlanMonthMeta, setYearPlanMonthMeta,
+  yearPlanPendingDeletes,
+  yearPlanFocusId, setYearPlanFocusId,
+  yearPlanFormOpen, yearPlanFormSubmitting, yearPlanFormError, yearPlanFormState,
+  readYearPlanStorage, writeYearPlanStorage,
+  yearPlanProvider,
+  getYearPlanItems, findYearPlanItem, upsertYearPlanItem,
+  updateYearPlanItemTitle, updateYearPlanItemRange,
+  removeYearPlanItem, removeYearPlanItemFromCache, updateYearPlanItemInCache,
+  ensureYearPlanData, deleteYearPlanItem,
+  closeYearPlanForm, openYearPlanForm, submitYearPlanForm,
+  getYearPlanItemsForProject,
+  registerYearPlanDataCallbacks
+} from './src/yearplan/data.js';
 import { storageMode, setStorageMode, isServerMode, StorageModeStore, ApiKeyStore, Store, ThemeStore, ProjectsStore, WorkdayStore, persistLocalWorkdayState, normalizeWorkdayState, ArchiveStore, ActiveTimersStore, registerStorageCallbacks } from './src/storage.js';
 import { setupSidebarResize } from './src/sidebar.js';
 import { apiAuthLocked, apiAuthMessage, apiAuthReason, resetApiAuthLock, lockApiAuth, apiRequest, handleApiError, runServerAction, queueTaskCreate, queueTaskUpdate, queueTaskDelete, flushPendingTaskUpdates, queueProjectCreate, queueProjectUpdate, queueProjectDelete, queueArchiveDelete, handleServerWorkdayWrite, flushPendingWorkdaySync, ApiSettingsUI, apiSettingsBlocking, openApiSettings, closeApiSettings, isApiSettingsOpen, toggleApiKeyVisibility, saveApiKey, clearApiKey, switchToLocalMode, registerApiCallbacks } from './src/api.js';
@@ -10,23 +49,7 @@ let selectedTaskId=null;
 let pendingEditId=null;
 let currentView='all';
 let currentProjectId=null;
-let yearPlanYear=new Date().getFullYear();
-let yearPlanDraft=null;
-let yearPlanDraftFocusRequested=false;
-let yearPlanDraftSubmitting=false;
-let yearPlanSelectedId=null;
-let yearPlanHoverId=null;
-let yearPlanEditingId=null;
-let yearPlanEditingValue='';
-let yearPlanEditingOriginal='';
-let yearPlanEditingFocusRequested=false;
-let yearPlanEditingSubmitting=false;
-let yearPlanResizeState=null;
-let yearPlanResizeSubmitting=false;
-let yearPlanMoveState=null;
-let yearPlanMonthMeta=[];
-const yearPlanPendingDeletes=new Set();
-let yearPlanFocusId=null;
+
 let activeEditId=null;
 let activeInputEl=null;
 let hoveredParentTaskId=null;
@@ -84,228 +107,6 @@ const WorkdayUI={
 function normalizeArchivedNode(node){if(!node||typeof node!=='object')return null;const normalized={id:typeof node.id==='string'&&node.id.trim()?node.id.trim():uid(),title:typeof node.title==='string'?node.title:'',done:true,due:typeof node.due==='string'&&node.due?node.due:null,project:typeof node.project==='string'&&node.project?node.project:null,notes:typeof node.notes==='string'?node.notes:'',timeSpent:clampTimeSpentMs(node.timeSpent),archivedAt:typeof node.archivedAt==='number'&&isFinite(node.archivedAt)?node.archivedAt:0,completedAt:typeof node.completedAt==='number'&&isFinite(node.completedAt)?node.completedAt:null,children:[]};if(Array.isArray(node.children)){const kids=[];for(const child of node.children){const normalizedChild=normalizeArchivedNode(child);if(normalizedChild)kids.push(normalizedChild)}normalized.children=kids}return normalized}
 function normalizeArchiveList(list,{persist=false}={}){if(!Array.isArray(list))return[];const normalizedArchive=[];let patched=false;for(const entry of list){const normalized=normalizeArchivedNode(entry);if(normalized){normalizedArchive.push(normalized);if(normalized!==entry)patched=true}else patched=true}if((patched||normalizedArchive.length!==list.length)&&persist){ArchiveStore.write(normalizedArchive)}return normalizedArchive}
 if(!Array.isArray(archivedTasks))archivedTasks=[];else archivedTasks=normalizeArchiveList(archivedTasks,{persist:!isServerMode()});
-const yearPlanCache=new Map();
-const yearPlanLoadingYears=new Set();
-const yearPlanErrors=new Map();
-let yearPlanFormOpen=false;
-let yearPlanFormSubmitting=false;
-let yearPlanFormError='';
-let yearPlanFormState=null;
-let yearPlanDataMode=storageMode;
-
-function getYearPlanDataMode(){return yearPlanDataMode}
-function syncYearPlanDataMode(){yearPlanDataMode=storageMode}
-function resetYearPlanCache(){yearPlanCache.clear();yearPlanLoadingYears.clear();yearPlanErrors.clear()}
-
-function normalizeYearPlanTitle(title){return String(title||'').trim()||YEAR_PLAN_DEFAULT_TITLE}
-function normalizeYearPlanYear(value){const year=Math.trunc(Number(value));return Number.isFinite(year)?year:null}
-function generateLocalYearPlanId(){return`l_${Date.now()}_${Math.random().toString(36).slice(2,8)}`}
-function clampYearPlanMonth(value){const month=Math.trunc(Number(value));if(!Number.isFinite(month))return 1;return Math.max(1,Math.min(12,month))}
-function clampYearPlanDay(year,month,day){const daysInMonth=getDaysInMonth(year,month-1);const normalized=Math.trunc(Number(day));if(!Number.isFinite(normalized))return 1;return Math.max(1,Math.min(daysInMonth,normalized))}
-function normalizeYearPlanRangeForYear(year,startMonth,startDay,endMonth,endDay){
-  const safeStartMonth=clampYearPlanMonth(startMonth);
-  const safeEndMonth=clampYearPlanMonth(endMonth);
-  const safeStartDay=clampYearPlanDay(year,safeStartMonth,startDay);
-  const safeEndDay=clampYearPlanDay(year,safeEndMonth,endDay);
-  if(compareYearPlanDates(safeStartMonth,safeStartDay,safeEndMonth,safeEndDay)<=0){
-    return{startMonth:safeStartMonth,startDay:safeStartDay,endMonth:safeEndMonth,endDay:safeEndDay};
-  }
-  return{startMonth:safeStartMonth,startDay:safeStartDay,endMonth:safeStartMonth,endDay:safeStartDay};
-}
-function normalizeYearPlanProjectId(value){
-  if(value===null||value===undefined||value==='')return null;
-  if(typeof value==='string')return value.trim()||null;
-  if(typeof value==='number'&&Number.isFinite(value))return String(value);
-  return null;
-}
-function normalizeYearPlanColor(value){
-  const normalized=typeof value==='string'?value.trim().toLowerCase():'';
-  if(!normalized)return YEAR_PLAN_COLORS[0];
-  const match=YEAR_PLAN_COLORS.find(color=>color.toLowerCase()===normalized);
-  return match||YEAR_PLAN_COLORS[0];
-}
-function hexToRgb(hex){
-  if(typeof hex!=='string')return null;
-  const raw=hex.trim().replace('#','');
-  if(raw.length===3){
-    const r=parseInt(raw[0]+raw[0],16);
-    const g=parseInt(raw[1]+raw[1],16);
-    const b=parseInt(raw[2]+raw[2],16);
-    if([r,g,b].some(v=>Number.isNaN(v)))return null;
-    return{r,g,b};
-  }
-  if(raw.length!==6)return null;
-  const r=parseInt(raw.slice(0,2),16);
-  const g=parseInt(raw.slice(2,4),16);
-  const b=parseInt(raw.slice(4,6),16);
-  if([r,g,b].some(v=>Number.isNaN(v)))return null;
-  return{r,g,b};
-}
-function rgbaFromRgb(rgb,alpha){
-  if(!rgb)return null;
-  const a=Math.max(0,Math.min(1,Number(alpha)));
-  if(!Number.isFinite(a))return null;
-  return`rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${a})`;
-}
-function getYearPlanColorTokens(color){
-  const base=normalizeYearPlanColor(color);
-  const rgb=hexToRgb(base);
-  if(!rgb){
-    return{
-      base,
-      soft:'var(--accent-soft)',
-      softStrong:'var(--accent-soft-strong)',
-      border:'var(--accent-border)',
-      shadow:'var(--accent-shadow)'
-    };
-  }
-  return{
-    base,
-    soft:rgbaFromRgb(rgb,0.18),
-    softStrong:rgbaFromRgb(rgb,0.32),
-    border:rgbaFromRgb(rgb,0.45),
-    shadow:rgbaFromRgb(rgb,0.25)
-  };
-}
-function applyYearPlanColorStyles(el,color){
-  if(!el)return;
-  const tokens=getYearPlanColorTokens(color);
-  el.style.setProperty('--year-activity-color',tokens.base);
-  el.style.setProperty('--year-activity-soft',tokens.soft);
-  el.style.setProperty('--year-activity-soft-strong',tokens.softStrong);
-  el.style.setProperty('--year-activity-border',tokens.border);
-  el.style.setProperty('--year-activity-shadow',tokens.shadow);
-}
-function formatYearPlanDateLabel(month,day){
-  const dd=String(day).padStart(2,'0');
-  const mm=String(month).padStart(2,'0');
-  return`${dd}.${mm}`;
-}
-function formatYearPlanRangeLabel(item){
-  if(!item)return'';
-  const start=formatYearPlanDateLabel(item.startMonth,item.startDay);
-  const end=formatYearPlanDateLabel(item.endMonth,item.endDay);
-  if(start===end)return start;
-  return`${start}–${end}`;
-}
-function sortYearPlanItems(list){if(!Array.isArray(list))return;list.sort((a,b)=>a.startMonth-b.startMonth||a.startDay-b.startDay||a.endMonth-b.endMonth||a.endDay-b.endDay||String(a.id).localeCompare(String(b.id)))}
-function readYearPlanStorage(){
-  try{
-    const raw=JSON.parse(localStorage.getItem(YEAR_PLAN_STORAGE_KEY));
-    if(!raw||typeof raw!=='object')return{version:1,items:[]};
-    const items=Array.isArray(raw.items)?raw.items:[];
-    return{version:1,items};
-  }catch{
-    return{version:1,items:[]};
-  }
-}
-function writeYearPlanStorage(items){
-  try{localStorage.setItem(YEAR_PLAN_STORAGE_KEY,JSON.stringify({version:1,items}))}catch{}
-}
-function normalizeStoredYearPlanItem(raw){
-  if(!raw||typeof raw!=='object')return null;
-  const year=normalizeYearPlanYear(raw.year);
-  if(!year)return null;
-  const range=normalizeYearPlanRangeForYear(year,raw.startMonth??raw.month,raw.startDay,raw.endMonth??raw.month,raw.endDay);
-  const id=typeof raw.id==='string'||typeof raw.id==='number'?String(raw.id):generateLocalYearPlanId();
-  const title=normalizeYearPlanTitle(raw.title);
-  const isDone=raw.isDone===true;
-  const createdTs=Number.isFinite(raw.createdTs)?raw.createdTs:Date.now();
-  const updatedTs=Number.isFinite(raw.updatedTs)?raw.updatedTs:createdTs;
-  const projectId=normalizeYearPlanProjectId(raw.projectId);
-  const color=normalizeYearPlanColor(raw.color);
-  return{year,id,startMonth:range.startMonth,startDay:range.startDay,endMonth:range.endMonth,endDay:range.endDay,title,isDone,createdTs,updatedTs,projectId,color};
-}
-function normalizeYearPlanPatchForStorage(item,patch){
-  const year=normalizeYearPlanYear(patch.year??item.year)??item.year;
-  const range=normalizeYearPlanRangeForYear(year,patch.startMonth??item.startMonth,patch.startDay??item.startDay,patch.endMonth??item.endMonth,patch.endDay??item.endDay);
-  const nextTitle=patch.title!==undefined?normalizeYearPlanTitle(patch.title):item.title;
-  const nextIsDone=patch.isDone!==undefined?patch.isDone===true:item.isDone;
-  const nextProjectId=patch.projectId!==undefined?normalizeYearPlanProjectId(patch.projectId):item.projectId??null;
-  const nextColor=patch.color!==undefined?normalizeYearPlanColor(patch.color):normalizeYearPlanColor(item.color);
-  return{
-    year,
-    startMonth:range.startMonth,
-    startDay:range.startDay,
-    endMonth:range.endMonth,
-    endDay:range.endDay,
-    title:nextTitle,
-    isDone:nextIsDone,
-    projectId:nextProjectId,
-    color:nextColor
-  };
-}
-
-const yearPlanProvider={
-  list(year){
-    if(getYearPlanDataMode()===STORAGE_MODES.SERVER){
-      return apiRequest(`/yearplan?year=${encodeURIComponent(year)}`).then(payload=>{
-        const items=Array.isArray(payload?.items)?payload.items:Array.isArray(payload)?payload:[];
-        return normalizeYearPlanList(items,year);
-      });
-    }
-    const stored=readYearPlanStorage();
-    const normalized=[];
-    for(const entry of stored.items){
-      const item=normalizeStoredYearPlanItem(entry);
-      if(item&&item.year===year)normalized.push(item);
-    }
-    sortYearPlanItems(normalized);
-    return Promise.resolve(normalizeYearPlanList(normalized,year));
-  },
-  create(item){
-    if(getYearPlanDataMode()===STORAGE_MODES.SERVER){
-      return apiRequest('/yearplan',{method:'POST',body:item}).then(payload=>normalizeYearPlanItem(payload,item.year));
-    }
-    const stored=readYearPlanStorage();
-    const year=normalizeYearPlanYear(item.year)||yearPlanYear;
-    const range=normalizeYearPlanRangeForYear(year,item.startMonth,item.startDay,item.endMonth,item.endDay);
-    const color=normalizeYearPlanColor(item.color);
-    const projectId=normalizeYearPlanProjectId(item.projectId);
-    const now=Date.now();
-    const created={
-      id:generateLocalYearPlanId(),
-      year,
-      startMonth:range.startMonth,
-      startDay:range.startDay,
-      endMonth:range.endMonth,
-      endDay:range.endDay,
-      title:normalizeYearPlanTitle(item.title),
-      isDone:item.isDone===true,
-      projectId,
-      color,
-      createdTs:now,
-      updatedTs:now
-    };
-    stored.items.push(created);
-    writeYearPlanStorage(stored.items);
-    return Promise.resolve(normalizeYearPlanItem(created,year));
-  },
-  update(id,patch){
-    if(getYearPlanDataMode()===STORAGE_MODES.SERVER){
-      return apiRequest(`/yearplan/${encodeURIComponent(id)}`,{method:'PATCH',body:patch}).then(payload=>normalizeYearPlanItem(payload,patch.year||yearPlanYear));
-    }
-    const stored=readYearPlanStorage();
-    const idx=stored.items.findIndex(entry=>entry&&String(entry.id)===String(id));
-    if(idx===-1)throw new Error('Активность не найдена');
-    const current=normalizeStoredYearPlanItem(stored.items[idx]);
-    if(!current)throw new Error('Активность не найдена');
-    const nextPatch=normalizeYearPlanPatchForStorage(current,patch);
-    const updated={...current,...nextPatch,updatedTs:Date.now()};
-    stored.items[idx]=updated;
-    writeYearPlanStorage(stored.items);
-    return Promise.resolve(normalizeYearPlanItem(updated,updated.year));
-  },
-  remove(id){
-    if(getYearPlanDataMode()===STORAGE_MODES.SERVER){
-      return apiRequest(`/yearplan/${encodeURIComponent(id)}`,{method:'DELETE'}).then(()=>undefined);
-    }
-    const stored=readYearPlanStorage();
-    const nextItems=stored.items.filter(entry=>entry&&String(entry.id)!==String(id));
-    writeYearPlanStorage(nextItems);
-    return Promise.resolve();
-  }
-};
 
 function ensureActiveTimersState(){if(!activeTimersState||typeof activeTimersState!=='object')activeTimersState={}}
 function persistActiveTimersState(){ensureActiveTimersState();ActiveTimersStore.write(activeTimersState,{mode:storageMode})}
@@ -1259,39 +1060,8 @@ function renderArchivedNode(node,depth,container){if(!node)return;const row=docu
 function renderArchive(container){const wrap=document.createElement('div');wrap.className='archive-container';const items=[...archivedTasks];items.sort((a,b)=>(b.archivedAt||0)-(a.archivedAt||0)||(b.completedAt||0)-(a.completedAt||0));if(!items.length){const empty=document.createElement('div');empty.className='archive-empty';empty.textContent='Архив пока пуст.';container.appendChild(empty);return}for(const item of items){renderArchivedNode(item,0,wrap)}container.appendChild(wrap)}
 
 function renderYearPlanIfVisible(){if(currentView==='year'||currentView==='project')render()}
-function getYearPlanItems(year=yearPlanYear){return yearPlanCache.get(year)||[]}
-function findYearPlanItem(id,year=yearPlanYear){const list=getYearPlanItems(year);return list.find(item=>item&&item.id===id)||null}
-function upsertYearPlanItem(item){
-  if(!item||!item.id)return;
-  const year=item.year||yearPlanYear;
-  const list=getYearPlanItems(year);
-  const idx=list.findIndex(entry=>entry&&entry.id===item.id);
-  if(idx===-1)list.push(item);
-  else list[idx]={...list[idx],...item};
-  sortYearPlanItems(list);
-  yearPlanCache.set(year,list);
-}
-function updateYearPlanItemTitle(id,title){const list=getYearPlanItems(yearPlanYear);const item=list.find(entry=>entry&&entry.id===id);if(!item)return;item.title=title;sortYearPlanItems(list);yearPlanCache.set(yearPlanYear,list)}
-function updateYearPlanItemRange(id,{startMonth,startDay,endMonth,endDay}){const list=getYearPlanItems(yearPlanYear);const item=list.find(entry=>entry&&entry.id===id);if(!item)return;item.startMonth=startMonth;item.startDay=startDay;item.endMonth=endMonth;item.endDay=endDay;sortYearPlanItems(list);yearPlanCache.set(yearPlanYear,list)}
-function removeYearPlanItem(id){const list=getYearPlanItems(yearPlanYear);const idx=list.findIndex(entry=>entry&&entry.id===id);if(idx===-1)return false;list.splice(idx,1);yearPlanCache.set(yearPlanYear,list);return true}
-function removeYearPlanItemFromCache(id,year){
-  const list=getYearPlanItems(year);
-  const idx=list.findIndex(entry=>entry&&entry.id===id);
-  if(idx===-1)return false;
-  list.splice(idx,1);
-  yearPlanCache.set(year,list);
-  return true;
-}
-function updateYearPlanItemInCache(id,year,patch){
-  const list=getYearPlanItems(year);
-  const item=list.find(entry=>entry&&entry.id===id);
-  if(!item)return false;
-  Object.assign(item,patch);
-  sortYearPlanItems(list);
-  yearPlanCache.set(year,list);
-  return true;
-}
-function requestYearPlanFocus(id){yearPlanFocusId=id}
+registerYearPlanDataCallbacks({render:renderYearPlanIfVisible,toast});
+function requestYearPlanFocus(id){setYearPlanFocusId(id)}
 function applyYearPlanFocus(){
   if(!yearPlanFocusId)return;
   const id=yearPlanFocusId;
@@ -1300,7 +1070,7 @@ function applyYearPlanFocus(){
     const safe=typeof CSS!=='undefined'&&CSS.escape?CSS.escape(String(id)):String(id);
     const el=document.querySelector(`[data-year-activity-id="${safe}"]`);
     if(el&&typeof el.scrollIntoView==='function'){
-      yearPlanFocusId=null;
+      setYearPlanFocusId(null);
       el.scrollIntoView({block:'center',behavior:'smooth'});
     }
   });
@@ -1308,23 +1078,23 @@ function applyYearPlanFocus(){
 function setYearPlanSelected(id){
   if(yearPlanSelectedId===id)return;
   if(yearPlanResizeState&&yearPlanResizeState.id!==id)resetYearPlanResizeState({render:false});
-  yearPlanSelectedId=id;
+  setYearPlanSelectedId(id);
   renderYearPlanIfVisible();
 }
 function clearYearPlanSelection(){
   if(yearPlanSelectedId===null)return;
   resetYearPlanResizeState({render:false});
-  yearPlanSelectedId=null;
+  setYearPlanSelectedId(null);
   renderYearPlanIfVisible();
 }
 function setYearPlanHover(id){
   if(yearPlanHoverId===id)return;
-  yearPlanHoverId=id;
+  setYearPlanHoverId(id);
   renderYearPlanIfVisible();
 }
 function clearYearPlanHover(id){
   if(yearPlanHoverId!==id)return;
-  yearPlanHoverId=null;
+  setYearPlanHoverId(null);
   renderYearPlanIfVisible();
 }
 async function setYearPlanProject(id,projectId){
@@ -1449,19 +1219,19 @@ function openYearPlanContextMenu(id,x,y){
   YearPlanCtx.el.setAttribute('aria-hidden','false');
 }
 function resetYearPlanEditingState(){
-  yearPlanEditingId=null;
-  yearPlanEditingValue='';
-  yearPlanEditingOriginal='';
-  yearPlanEditingFocusRequested=false;
-  yearPlanEditingSubmitting=false;
+  setYearPlanEditingId(null);
+  setYearPlanEditingValue('');
+  setYearPlanEditingOriginal('');
+  setYearPlanEditingFocusRequested(false);
+  setYearPlanEditingSubmitting(false);
 }
 function resetYearPlanResizeState({render=true}={}){
-  yearPlanResizeState=null;
-  yearPlanResizeSubmitting=false;
+  setYearPlanResizeState(null);
+  setYearPlanResizeSubmitting(false);
   if(render)renderYearPlanIfVisible();
 }
 function resetYearPlanMoveState({render=true}={}){
-  yearPlanMoveState=null;
+  setYearPlanMoveState(null);
   if(render)renderYearPlanIfVisible();
 }
 function getYearPlanMonthMetaByIndex(index){
@@ -1477,12 +1247,8 @@ function getYearPlanTargetMetaFromEvent(event){
   }
   return null;
 }
-function compareYearPlanDates(aMonth,aDay,bMonth,bDay){if(aMonth!==bMonth)return aMonth-bMonth;return aDay-bDay}
-function getYearPlanDayOfYear(year,month,day){let total=0;for(let m=1;m<month;m++){total+=getDaysInMonth(year,m-1)}return total+day}
-function getYearPlanDateFromDayOfYear(year,dayOfYear){let remaining=dayOfYear;for(let month=1;month<=12;month++){const daysInMonth=getDaysInMonth(year,month-1);if(remaining>daysInMonth){remaining-=daysInMonth;continue}return{month,day:remaining}}return{month:12,day:getDaysInMonth(year,11)}}
-function getYearPlanDaysInYear(year){let total=0;for(let m=0;m<12;m++){total+=getDaysInMonth(year,m)}return total}
-function normalizeYearPlanRange(startMonth,startDay,endMonth,endDay){if(compareYearPlanDates(startMonth,startDay,endMonth,endDay)<=0)return{startMonth,startDay,endMonth,endDay};return{startMonth:endMonth,startDay:endDay,endMonth:startMonth,endDay:startDay}}
 function getYearPlanDurationDays(item){const start=getYearPlanDayOfYear(yearPlanYear,item.startMonth,item.startDay);const end=getYearPlanDayOfYear(yearPlanYear,item.endMonth,item.endDay);return end-start+1}
+function getYearPlanSegmentsForMonth(slices,daysInMonth){const perItemDayMeta=new Map();for(let day=1;day<=daysInMonth;day++){const active=slices.filter(entry=>entry.startDay<=day&&entry.endDay>=day);active.sort((a,b)=>a.startDay-b.startDay||b.endDay-a.endDay||String(a.id).localeCompare(String(b.id)));const colCount=active.length;for(let i=0;i<active.length;i++){const slice=active[i];if(!perItemDayMeta.has(slice.id))perItemDayMeta.set(slice.id,{});perItemDayMeta.get(slice.id)[day]={slotIndex:i,colCount}}}const segments=[];for(const slice of slices){const dayMeta=perItemDayMeta.get(slice.id)||{};let current=null;for(let day=slice.startDay;day<=slice.endDay&&day<=daysInMonth;day++){const meta=dayMeta[day];if(!meta)continue;if(!current){current={item:slice.item,slice,startDay:day,endDay:day,slotIndex:meta.slotIndex,colCount:meta.colCount}}else if(current.slotIndex===meta.slotIndex&&current.colCount===meta.colCount){current.endDay=day}else{segments.push(current);current={item:slice.item,slice,startDay:day,endDay:day,slotIndex:meta.slotIndex,colCount:meta.colCount}}}if(current)segments.push(current)}segments.sort((a,b)=>a.slice.startDay-b.slice.startDay||b.slice.endDay-a.slice.endDay||String(a.item.id).localeCompare(String(b.item.id))||a.startDay-b.startDay);return segments}
 function getYearPlanSlicesForRange(range){const slices=[];if(!range)return slices;for(let month=range.startMonth;month<=range.endMonth;month++){const daysInMonth=getDaysInMonth(yearPlanYear,month-1);const fromDay=month===range.startMonth?range.startDay:1;const toDay=month===range.endMonth?range.endDay:daysInMonth;slices.push({month,startDay:fromDay,endDay:toDay,isFirstSlice:month===range.startMonth,isLastSlice:month===range.endMonth})}return slices}
 function getYearPlanMoveRange({state,meta,day}){
   const daysInYear=getYearPlanDaysInYear(yearPlanYear);
@@ -1507,7 +1273,7 @@ function startYearPlanMove(item,meta,event){
   if(event.target&&typeof event.target.closest==='function'&&!event.target.closest('.year-activity-handle'))return;
   if(yearPlanResizeState||yearPlanResizeSubmitting||yearPlanDraft||yearPlanEditingId)return;
   setYearPlanSelected(item.id);
-  yearPlanMoveState={
+  setYearPlanMoveState({
     id:item.id,
     originalStartMonth:item.startMonth,
     originalStartDay:item.startDay,
@@ -1522,7 +1288,7 @@ function startYearPlanMove(item,meta,event){
     targetStartDay:item.startDay,
     targetEndMonth:item.endMonth,
     targetEndDay:item.endDay
-  };
+  });
 }
 function updateYearPlanMove(event){
   if(!yearPlanMoveState||!event)return;
@@ -1568,7 +1334,7 @@ async function finalizeYearPlanMove(){
 function startYearPlanResize(item,edge,meta){
   if(!item||!meta||yearPlanResizeSubmitting)return;
   if(yearPlanDraft||yearPlanEditingId)return;
-  yearPlanResizeState={
+  setYearPlanResizeState({
     id:item.id,
     startMonth:item.startMonth,
     startDay:item.startDay,
@@ -1580,7 +1346,7 @@ function startYearPlanResize(item,edge,meta){
     originalEndDay:item.endDay,
     edge,
     lastValidMonthIndex:meta.index
-  };
+  });
   renderYearPlanIfVisible();
 }
 function updateYearPlanResizeFromEvent(event){
@@ -1618,7 +1384,7 @@ async function finalizeYearPlanResize(){
     resetYearPlanResizeState();
     return;
   }
-  yearPlanResizeSubmitting=true;
+  setYearPlanResizeSubmitting(true);
   renderYearPlanIfVisible();
   try{
     const updated=await yearPlanProvider.update(id,{startMonth,startDay,endMonth,endDay});
@@ -1633,10 +1399,10 @@ async function finalizeYearPlanResize(){
 function startYearPlanRename(id){
   const item=findYearPlanItem(id);
   if(!item)return;
-  yearPlanEditingId=id;
-  yearPlanEditingValue=item.title||'';
-  yearPlanEditingOriginal=item.title||'';
-  yearPlanEditingFocusRequested=true;
+  setYearPlanEditingId(id);
+  setYearPlanEditingValue(item.title||'');
+  setYearPlanEditingOriginal(item.title||'');
+  setYearPlanEditingFocusRequested(true);
   renderYearPlanIfVisible();
 }
 function cancelYearPlanRename(){
@@ -1659,7 +1425,7 @@ async function commitYearPlanRename(){
     renderYearPlanIfVisible();
     return;
   }
-  yearPlanEditingSubmitting=true;
+  setYearPlanEditingSubmitting(true);
   renderYearPlanIfVisible();
   try{
     const updated=await yearPlanProvider.update(id,{title:normalized});
@@ -1671,70 +1437,10 @@ async function commitYearPlanRename(){
     renderYearPlanIfVisible();
   }
 }
-async function deleteYearPlanItem(id){
-  if(!id||yearPlanPendingDeletes.has(id))return;
-  yearPlanPendingDeletes.add(id);
-  try{
-    await yearPlanProvider.remove(id);
-    removeYearPlanItem(id);
-    if(yearPlanSelectedId===id)yearPlanSelectedId=null;
-    renderYearPlanIfVisible();
-  }catch(err){
-    toast('Не удалось удалить активность');
-  }finally{
-    yearPlanPendingDeletes.delete(id);
-  }
-}
 
-function getDefaultYearPlanFormState(){const now=new Date();const defaultMonth=now.getFullYear()===yearPlanYear?now.getMonth()+1:1;return{month:defaultMonth,startDay:1,endDay:1,title:''}}
+function resetYearPlanDraft(){setYearPlanDraft(null);setYearPlanDraftSubmitting(false);setYearPlanDraftFocusRequested(false)}
 
-function clampYearPlanFormBounds(){if(!yearPlanFormState){yearPlanFormState=getDefaultYearPlanFormState()}const monthIndex=Math.min(11,Math.max(0,Math.trunc((yearPlanFormState.month||1)-1)));const daysInMonth=getDaysInMonth(yearPlanYear,monthIndex);const normalizedStart=Math.max(1,Math.min(daysInMonth,Math.trunc(yearPlanFormState.startDay)||1));const normalizedEndRaw=Math.max(normalizedStart,Math.trunc(yearPlanFormState.endDay)||normalizedStart);const normalizedEnd=Math.min(daysInMonth,normalizedEndRaw);yearPlanFormState.startDay=normalizedStart;yearPlanFormState.endDay=normalizedEnd;yearPlanFormState.month=monthIndex+1;return daysInMonth}
-
-function validateYearPlanFormState(){const daysInMonth=clampYearPlanFormBounds();if(yearPlanFormState.startDay<1)return'День начала должен быть не меньше 1';if(yearPlanFormState.endDay<yearPlanFormState.startDay)return'День окончания не может быть раньше начала';if(yearPlanFormState.endDay>daysInMonth)return`В ${MONTH_NAMES[yearPlanFormState.month-1]} только ${daysInMonth} дней`;return''}
-
-function normalizeYearPlanItem(raw,year){
-  if(!raw||typeof raw!=='object')return null;
-  const normalizedYear=normalizeYearPlanYear(raw.year??year)??year;
-  const startMonthRaw=raw.startMonth!==undefined?raw.startMonth:raw.month;
-  const endMonthRaw=raw.endMonth!==undefined?raw.endMonth:raw.month;
-  const safeStartMonth=Math.min(12,Math.max(1,Math.trunc(Number(startMonthRaw)||1)));
-  const safeEndMonth=Math.min(12,Math.max(1,Math.trunc(Number(endMonthRaw)||safeStartMonth)));
-  const startMonthDays=getDaysInMonth(normalizedYear,safeStartMonth-1);
-  let startDay=Math.trunc(Number(raw.startDay));
-  if(!Number.isFinite(startDay))startDay=1;
-  startDay=Math.min(Math.max(1,startDay),startMonthDays);
-  const endMonthDays=getDaysInMonth(normalizedYear,safeEndMonth-1);
-  let endDay=Math.trunc(Number(raw.endDay));
-  if(!Number.isFinite(endDay))endDay=startDay;
-  endDay=Math.min(Math.max(1,endDay),endMonthDays);
-  const normalizedRange=normalizeYearPlanRange(safeStartMonth,startDay,safeEndMonth,endDay);
-  const id=typeof raw.id==='string'||typeof raw.id==='number'?String(raw.id):String(uid());
-  const title=typeof raw.title==='string'?raw.title:'';
-  const createdTs=Number.isFinite(raw.createdTs)?raw.createdTs:null;
-  const updatedTs=Number.isFinite(raw.updatedTs)?raw.updatedTs:null;
-  const projectId=normalizeYearPlanProjectId(raw.projectId);
-  const color=normalizeYearPlanColor(raw.color);
-  return{
-    id,
-    year:normalizedYear,
-    startMonth:normalizedRange.startMonth,
-    startDay:normalizedRange.startDay,
-    endMonth:normalizedRange.endMonth,
-    endDay:normalizedRange.endDay,
-    title,
-    isDone:raw.isDone===true,
-    createdTs,
-    updatedTs,
-    projectId,
-    color
-  }
-}
-
-function normalizeYearPlanList(list,year){const normalized=[];if(Array.isArray(list)){for(const entry of list){const item=normalizeYearPlanItem(entry,year);if(item)normalized.push(item)}}return normalized}
-
-function resetYearPlanDraft(){yearPlanDraft=null;yearPlanDraftSubmitting=false;yearPlanDraftFocusRequested=false}
-
-function startYearPlanDraft(monthIndex,day){if(yearPlanDraftSubmitting)return;if(yearPlanDraft&&(yearPlanDraft.mode==='editing'||yearPlanDraft.mode==='dragging'))return;resetYearPlanResizeState({render:false});yearPlanDraft={mode:'dragging',startMonth:monthIndex+1,startDay:day,endMonth:monthIndex+1,endDay:day,lastValidMonthIndex:monthIndex};yearPlanDraftSubmitting=false;renderYearPlanIfVisible()}
+function startYearPlanDraft(monthIndex,day){if(yearPlanDraftSubmitting)return;if(yearPlanDraft&&(yearPlanDraft.mode==='editing'||yearPlanDraft.mode==='dragging'))return;resetYearPlanResizeState({render:false});setYearPlanDraft({mode:'dragging',startMonth:monthIndex+1,startDay:day,endMonth:monthIndex+1,endDay:day,lastValidMonthIndex:monthIndex});setYearPlanDraftSubmitting(false);renderYearPlanIfVisible()}
 
 function updateYearPlanDraftFromEvent(event){
   if(!yearPlanDraft||yearPlanDraft.mode!=='dragging')return;
@@ -1753,14 +1459,14 @@ function getYearPlanDraftRange(){if(!yearPlanDraft)return{startMonth:1,startDay:
 function finalizeYearPlanDraft(){
   if(!yearPlanDraft||yearPlanDraft.mode!=='dragging')return;
   const range=getYearPlanDraftRange();
-  yearPlanDraft={...yearPlanDraft,mode:'editing',startMonth:range.startMonth,startDay:range.startDay,endMonth:range.endMonth,endDay:range.endDay};
-  yearPlanDraftFocusRequested=true;
+  setYearPlanDraft({...yearPlanDraft,mode:'editing',startMonth:range.startMonth,startDay:range.startDay,endMonth:range.endMonth,endDay:range.endDay});
+  setYearPlanDraftFocusRequested(true);
   renderYearPlanIfVisible()
 }
 
 async function submitYearPlanDraft(){
   if(!yearPlanDraft||yearPlanDraft.mode!=='editing'||yearPlanDraftSubmitting)return;
-  yearPlanDraftSubmitting=true;
+  setYearPlanDraftSubmitting(true);
   renderYearPlanIfVisible();
   const range=getYearPlanDraftRange();
   const payload={year:yearPlanYear,startMonth:range.startMonth,startDay:range.startDay,endMonth:range.endMonth,endDay:range.endDay,title:(yearPlanDraft.title||'').trim()||YEAR_PLAN_DEFAULT_TITLE,color:normalizeYearPlanColor(yearPlanDraft.color)};
@@ -1776,56 +1482,6 @@ async function submitYearPlanDraft(){
   }
 } 
 
-async function ensureYearPlanData(year,{force=false}={}){
-  if(!force&&yearPlanCache.has(year))return;
-  if(yearPlanLoadingYears.has(year))return;
-  if(force)yearPlanCache.delete(year);
-  yearPlanErrors.delete(year);
-  yearPlanLoadingYears.add(year);
-  renderYearPlanIfVisible();
-  try{
-    const items=await yearPlanProvider.list(year);
-    yearPlanCache.set(year,normalizeYearPlanList(items,year));
-  }catch(err){
-    yearPlanErrors.set(year,err&&err.message?err.message:'Не удалось загрузить план');
-  }finally{
-    yearPlanLoadingYears.delete(year);
-    renderYearPlanIfVisible();
-  }
-}
-
-function closeYearPlanForm(){yearPlanFormOpen=false;yearPlanFormSubmitting=false;yearPlanFormError='';yearPlanFormState=getDefaultYearPlanFormState();renderYearPlanIfVisible()}
-
-function openYearPlanForm(){yearPlanFormOpen=true;yearPlanFormError='';yearPlanFormSubmitting=false;yearPlanFormState=getDefaultYearPlanFormState();renderYearPlanIfVisible()}
-
-async function submitYearPlanForm(event){
-  event&&event.preventDefault();
-  if(yearPlanFormSubmitting)return;
-  const validationError=validateYearPlanFormState();
-  if(validationError){
-    yearPlanFormError=validationError;
-    renderYearPlanIfVisible();
-    return;
-  }
-  yearPlanFormSubmitting=true;
-  yearPlanFormError='';
-  renderYearPlanIfVisible();
-  const payload={year:yearPlanYear,startMonth:yearPlanFormState.month,startDay:yearPlanFormState.startDay,endMonth:yearPlanFormState.month,endDay:yearPlanFormState.endDay,title:yearPlanFormState.title||'',color:normalizeYearPlanColor(yearPlanFormState.color)};
-  try{
-    const created=await yearPlanProvider.create(payload);
-    if(created)upsertYearPlanItem(created);
-    yearPlanFormOpen=false;
-    yearPlanFormState=getDefaultYearPlanFormState();
-  }catch(err){
-    yearPlanFormError=`Не удалось создать активность${err&&err.message?`: ${err.message}`:''}`;
-  }finally{
-    yearPlanFormSubmitting=false;
-    renderYearPlanIfVisible();
-  }
-}
-
-function getYearPlanSegmentsForMonth(slices,daysInMonth){const perItemDayMeta=new Map();for(let day=1;day<=daysInMonth;day++){const active=slices.filter(entry=>entry.startDay<=day&&entry.endDay>=day);active.sort((a,b)=>a.startDay-b.startDay||b.endDay-a.endDay||String(a.id).localeCompare(String(b.id)));const colCount=active.length;for(let i=0;i<active.length;i++){const slice=active[i];if(!perItemDayMeta.has(slice.id))perItemDayMeta.set(slice.id,{});perItemDayMeta.get(slice.id)[day]={slotIndex:i,colCount}}}const segments=[];for(const slice of slices){const dayMeta=perItemDayMeta.get(slice.id)||{};let current=null;for(let day=slice.startDay;day<=slice.endDay&&day<=daysInMonth;day++){const meta=dayMeta[day];if(!meta)continue;if(!current){current={item:slice.item,slice,startDay:day,endDay:day,slotIndex:meta.slotIndex,colCount:meta.colCount}}else if(current.slotIndex===meta.slotIndex&&current.colCount===meta.colCount){current.endDay=day}else{segments.push(current);current={item:slice.item,slice,startDay:day,endDay:day,slotIndex:meta.slotIndex,colCount:meta.colCount}}}if(current)segments.push(current)}segments.sort((a,b)=>a.slice.startDay-b.slice.startDay||b.slice.endDay-a.slice.endDay||String(a.item.id).localeCompare(String(b.item.id))||a.startDay-b.startDay);return segments}
-function getYearPlanSegmentPosition(segment){const leftPercent=segment.colCount?segment.slotIndex/segment.colCount*100:0;const widthPercent=segment.colCount?100/segment.colCount:100;const leftOffset=YEAR_PLAN_COLUMN_GAP/2;const widthOffset=YEAR_PLAN_COLUMN_GAP;return{left:YEAR_PLAN_COLUMN_GAP?`calc(${leftPercent}% + ${leftOffset}px)`:leftPercent+'%',width:YEAR_PLAN_COLUMN_GAP?`calc(${widthPercent}% - ${widthOffset}px)`:widthPercent+'%'}}
 function bindYearPlanActivityHover(el,id){
   el.dataset.yearActivityId=String(id);
   el.addEventListener('mouseenter',()=>setYearPlanHover(id));
@@ -1976,12 +1632,12 @@ function renderYearPlanActivities(monthMeta,items){
           input.className='year-plan-rename-input';
           input.value=yearPlanEditingValue;
           input.disabled=yearPlanEditingSubmitting;
-          input.oninput=e=>{yearPlanEditingValue=e.target.value||''};
+          input.oninput=e=>{setYearPlanEditingValue(e.target.value||'')};
           input.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();commitYearPlanRename()}else if(e.key==='Escape'||e.key==='Esc'){e.preventDefault();cancelYearPlanRename()}};
           input.onblur=()=>{if(yearPlanEditingId===group.item.id)commitYearPlanRename()};
           title.appendChild(input);
           if(yearPlanEditingFocusRequested&&!yearPlanEditingSubmitting){
-            yearPlanEditingFocusRequested=false;
+            setYearPlanEditingFocusRequested(false);
             setTimeout(()=>{try{input.focus({preventScroll:true});input.select()}catch{input.focus();input.select()}},0);
           }
         }else{
@@ -2065,7 +1721,7 @@ function renderYearPlanDraft(monthMeta){
         input.onblur=()=>submitYearPlanDraft();
         block.appendChild(input);
         if(yearPlanDraftFocusRequested&&!yearPlanDraftSubmitting){
-          yearPlanDraftFocusRequested=false;
+          setYearPlanDraftFocusRequested(false);
           setTimeout(()=>{try{input.focus({preventScroll:true})}catch{input.focus()}},0);
         }
       }else{
@@ -2091,7 +1747,6 @@ function renderYearPlanDraft(monthMeta){
   }
 }
 
-yearPlanFormState=getDefaultYearPlanFormState();
 
 function renderYearPlan(container){
   if(!container)return;
@@ -2108,9 +1763,9 @@ function renderYearPlan(container){
   prev.className='year-plan-arrow';
   prev.textContent='‹';
   prev.onclick=()=>{
-    yearPlanYear--;
+    setYearPlanYear(yearPlanYear-1);
     resetYearPlanDraft();
-    yearPlanSelectedId=null;
+    setYearPlanSelectedId(null);
     resetYearPlanEditingState();
     resetYearPlanResizeState({render:false});
     resetYearPlanMoveState({render:false});
@@ -2125,9 +1780,9 @@ function renderYearPlan(container){
   next.className='year-plan-arrow';
   next.textContent='›';
   next.onclick=()=>{
-    yearPlanYear++;
+    setYearPlanYear(yearPlanYear+1);
     resetYearPlanDraft();
-    yearPlanSelectedId=null;
+    setYearPlanSelectedId(null);
     resetYearPlanEditingState();
     resetYearPlanResizeState({render:false});
     resetYearPlanMoveState({render:false});
@@ -2214,7 +1869,7 @@ function renderYearPlan(container){
       const handleMouseUp=e=>{if(!yearPlanDraft||yearPlanDraft.mode!=='dragging')return;updateYearPlanDraftFromEvent(e);finalizeYearPlanDraft()};
       monthBody.addEventListener('mousemove',handleMouseMove);
       monthBody.addEventListener('mouseup',handleMouseUp);
-      daysWrap.addEventListener('mousedown',e=>{if(e.button!==0)return;const row=e.target&&typeof e.target.closest==='function'?e.target.closest('.year-day'):null;const dayAttr=row&&row.dataset.day;if(!dayAttr||row.classList.contains('is-disabled'))return;const day=Number(dayAttr);if(!Number.isFinite(day))return;yearPlanSelectedId=null;startYearPlanDraft(m,day);e.preventDefault()});
+      daysWrap.addEventListener('mousedown',e=>{if(e.button!==0)return;const row=e.target&&typeof e.target.closest==='function'?e.target.closest('.year-day'):null;const dayAttr=row&&row.dataset.day;if(!dayAttr||row.classList.contains('is-disabled'))return;const day=Number(dayAttr);if(!Number.isFinite(day))return;setYearPlanSelectedId(null);startYearPlanDraft(m,day);e.preventDefault()});
       monthBody.append(daysWrap,activitiesLayer);
       month.append(monthTitleEl,monthBody);
       halfMonths.appendChild(month);
@@ -2224,7 +1879,7 @@ function renderYearPlan(container){
     grid.appendChild(half);
   }
 
-  yearPlanMonthMeta=monthsMeta;
+  setYearPlanMonthMeta(monthsMeta);
   renderYearPlanActivities(monthsMeta,items);
   renderYearPlanMovePreview(monthsMeta);
   renderYearPlanDraft(monthsMeta);
@@ -2240,10 +1895,10 @@ function render(){
   if(currentView!=='year'){
     closeYearPlanContextMenu();
     resetYearPlanEditingState();
-    yearPlanSelectedId=null;
+    setYearPlanSelectedId(null);
     if(yearPlanResizeState)resetYearPlanResizeState({render:false});
     if(yearPlanMoveState)resetYearPlanMoveState({render:false});
-    yearPlanMonthMeta=[];
+    setYearPlanMonthMeta([]);
   }
   if(currentView!=='sprint'){
     if(sprintVisibleProjects.size)sprintVisibleProjects.clear();
@@ -2313,8 +1968,8 @@ function render(){
         dates.textContent=formatYearPlanRangeLabel(item);
         row.append(title,dates);
         row.onclick=()=>{
-          yearPlanYear=item.year||yearPlanYear;
-          yearPlanSelectedId=item.id;
+          setYearPlanYear(item.year||yearPlanYear);
+          setYearPlanSelectedId(item.id);
           requestYearPlanFocus(item.id);
           currentView='year';
           render();
@@ -2513,7 +2168,6 @@ function sameDay(a,b){return!!(a&&b)&&a.getFullYear()===b.getFullYear()&&a.getMo
 function isoWeekNumber(d){const date=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));const dayNum=(date.getUTCDay()+6)%7;date.setUTCDate(date.getUTCDate()-dayNum+3);const firstThursday=new Date(Date.UTC(date.getUTCFullYear(),0,4));const diff=date-firstThursday;return 1+Math.round(diff/(7*24*3600*1000))}
 function buildMonthMatrix(y,m,{minVisibleDays=1,maxWeeks=6}={}){const first=new Date(y,m,1);const startDay=(first.getDay()+6)%7;const weeks=[];let day=1-startDay;const today=normalizeDate(new Date());while(true){const week={weekNum:null,days:[]};for(let i=0;i<7;i++){const d=new Date(y,m,day);const inMonth=d.getMonth()===m;const isToday=sameDay(d,today);week.days.push({d,inMonth,isToday});day++}const thursday=new Date(week.days[3].d);week.weekNum=isoWeekNumber(thursday);weeks.push(week);const lastDay=week.days[6].d;if(lastDay.getMonth()>m||(y<lastDay.getFullYear()&&lastDay.getMonth()===0))break;if(weeks.length>6)break}const countInMonth=week=>week.days.reduce((acc,cell)=>acc+(cell.inMonth?1:0),0);while(weeks.length&&countInMonth(weeks[0])<minVisibleDays)weeks.shift();while(weeks.length&&countInMonth(weeks[weeks.length-1])<minVisibleDays)weeks.pop();if(maxWeeks&&weeks.length>maxWeeks){while(weeks.length>maxWeeks){const firstCount=countInMonth(weeks[0]);const lastCount=countInMonth(weeks[weeks.length-1]);if(firstCount<=lastCount){weeks.shift()}else{weeks.pop()}}}return weeks}
 function renderMonthInto(container,y,m,options){const weeks=buildMonthMatrix(y,m,options);const wrap=document.createElement('div');wrap.className='cal-grid';weeks.forEach(week=>{const row=document.createElement('div');row.className='cal-week';const wn=document.createElement('div');wn.className='cal-weeknum';wn.textContent=String(week.weekNum).padStart(2,'0');row.appendChild(wn);for(const cell of week.days){const el=document.createElement('div');el.className='cal-day';if(!cell.inMonth)el.classList.add('is-out');if(cell.isToday)el.classList.add('is-today');el.textContent=cell.d.getDate();row.appendChild(el)}wrap.appendChild(row)});container.innerHTML='';container.appendChild(wrap);return weeks}
-function getDaysInMonth(year,monthIndex){return new Date(year,monthIndex+1,0).getDate()}
 const YEAR_PLAN_HOLIDAYS_2026=new Set([
   '2026-01-01',
   '2026-01-02',
@@ -2734,28 +2388,6 @@ window.addEventListener('resize',closeEmojiPicker);
 window.addEventListener('scroll',closeEmojiPicker,true);
 
 function startProjectRename(id,row){closeEmojiPicker();if(!projList)return;const p=projects.find(pr=>pr.id===id);if(!p)return;const target=row?.querySelector('.name')||[...projList.children].find(n=>n.dataset.id===id)?.querySelector('.name');if(!target)return;const input=document.createElement('input');input.className='proj-input';input.value=p.title;target.replaceWith(input);input.focus();input.select();let finished=false;const save=()=>{if(finished)return;finished=true;const v=(input.value||'').trim();if(!v){toast('Назови проект');input.focus();finished=false;return}p.title=v;ProjectsStore.write(projects);if(isServerMode())queueProjectUpdate(id,{title:v});renderProjects()};const cancel=()=>{if(finished)return;finished=true;renderProjects()};input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();save()}else if(e.key==='Escape'){e.preventDefault();cancel()}});input.addEventListener('blur',()=>{if(!finished)save()})}
-function getYearPlanItemsForProject(projectId){
-  if(!projectId)return[];
-  if(!isServerMode()){
-    const stored=readYearPlanStorage();
-    const items=[];
-    for(const entry of stored.items){
-      const item=normalizeStoredYearPlanItem(entry);
-      if(item&&item.projectId===projectId)items.push(item);
-    }
-    sortYearPlanItems(items);
-    return items;
-  }
-  const items=[];
-  for(const list of yearPlanCache.values()){
-    if(!Array.isArray(list))continue;
-    for(const item of list){
-      if(item&&item.projectId===projectId)items.push(item);
-    }
-  }
-  sortYearPlanItems(items);
-  return items;
-}
 function removeProjectById(id){
   const idx=projects.findIndex(p=>p.id===id);
   if(idx===-1)return;
