@@ -83,7 +83,7 @@ body.sidebar-resizing{cursor:ew-resize}
 .year-activity-resize.is-bottom{bottom:-2px}
 .year-activity.is-selected.is-hovered .year-activity-resize{opacity:1;pointer-events:auto}
 .year-activity-resize::after{content:'';position:absolute;left:10px;right:10px;top:4px;height:2px;border-radius:999px;background:var(--year-activity-border);opacity:.9}
-.year-activity-handle{position:absolute;height:var(--year-activity-handle-height);display:flex;align-items:center;justify-content:flex-start;gap:6px;padding:0 6px;box-sizing:border-box;background:var(--year-activity-soft-strong);border-bottom:1px solid var(--year-activity-border);cursor:grab;z-index:4;opacity:0;pointer-events:auto;transition:opacity .12s ease}
+.year-activity-handle{position:absolute;left:0;width:100%;height:var(--year-activity-handle-height);display:flex;align-items:center;justify-content:flex-start;gap:6px;padding:0 6px;box-sizing:border-box;background:var(--year-activity-soft-strong);border-bottom:1px solid var(--year-activity-border);cursor:grab;z-index:4;opacity:0;pointer-events:auto;transition:opacity .12s ease}
 .year-activity.is-hovered .year-activity-handle,.year-activity.is-selected .year-activity-handle,.year-activity.is-dragging .year-activity-handle{opacity:1;pointer-events:auto}
 .year-activity-handle:hover{filter:brightness(1.05)}
 .year-activity.is-dragging .year-activity-handle{cursor:grabbing}
