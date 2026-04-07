@@ -39,13 +39,17 @@ import {
 } from './src/workday.js';
 import { setupSidebarResize } from './src/sidebar.js';
 import {
+  normalizeArchivedNode, normalizeArchiveList, normalizeArchivePayload,
+  renderArchive, registerArchiveCallbacks,
+} from './src/archive.js';
+import {
   projects, setProjects,
   normalizeProjectsList,
   getProjectTitle, getProjectMeta,
   renderProjects,
   initProjects, registerProjectsCallbacks,
 } from './src/projects.js';
-import { apiAuthLocked, apiAuthMessage, apiAuthReason, resetApiAuthLock, lockApiAuth, apiRequest, handleApiError, runServerAction, queueTaskCreate, queueTaskUpdate, queueTaskDelete, flushPendingTaskUpdates, queueArchiveDelete, handleServerWorkdayWrite, flushPendingWorkdaySync, ApiSettingsUI, apiSettingsBlocking, openApiSettings, closeApiSettings, isApiSettingsOpen, toggleApiKeyVisibility, saveApiKey, clearApiKey, switchToLocalMode, registerApiCallbacks } from './src/api.js';
+import { apiAuthLocked, apiAuthMessage, apiAuthReason, resetApiAuthLock, lockApiAuth, apiRequest, handleApiError, runServerAction, queueTaskCreate, queueTaskUpdate, queueTaskDelete, flushPendingTaskUpdates, handleServerWorkdayWrite, flushPendingWorkdaySync, ApiSettingsUI, apiSettingsBlocking, openApiSettings, closeApiSettings, isApiSettingsOpen, toggleApiKeyVisibility, saveApiKey, clearApiKey, switchToLocalMode, registerApiCallbacks } from './src/api.js';
 
 let tasks=Store.read();
 let archivedTasks=ArchiveStore.read();
@@ -66,8 +70,6 @@ let sprintVisibleProjects=new Map();
 normalizeProjectsList(projects,{persist:!isServerMode()});
 
 
-function normalizeArchivedNode(node){if(!node||typeof node!=='object')return null;const normalized={id:typeof node.id==='string'&&node.id.trim()?node.id.trim():uid(),title:typeof node.title==='string'?node.title:'',done:true,due:typeof node.due==='string'&&node.due?node.due:null,project:typeof node.project==='string'&&node.project?node.project:null,notes:typeof node.notes==='string'?node.notes:'',timeSpent:clampTimeSpentMs(node.timeSpent),archivedAt:typeof node.archivedAt==='number'&&isFinite(node.archivedAt)?node.archivedAt:0,completedAt:typeof node.completedAt==='number'&&isFinite(node.completedAt)?node.completedAt:null,children:[]};if(Array.isArray(node.children)){const kids=[];for(const child of node.children){const normalizedChild=normalizeArchivedNode(child);if(normalizedChild)kids.push(normalizedChild)}normalized.children=kids}return normalized}
-function normalizeArchiveList(list,{persist=false}={}){if(!Array.isArray(list))return[];const normalizedArchive=[];let patched=false;for(const entry of list){const normalized=normalizeArchivedNode(entry);if(normalized){normalizedArchive.push(normalized);if(normalized!==entry)patched=true}else patched=true}if((patched||normalizedArchive.length!==list.length)&&persist){ArchiveStore.write(normalizedArchive)}return normalizedArchive}
 if(!Array.isArray(archivedTasks))archivedTasks=[];else archivedTasks=normalizeArchiveList(archivedTasks,{persist:!isServerMode()});
 
 function ensureActiveTimersState(){if(!activeTimersState||typeof activeTimersState!=='object')activeTimersState={}}
@@ -88,7 +90,6 @@ function normalizeTaskTree(list,parentId=null){if(!Array.isArray(list))return[];
 
 function ensureTaskParentIds(list,parentId=null){if(!Array.isArray(list))return;for(const item of list){if(!item||typeof item!=='object')continue;item.parentId=parentId;if(Array.isArray(item.children))ensureTaskParentIds(item.children,item.id)}}
 
-function normalizeArchivePayload(items){if(!Array.isArray(items))return[];return items.map(entry=>entry&&entry.payload?entry.payload:entry).filter(Boolean)}
 
 function updateStorageToggle({loading=false}={}){const btn=document.getElementById('storageToggle');if(!btn)return;btn.dataset.mode=isServerMode()?'server':'local';btn.classList.toggle('is-loading',loading);if(loading){btn.textContent='…';btn.setAttribute('aria-busy','true')}else{btn.textContent=isServerMode()?'API':'LS';btn.removeAttribute('aria-busy')}const label=isServerMode()?'Режим: серверный API':'Режим: localStorage';btn.title=label;btn.setAttribute('aria-label',loading?`${label}. Загрузка…`:label)}
 
@@ -168,7 +169,6 @@ function restoreActiveTimersFromStore(){activeTimersState=ActiveTimersStore.read
   for(const [taskId,entry]of Object.entries(activeTimersState)){const task=findTask(taskId);const start=Number(entry&&entry.start);if(!task||!Number.isFinite(start)){delete activeTimersState[taskId];changed=true;continue}const normalizedStart=Math.max(0,start);const storedBase=Number(entry&&entry.base);const normalizedStoredBase=Number.isFinite(storedBase)&&storedBase>=0?clampTimeSpentMs(storedBase):0;const currentBase=clampTimeSpentMs(task.timeSpent);const finalBase=Math.min(MAX_TASK_TIME_MS,Math.max(currentBase,normalizedStoredBase));const baseDelta=finalBase-normalizedStoredBase;let nextStart=normalizedStart;if(baseDelta>0){const now=Date.now();const candidate=normalizedStart+baseDelta;nextStart=Number.isFinite(candidate)&&candidate>=0?Math.min(candidate,now):now}if(task.timerActive!==true||typeof task.timerStart!=='number'||task.timerStart!==nextStart){task.timerActive=true;task.timerStart=nextStart;changed=true}if(currentBase!==finalBase){task.timeSpent=finalBase;changed=true}if(finalBase!==normalizedStoredBase||nextStart!==normalizedStart){activeTimersState[taskId]={start:nextStart,base:finalBase};changed=true}}
   if(changed)persistActiveTimersState()}
 function findArchivedTask(id,list=archivedTasks){if(!Array.isArray(list))return null;for(const item of list){if(item&&item.id===id)return item;const nested=findArchivedTask(id,item?.children||[]);if(nested)return nested}return null}
-function removeArchivedTask(id,list=archivedTasks){if(!Array.isArray(list))return null;const index=list.findIndex(item=>item&&item.id===id);if(index!==-1){const [removed]=list.splice(index,1);return removed||null}for(const item of list){if(item&&Array.isArray(item.children)&&item.children.length){const removed=removeArchivedTask(id,item.children);if(removed){return removed}}}return null}
 function getTaskDepth(id,list=tasks,depth=0){for(const t of list){if(t.id===id) return depth;const childDepth=getTaskDepth(id,t.children||[],depth+1);if(childDepth!==-1) return childDepth}return-1}
 function getSubtreeDepth(task){if(!task||!Array.isArray(task.children)||!task.children.length)return 0;let max=0;for(const child of task.children){const childDepth=1+getSubtreeDepth(child);if(childDepth>max)max=childDepth}return max}
 function containsTask(root,targetId){if(!root||!targetId)return false;if(root.id===targetId)return true;if(!Array.isArray(root.children))return false;for(const child of root.children){if(containsTask(child,targetId))return true}return false}
@@ -488,9 +488,6 @@ TimeDialog.form&&TimeDialog.form.addEventListener('submit',e=>{e.preventDefault(
 for(const input of[TimeDialog.hours,TimeDialog.minutes]){if(!input)continue;input.addEventListener('input',()=>updateTimeDialogUI());input.addEventListener('blur',()=>{const state=getTimeDialogState();if(state.valid)setTimeDialogInputsFromMinutes(state.totalMinutes);updateTimeDialogUI({showValidationError:true})})}
 initTimeDialogPresets();
 
-function formatArchiveDateTime(ms){if(typeof ms!=='number'||!isFinite(ms)||ms<=0)return null;const date=new Date(ms);if(isNaN(date))return null;const timestamp=date.getTime();return`${formatDateDMY(timestamp)} ${formatTimeHM(timestamp)}`}
-function renderArchivedNode(node,depth,container){if(!node)return;const row=document.createElement('div');row.className='archive-task';row.dataset.id=node.id;row.dataset.depth=String(depth);if(depth>0)row.style.marginLeft=`${depth*18}px`;const status=document.createElement('div');status.className='archive-status';status.textContent='✔';const main=document.createElement('div');main.className='archive-main';const title=document.createElement('div');title.className='archive-title';title.textContent=node.title||'Без названия';main.appendChild(title);const tags=document.createElement('div');tags.className='archive-tags';if(node.due){const dueTag=document.createElement('span');dueTag.className='due-tag';if(isDueToday(node.due))dueTag.classList.add('is-today');else if(isDuePast(node.due))dueTag.classList.add('is-overdue');dueTag.textContent=formatDue(node.due);if(dueTag.textContent)tags.appendChild(dueTag)}if(node.project){const projectMeta=getProjectMeta(node.project);const projTag=document.createElement('span');projTag.className='proj-tag';const emoji=projectMeta.emoji?`${projectMeta.emoji} `:'';projTag.textContent=`${emoji}${projectMeta.title}`.trim();tags.appendChild(projTag)}if(tags.childElementCount)main.appendChild(tags);const meta=document.createElement('div');meta.className='archive-meta';const completedText=formatArchiveDateTime(node.completedAt);if(completedText)meta.appendChild(document.createTextNode(`Завершено: ${completedText}`));const archivedText=formatArchiveDateTime(node.archivedAt);if(archivedText){if(meta.textContent)meta.appendChild(document.createTextNode(' • '));meta.appendChild(document.createTextNode(`В архиве: ${archivedText}`))}if(meta.textContent)main.appendChild(meta);const actions=document.createElement('div');actions.className='archive-actions';const time=document.createElement('div');time.className='archive-time';time.textContent=formatDuration(node.timeSpent);actions.appendChild(time);const noteBtn=document.createElement('button');noteBtn.className='note-btn';noteBtn.type='button';noteBtn.textContent='📝';noteBtn.title='Открыть заметки';noteBtn.setAttribute('aria-label','Заметки задачи');noteBtn.dataset.hasNotes=node.notes&&node.notes.trim()? 'true':'false';noteBtn.onclick=e=>{e.stopPropagation();openNotesPanel(node.id,{source:'archive'})};actions.appendChild(noteBtn);const deleteBtn=document.createElement('button');deleteBtn.className='archive-delete';deleteBtn.type='button';deleteBtn.textContent='✕';deleteBtn.title='Удалить из архива';deleteBtn.setAttribute('aria-label','Удалить задачу из архива');deleteBtn.onclick=e=>{e.stopPropagation();const removed=removeArchivedTask(node.id);if(removed){ArchiveStore.write(archivedTasks);if(isServerMode())queueArchiveDelete(node.id);if(currentView==='archive')render()}};actions.appendChild(deleteBtn);row.append(status,main,actions);container.appendChild(row);if(Array.isArray(node.children)&&node.children.length){for(const child of node.children){renderArchivedNode(child,depth+1,container)}}}
-function renderArchive(container){const wrap=document.createElement('div');wrap.className='archive-container';const items=[...archivedTasks];items.sort((a,b)=>(b.archivedAt||0)-(a.archivedAt||0)||(b.completedAt||0)-(a.completedAt||0));if(!items.length){const empty=document.createElement('div');empty.className='archive-empty';empty.textContent='Архив пока пуст.';container.appendChild(empty);return}for(const item of items){renderArchivedNode(item,0,wrap)}container.appendChild(wrap)}
 
 function renderYearPlanIfVisible(){if(currentView==='year'||currentView==='project')render()}
 registerYearPlanDataCallbacks({render:renderYearPlanIfVisible,toast});
@@ -553,6 +550,16 @@ registerProjectsCallbacks({
   setCurrentProjectId: (id) => { currentProjectId = id; },
 });
 initProjects();
+registerArchiveCallbacks({
+  formatDuration,
+  formatTimeHM,
+  formatDateDMY,
+  formatDue,
+  openNotesPanel,
+  getArchivedTasks: () => archivedTasks,
+  getCurrentView: () => currentView,
+  render,
+});
 function requestYearPlanFocus(id){setYearPlanFocusId(id)}
 
 function setYearPlanSelected(id){
