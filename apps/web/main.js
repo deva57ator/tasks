@@ -9,8 +9,7 @@ import {
   yearPlanEditingId,
   yearPlanResizeState, yearPlanMoveState, yearPlanDraft,
   setYearPlanMonthMeta, setYearPlanFocusId,
-  findYearPlanItem, upsertYearPlanItem,
-  removeYearPlanItemFromCache, updateYearPlanItemInCache,
+  findYearPlanItem,
   ensureYearPlanData, deleteYearPlanItem,
   resetYearPlanCache, syncYearPlanDataMode,
   registerYearPlanDataCallbacks
@@ -39,7 +38,14 @@ import {
   registerWorkdayCallbacks,
 } from './src/workday.js';
 import { setupSidebarResize } from './src/sidebar.js';
-import { apiAuthLocked, apiAuthMessage, apiAuthReason, resetApiAuthLock, lockApiAuth, apiRequest, handleApiError, runServerAction, queueTaskCreate, queueTaskUpdate, queueTaskDelete, flushPendingTaskUpdates, queueProjectCreate, queueProjectUpdate, queueProjectDelete, queueArchiveDelete, handleServerWorkdayWrite, flushPendingWorkdaySync, ApiSettingsUI, apiSettingsBlocking, openApiSettings, closeApiSettings, isApiSettingsOpen, toggleApiKeyVisibility, saveApiKey, clearApiKey, switchToLocalMode, registerApiCallbacks } from './src/api.js';
+import {
+  projects, setProjects,
+  normalizeProjectsList,
+  getProjectTitle, getProjectMeta,
+  renderProjects,
+  initProjects, registerProjectsCallbacks,
+} from './src/projects.js';
+import { apiAuthLocked, apiAuthMessage, apiAuthReason, resetApiAuthLock, lockApiAuth, apiRequest, handleApiError, runServerAction, queueTaskCreate, queueTaskUpdate, queueTaskDelete, flushPendingTaskUpdates, queueArchiveDelete, handleServerWorkdayWrite, flushPendingWorkdaySync, ApiSettingsUI, apiSettingsBlocking, openApiSettings, closeApiSettings, isApiSettingsOpen, toggleApiKeyVisibility, saveApiKey, clearApiKey, switchToLocalMode, registerApiCallbacks } from './src/api.js';
 
 let tasks=Store.read();
 let archivedTasks=ArchiveStore.read();
@@ -51,29 +57,12 @@ let currentProjectId=null;
 let activeEditId=null;
 let activeInputEl=null;
 let hoveredParentTaskId=null;
-let projects=ProjectsStore.read();
-if(!Array.isArray(projects))projects=[];
 let activeTimersState=ActiveTimersStore.read({mode:storageMode});
 const pendingTimeUpdates=new Set();
 let sprintVisibleProjects=new Map();
 
-function normalizeProjectsList(list,{persist=false}={}){
-  if(!Array.isArray(list))return[];
-  let patched=false;
-  for(const proj of list){
-    if(!proj||typeof proj!=='object')continue;
-    if(!('emoji'in proj)||proj.emoji===undefined){proj.emoji=null;patched=true;continue}
-    if(proj.emoji!==null&&typeof proj.emoji!=='string'){proj.emoji=null;patched=true;continue}
-    if(typeof proj.emoji==='string'){
-      const trimmed=proj.emoji.trim();
-      if(!trimmed){proj.emoji=null;patched=true}
-      else if(trimmed!==proj.emoji){proj.emoji=trimmed;patched=true}
-    }
-  }
-  if(patched&&persist){ProjectsStore.write(list)}
-  return list
-}
 
+{const _p=ProjectsStore.read();setProjects(Array.isArray(_p)?_p:[]);}
 normalizeProjectsList(projects,{persist:!isServerMode()});
 
 
@@ -105,9 +94,9 @@ function updateStorageToggle({loading=false}={}){const btn=document.getElementBy
 
 function finalizeDataLoad(){tasks=migrate(tasks);ensureTaskParentIds(tasks,null);normalizeProjectsList(projects,{persist:false});archivedTasks=normalizeArchiveList(archivedTasks,{persist:false});pendingServerCreates.clear();restoreActiveTimersFromStore();renderProjects();render();updateWorkdayUI();ensureWorkdayRefreshLoop();dataInitialized=true}
 
-async function loadDataFromLocal(){tasks=Store.read();tasks=migrate(tasks);ensureTaskParentIds(tasks,null);projects=ProjectsStore.read();if(!Array.isArray(projects))projects=[];normalizeProjectsList(projects,{persist:!isServerMode()});archivedTasks=normalizeArchiveList(ArchiveStore.read(),{persist:!isServerMode()});{const _wd=WorkdayStore.read();setWorkdayState(!_wd||!_wd.id||typeof _wd.start!=='number'||typeof _wd.end!=='number'?null:_wd)};finalizeDataLoad();updateStorageToggle()}
+async function loadDataFromLocal(){tasks=Store.read();tasks=migrate(tasks);ensureTaskParentIds(tasks,null);{const _p=ProjectsStore.read();setProjects(Array.isArray(_p)?_p:[]);}normalizeProjectsList(projects,{persist:!isServerMode()});archivedTasks=normalizeArchiveList(ArchiveStore.read(),{persist:!isServerMode()});{const _wd=WorkdayStore.read();setWorkdayState(!_wd||!_wd.id||typeof _wd.start!=='number'||typeof _wd.end!=='number'?null:_wd)};finalizeDataLoad();updateStorageToggle()}
 
-async function loadDataFromServer({silent=false}={}){if(isDataLoading)return;if(apiAuthLocked&&apiAuthReason){lockApiAuth(apiAuthReason,apiAuthMessage);return}const key=ApiKeyStore.read();if(!key){lockApiAuth('missing','Нужен API key для доступа к API');return}isDataLoading=true;updateStorageToggle({loading:true});try{const [tasksPayload,projectsPayload,archivePayload,workdayPayload]=await Promise.all([apiRequest('/tasks'),apiRequest(`/projects?limit=${API_DEFAULT_LIMIT}`),apiRequest(`/archive?limit=${API_DEFAULT_LIMIT}`),apiRequest('/workday/current')]);const serverTasks=Array.isArray(tasksPayload?.items)?tasksPayload.items:Array.isArray(tasksPayload)?tasksPayload:[];tasks=normalizeTaskTree(serverTasks,null);projects=normalizeProjectsList(projectsPayload&&Array.isArray(projectsPayload.items)?projectsPayload.items:[],{persist:false});const archiveItems=normalizeArchivePayload(archivePayload&&Array.isArray(archivePayload.items)?archivePayload.items:[]);archivedTasks=normalizeArchiveList(archiveItems,{persist:false});const serverWorkday=workdayPayload&&workdayPayload.workday?workdayPayload.workday:null;setWorkdayState(hydrateWorkdayStateFromServer(serverWorkday));persistLocalWorkdayState(workdayState);finalizeDataLoad();resetApiAuthLock()}catch(err){if(err&&['missing-key','unauthorized','auth-locked','network'].includes(err.code)){return}if(!silent)handleApiError(err,'Не удалось загрузить данные с сервера')}finally{isDataLoading=false;updateStorageToggle({loading:false})}}
+async function loadDataFromServer({silent=false}={}){if(isDataLoading)return;if(apiAuthLocked&&apiAuthReason){lockApiAuth(apiAuthReason,apiAuthMessage);return}const key=ApiKeyStore.read();if(!key){lockApiAuth('missing','Нужен API key для доступа к API');return}isDataLoading=true;updateStorageToggle({loading:true});try{const [tasksPayload,projectsPayload,archivePayload,workdayPayload]=await Promise.all([apiRequest('/tasks'),apiRequest(`/projects?limit=${API_DEFAULT_LIMIT}`),apiRequest(`/archive?limit=${API_DEFAULT_LIMIT}`),apiRequest('/workday/current')]);const serverTasks=Array.isArray(tasksPayload?.items)?tasksPayload.items:Array.isArray(tasksPayload)?tasksPayload:[];tasks=normalizeTaskTree(serverTasks,null);setProjects(normalizeProjectsList(projectsPayload&&Array.isArray(projectsPayload.items)?projectsPayload.items:[],{persist:false}));const archiveItems=normalizeArchivePayload(archivePayload&&Array.isArray(archivePayload.items)?archivePayload.items:[]);archivedTasks=normalizeArchiveList(archiveItems,{persist:false});const serverWorkday=workdayPayload&&workdayPayload.workday?workdayPayload.workday:null;setWorkdayState(hydrateWorkdayStateFromServer(serverWorkday));persistLocalWorkdayState(workdayState);finalizeDataLoad();resetApiAuthLock()}catch(err){if(err&&['missing-key','unauthorized','auth-locked','network'].includes(err.code)){return}if(!silent)handleApiError(err,'Не удалось загрузить данные с сервера')}finally{isDataLoading=false;updateStorageToggle({loading:false})}}
 
 async function refreshDataForCurrentMode(options={}){if(isServerMode())return loadDataFromServer(options);return loadDataFromLocal()}
 
@@ -118,7 +107,7 @@ function finalizeActiveTimersBeforeModeChange(mode=storageMode){const targetMode
   async function setStorageModeAndReload(mode,{silent=false,forceReload=false,skipToggleUpdate=false}={}){const nextMode=mode===STORAGE_MODES.SERVER?STORAGE_MODES.SERVER:STORAGE_MODES.LOCAL;const prevMode=storageMode;const changed=prevMode!==nextMode;if(changed)finalizeActiveTimersBeforeModeChange(prevMode);setStorageMode(nextMode);syncYearPlanDataMode();StorageModeStore.write(storageMode);if(!skipToggleUpdate)updateStorageToggle();if(changed){activeTimersState=ActiveTimersStore.read({mode:storageMode});ensureActiveTimersState();if(storageMode===STORAGE_MODES.LOCAL)resetApiAuthLock();resetYearPlanCache()}flushPendingTaskUpdates();flushPendingWorkdaySync();if(!changed&&!forceReload)return;await refreshDataForCurrentMode({silent})}
 
 function handleServerTaskWrite(){afterTasksPersisted()}
-function handleServerProjectsWrite(data){if(Array.isArray(data)){projects=data}}
+function handleServerProjectsWrite(data){if(Array.isArray(data)){setProjects(data)}}
 function handleServerArchiveWrite(data){if(Array.isArray(data))archivedTasks=normalizeArchiveList(data,{persist:false})}
 
 // Регистрируем коллбэки — все зависимости являются function declaration и доступны через hoisting.
@@ -342,7 +331,6 @@ document.body.appendChild(TimePresetMenu.el);
 
 const NotesPanel={panel:document.getElementById('notesSidebar'),overlay:document.getElementById('notesOverlay'),close:document.getElementById('notesClose'),title:document.getElementById('notesTaskTitle'),input:document.getElementById('notesInput'),taskId:null,mode:'tasks'};
 const TimeDialog={overlay:document.getElementById('timeOverlay'),close:document.getElementById('timeDialogClose'),cancel:document.getElementById('timeDialogCancel'),form:document.getElementById('timeDialogForm'),hours:document.getElementById('timeInputHours'),minutes:document.getElementById('timeInputMinutes'),summary:document.getElementById('timeDialogSummary'),subtitle:document.getElementById('timeDialogSubtitle'),error:document.getElementById('timeDialogError'),save:document.getElementById('timeDialogSave'),presets:document.getElementById('timeDialogPresets')};
-const ProjectDeleteDialog={overlay:document.getElementById('projectDeleteOverlay'),dialog:document.getElementById('projectDeleteDialog'),list:document.getElementById('projectDeleteList'),confirm:document.getElementById('projectDeleteConfirm'),detach:document.getElementById('projectDeleteDetach'),projectId:null,items:[]};
 let timeDialogTaskId=null;
 let timeDialogEditedMinutes=0;
 let timeDialogSaving=false;
@@ -360,33 +348,6 @@ function updateTimeDialogUI({showValidationError=false,preserveError=false}={}){
 function applyTimeDialogPreset(delta){const next=timeDialogEditedMinutes+delta;setTimeDialogInputsFromMinutes(Math.max(0,next));timeDialogEditedMinutes=next;updateTimeDialogUI({showValidationError:next<MIN_TASK_MINUTES||next>MAX_TASK_MINUTES})}
 function openTimeEditDialog(taskId){const task=findTask(taskId);if(!task||!TimeDialog.overlay)return;if(task.timerActive){stopTaskTimer(task,{skipServer:true});timeDialogDeferredTimerSyncTaskId=task.id;syncTimerLoop()}else{timeDialogDeferredTimerSyncTaskId=null}timeDialogTaskId=taskId;const currentMinutes=getTaskMinutes(task);timeDialogEditedMinutes=currentMinutes;if(TimeDialog.subtitle)TimeDialog.subtitle.textContent=currentMinutes?`Текущее значение: ${formatDuration(minutesToMs(currentMinutes))}`:'Текущее значение: 0 мин';setTimeDialogInputsFromMinutes(currentMinutes);setTimeDialogError('');timeDialogSaving=false;updateTimeDialogUI();TimeDialog.overlay.classList.add('is-open');TimeDialog.overlay.setAttribute('aria-hidden','false');document.body.classList.add('time-dialog-open');updateTimeControlsState(taskId);const focusTarget=TimeDialog.minutes||TimeDialog.hours;setTimeout(()=>{if(!focusTarget)return;try{focusTarget.focus({preventScroll:true})}catch{focusTarget.focus()}},60)}
 function closeTimeDialog({syncDeferred=true}={}){if(!TimeDialog.overlay)return;const taskId=timeDialogTaskId;const shouldSyncDeferred=syncDeferred&&timeDialogDeferredTimerSyncTaskId&&taskId===timeDialogDeferredTimerSyncTaskId;timeDialogTaskId=null;timeDialogSaving=false;timeDialogEditedMinutes=0;TimeDialog.overlay.classList.remove('is-open');TimeDialog.overlay.setAttribute('aria-hidden','true');document.body.classList.remove('time-dialog-open');setTimeDialogError('');if(TimeDialog.save)TimeDialog.save.disabled=false;if(shouldSyncDeferred){const task=findTask(taskId);if(task&&isServerMode()){queueTaskUpdate(task.id,{timeSpent:task.timeSpent})}}timeDialogDeferredTimerSyncTaskId=null;updateTimeControlsState(taskId)}
-function openProjectDeleteDialog(projectId,items){
-  if(!ProjectDeleteDialog.overlay||!ProjectDeleteDialog.list)return;
-  ProjectDeleteDialog.projectId=projectId;
-  ProjectDeleteDialog.items=Array.isArray(items)?items:[];
-  ProjectDeleteDialog.list.innerHTML='';
-  for(const item of ProjectDeleteDialog.items){
-    const row=document.createElement('div');
-    row.className='project-delete-item';
-    const title=document.createElement('div');
-    title.className='project-delete-item-title';
-    title.textContent=item.title||YEAR_PLAN_DEFAULT_TITLE;
-    const dates=document.createElement('div');
-    dates.className='project-delete-item-dates';
-    dates.textContent=formatYearPlanRangeLabel(item);
-    row.append(title,dates);
-    ProjectDeleteDialog.list.appendChild(row);
-  }
-  ProjectDeleteDialog.overlay.classList.add('is-open');
-  ProjectDeleteDialog.overlay.setAttribute('aria-hidden','false');
-}
-function closeProjectDeleteDialog(){
-  if(!ProjectDeleteDialog.overlay)return;
-  ProjectDeleteDialog.projectId=null;
-  ProjectDeleteDialog.items=[];
-  ProjectDeleteDialog.overlay.classList.remove('is-open');
-  ProjectDeleteDialog.overlay.setAttribute('aria-hidden','true');
-}
 function submitTimeDialog(){if(!timeDialogTaskId||timeDialogSaving)return;const task=findTask(timeDialogTaskId);if(!task){closeTimeDialog();return}const state=updateTimeDialogUI({showValidationError:true});if(!state.valid){return}timeDialogSaving=true;updateTimeDialogUI({preserveError:true});setTimeDialogError('');setTimeUpdatePending(task.id,true);saveTaskTimeMinutes(task.id,state.totalMinutes,{showSuccessToast:true}).then(()=>{timeDialogDeferredTimerSyncTaskId=null;closeTimeDialog({syncDeferred:false})}).catch(()=>{setTimeDialogError('Не удалось сохранить. Проверь соединение и попробуй ещё раз.')}).finally(()=>{timeDialogSaving=false;setTimeUpdatePending(task.id,false);updateTimeDialogUI({preserveError:true});updateTimerDisplays()})}
 function initTimeDialogPresets(){if(!TimeDialog.presets)return;TimeDialog.presets.innerHTML='';for(const delta of TIME_PRESETS){const btn=document.createElement('button');btn.type='button';btn.className='time-preset-btn';btn.textContent=formatPresetLabel(delta);btn.title=`Добавить ${formatDuration(minutesToMs(delta))}`;btn.onclick=e=>{e.preventDefault();applyTimeDialogPreset(delta)};TimeDialog.presets.appendChild(btn)}}
 function openTimePresetMenu(taskId,anchor){
@@ -526,21 +487,6 @@ TimeDialog.cancel&&TimeDialog.cancel.addEventListener('click',()=>closeTimeDialo
 TimeDialog.form&&TimeDialog.form.addEventListener('submit',e=>{e.preventDefault();submitTimeDialog()});
 for(const input of[TimeDialog.hours,TimeDialog.minutes]){if(!input)continue;input.addEventListener('input',()=>updateTimeDialogUI());input.addEventListener('blur',()=>{const state=getTimeDialogState();if(state.valid)setTimeDialogInputsFromMinutes(state.totalMinutes);updateTimeDialogUI({showValidationError:true})})}
 initTimeDialogPresets();
-ProjectDeleteDialog.overlay&&ProjectDeleteDialog.overlay.addEventListener('click',e=>{if(e.target===ProjectDeleteDialog.overlay)closeProjectDeleteDialog()});
-ProjectDeleteDialog.confirm&&ProjectDeleteDialog.confirm.addEventListener('click',async()=>{
-  const projectId=ProjectDeleteDialog.projectId;
-  const items=ProjectDeleteDialog.items.slice();
-  closeProjectDeleteDialog();
-  if(!projectId)return;
-  await finalizeProjectDelete(projectId,{items,mode:'delete'});
-});
-ProjectDeleteDialog.detach&&ProjectDeleteDialog.detach.addEventListener('click',async()=>{
-  const projectId=ProjectDeleteDialog.projectId;
-  const items=ProjectDeleteDialog.items.slice();
-  closeProjectDeleteDialog();
-  if(!projectId)return;
-  await finalizeProjectDelete(projectId,{items,mode:'detach'});
-});
 
 function formatArchiveDateTime(ms){if(typeof ms!=='number'||!isFinite(ms)||ms<=0)return null;const date=new Date(ms);if(isNaN(date))return null;const timestamp=date.getTime();return`${formatDateDMY(timestamp)} ${formatTimeHM(timestamp)}`}
 function renderArchivedNode(node,depth,container){if(!node)return;const row=document.createElement('div');row.className='archive-task';row.dataset.id=node.id;row.dataset.depth=String(depth);if(depth>0)row.style.marginLeft=`${depth*18}px`;const status=document.createElement('div');status.className='archive-status';status.textContent='✔';const main=document.createElement('div');main.className='archive-main';const title=document.createElement('div');title.className='archive-title';title.textContent=node.title||'Без названия';main.appendChild(title);const tags=document.createElement('div');tags.className='archive-tags';if(node.due){const dueTag=document.createElement('span');dueTag.className='due-tag';if(isDueToday(node.due))dueTag.classList.add('is-today');else if(isDuePast(node.due))dueTag.classList.add('is-overdue');dueTag.textContent=formatDue(node.due);if(dueTag.textContent)tags.appendChild(dueTag)}if(node.project){const projectMeta=getProjectMeta(node.project);const projTag=document.createElement('span');projTag.className='proj-tag';const emoji=projectMeta.emoji?`${projectMeta.emoji} `:'';projTag.textContent=`${emoji}${projectMeta.title}`.trim();tags.appendChild(projTag)}if(tags.childElementCount)main.appendChild(tags);const meta=document.createElement('div');meta.className='archive-meta';const completedText=formatArchiveDateTime(node.completedAt);if(completedText)meta.appendChild(document.createTextNode(`Завершено: ${completedText}`));const archivedText=formatArchiveDateTime(node.archivedAt);if(archivedText){if(meta.textContent)meta.appendChild(document.createTextNode(' • '));meta.appendChild(document.createTextNode(`В архиве: ${archivedText}`))}if(meta.textContent)main.appendChild(meta);const actions=document.createElement('div');actions.className='archive-actions';const time=document.createElement('div');time.className='archive-time';time.textContent=formatDuration(node.timeSpent);actions.appendChild(time);const noteBtn=document.createElement('button');noteBtn.className='note-btn';noteBtn.type='button';noteBtn.textContent='📝';noteBtn.title='Открыть заметки';noteBtn.setAttribute('aria-label','Заметки задачи');noteBtn.dataset.hasNotes=node.notes&&node.notes.trim()? 'true':'false';noteBtn.onclick=e=>{e.stopPropagation();openNotesPanel(node.id,{source:'archive'})};actions.appendChild(noteBtn);const deleteBtn=document.createElement('button');deleteBtn.className='archive-delete';deleteBtn.type='button';deleteBtn.textContent='✕';deleteBtn.title='Удалить из архива';deleteBtn.setAttribute('aria-label','Удалить задачу из архива');deleteBtn.onclick=e=>{e.stopPropagation();const removed=removeArchivedTask(node.id);if(removed){ArchiveStore.write(archivedTasks);if(isServerMode())queueArchiveDelete(node.id);if(currentView==='archive')render()}};actions.appendChild(deleteBtn);row.append(status,main,actions);container.appendChild(row);if(Array.isArray(node.children)&&node.children.length){for(const child of node.children){renderArchivedNode(child,depth+1,container)}}}
@@ -597,6 +543,16 @@ registerWorkdayCallbacks({
   getSelectedTaskId: () => selectedTaskId,
   setSelectedTaskId: (id) => { selectedTaskId = id; },
 });
+registerProjectsCallbacks({
+  toast,
+  render,
+  renderYearPlanIfVisible,
+  getCurrentView: () => currentView,
+  setCurrentView: (v) => { currentView = v; },
+  getCurrentProjectId: () => currentProjectId,
+  setCurrentProjectId: (id) => { currentProjectId = id; },
+});
+initProjects();
 function requestYearPlanFocus(id){setYearPlanFocusId(id)}
 
 function setYearPlanSelected(id){
@@ -1021,159 +977,6 @@ if(WorkdayUI.closeAction)WorkdayUI.closeAction.addEventListener('click',()=>fini
 if(WorkdayUI.overlay)WorkdayUI.overlay.addEventListener('click',e=>{if(e.target===WorkdayUI.overlay)closeWorkdayDialog()});
 if(WorkdayUI.postponeBtn)WorkdayUI.postponeBtn.addEventListener('click',()=>postponePendingTasks());
 
-const projList=$('#projList');
-const projAdd=$('#projAdd');
-const ProjCtx={el:document.getElementById('projCtxMenu'),id:null,anchor:null};
-const emojiPickerHost=document.getElementById('emojiMenu');
-const EmojiPicker={projectId:null,anchor:null,element:null};
-
-function ensureEmojiPicker(){
-  if(EmojiPicker.element||!emojiPickerHost)return EmojiPicker.element;
-  const picker=document.createElement('emoji-picker');
-  picker.classList.add('emoji-picker-element');
-  try{picker.setAttribute('locale','ru')}catch{}
-  picker.addEventListener('emoji-click',event=>{
-    const unicode=event?.detail?.unicode;
-    if(!unicode||!EmojiPicker.projectId)return;
-    setProjectEmoji(EmojiPicker.projectId,unicode);
-    closeEmojiPicker();
-  });
-  emojiPickerHost.appendChild(picker);
-  EmojiPicker.element=picker;
-  return picker;
-}
-
-function renderProjects(){
-  if(!projList)return;
-  projList.innerHTML='';
-  if(!projects.length){const hint=document.createElement('div');hint.className='proj-item is-empty';hint.textContent='Проектов пока нет';projList.appendChild(hint);return}
-  for(const p of projects){
-    const row=document.createElement('div');row.className='proj-item';row.dataset.id=p.id;
-    const emojiBtn=document.createElement('button');emojiBtn.type='button';emojiBtn.className='emoji-btn';emojiBtn.textContent=getProjectEmoji(p.id);emojiBtn.title='Выбрать эмодзи';emojiBtn.onclick=e=>{e.stopPropagation();openEmojiPicker(p.id,emojiBtn)};row.appendChild(emojiBtn);
-    const name=document.createElement('div');name.className='name';name.textContent=p.title;row.appendChild(name);
-    row.addEventListener('click',()=>{closeEmojiPicker();currentView='project';currentProjectId=p.id;render()});
-    row.addEventListener('contextmenu',e=>{e.preventDefault();closeEmojiPicker();openProjMenu(p.id,e.clientX,e.clientY,row)});
-    projList.appendChild(row)
-  }
-}
-
-function closeEmojiPicker(){
-  if(!emojiPickerHost)return;
-  EmojiPicker.projectId=null;
-  EmojiPicker.anchor=null;
-  emojiPickerHost.style.display='none';
-  emojiPickerHost.style.visibility='';
-  emojiPickerHost.setAttribute('aria-hidden','true');
-}
-
-function setProjectEmoji(projectId,emoji){
-  const proj=projects.find(p=>p.id===projectId);
-  if(!proj)return;
-  const normalized=typeof emoji==='string'&&emoji.trim()?emoji.trim():null;
-  proj.emoji=normalized;
-  ProjectsStore.write(projects);
-  if(isServerMode())queueProjectUpdate(projectId,{emoji:normalized});
-  renderProjects();
-  render();
-}
-
-function openEmojiPicker(projectId,anchor){
-  if(!emojiPickerHost)return;
-  if(EmojiPicker.projectId===projectId&&emojiPickerHost.style.display==='block'){closeEmojiPicker();return}
-  closeEmojiPicker();
-  const picker=ensureEmojiPicker();
-  EmojiPicker.projectId=projectId;
-  EmojiPicker.anchor=anchor;
-  if(picker){
-    const proj=projects.find(p=>p.id===projectId);
-    picker.value=proj&&proj.emoji?proj.emoji:'';
-  }
-  emojiPickerHost.style.display='block';
-  emojiPickerHost.style.visibility='hidden';
-  emojiPickerHost.setAttribute('aria-hidden','false');
-  const rect=anchor.getBoundingClientRect();
-  const hostRect=emojiPickerHost.getBoundingClientRect();
-  const padding=8;
-  const availableWidth=Math.max(160,window.innerWidth-padding*2);
-  const width=hostRect.width||Math.min(availableWidth,360);
-  const height=hostRect.height||360;
-  const maxLeft=Math.max(padding,window.innerWidth-width-padding);
-  const preferredLeft=Math.max(padding,rect.left);
-  const left=Math.min(preferredLeft,maxLeft);
-  const maxTop=Math.max(padding,window.innerHeight-height-padding);
-  const preferredTop=Math.max(padding,rect.bottom+6);
-  const top=Math.min(preferredTop,maxTop);
-  emojiPickerHost.style.left=left+'px';
-  emojiPickerHost.style.top=top+'px';
-  emojiPickerHost.style.visibility='visible';
-}
-
-function openProjMenu(id,x,y,anchor){ProjCtx.id=id;ProjCtx.anchor=anchor;const menu=ProjCtx.el;menu.innerHTML='';const edit=document.createElement('div');edit.className='context-item';edit.textContent='Редактировать';edit.onclick=()=>{closeProjMenu();startProjectRename(id,anchor)};const del=document.createElement('div');del.className='context-item';del.textContent='Удалить';del.onclick=()=>{closeProjMenu();deleteProject(id)};menu.append(edit,del);menu.style.display='block';const mw=menu.offsetWidth,mh=menu.offsetHeight;const px=Math.min(x,window.innerWidth-mw-8),py=Math.min(y,window.innerHeight-mh-8);menu.style.left=px+'px';menu.style.top=py+'px';menu.setAttribute('aria-hidden','false')}
-function closeProjMenu(){ProjCtx.id=null;ProjCtx.anchor=null;ProjCtx.el.style.display='none';ProjCtx.el.setAttribute('aria-hidden','true')}
-window.addEventListener('click',e=>{if(!ProjCtx.el.contains(e.target))closeProjMenu()});
-window.addEventListener('keydown',e=>{if(e.key==='Escape')closeProjMenu()});
-window.addEventListener('resize',closeProjMenu);
-window.addEventListener('scroll',closeProjMenu,true);
-window.addEventListener('click',e=>{if(emojiPickerHost&&emojiPickerHost.style.display==='block'&&!emojiPickerHost.contains(e.target)&&!(EmojiPicker.anchor&&EmojiPicker.anchor.contains(e.target)))closeEmojiPicker()});
-window.addEventListener('keydown',e=>{if(e.key==='Escape')closeEmojiPicker()});
-window.addEventListener('resize',closeEmojiPicker);
-window.addEventListener('scroll',closeEmojiPicker,true);
-
-function startProjectRename(id,row){closeEmojiPicker();if(!projList)return;const p=projects.find(pr=>pr.id===id);if(!p)return;const target=row?.querySelector('.name')||[...projList.children].find(n=>n.dataset.id===id)?.querySelector('.name');if(!target)return;const input=document.createElement('input');input.className='proj-input';input.value=p.title;target.replaceWith(input);input.focus();input.select();let finished=false;const save=()=>{if(finished)return;finished=true;const v=(input.value||'').trim();if(!v){toast('Назови проект');input.focus();finished=false;return}p.title=v;ProjectsStore.write(projects);if(isServerMode())queueProjectUpdate(id,{title:v});renderProjects()};const cancel=()=>{if(finished)return;finished=true;renderProjects()};input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();save()}else if(e.key==='Escape'){e.preventDefault();cancel()}});input.addEventListener('blur',()=>{if(!finished)save()})}
-function removeProjectById(id){
-  const idx=projects.findIndex(p=>p.id===id);
-  if(idx===-1)return;
-  projects.splice(idx,1);
-  ProjectsStore.write(projects);
-  if(isServerMode())queueProjectDelete(id);
-  renderProjects();
-  if(currentProjectId===id){
-    currentProjectId=null;
-    if(currentView==='project')currentView='all';
-  }
-  render();
-  toast('Проект удалён');
-}
-async function finalizeProjectDelete(projectId,{items,mode}={}){
-  const initiatives=Array.isArray(items)?items:[];
-  removeProjectById(projectId);
-  if(!initiatives.length)return;
-  if(mode==='delete'){
-    for(const item of initiatives){
-      try{
-        await yearPlanProvider.remove(item.id);
-        removeYearPlanItemFromCache(item.id,item.year);
-      }catch(err){
-        toast('Не удалось удалить инициативу');
-      }
-    }
-  }else if(mode==='detach'){
-    for(const item of initiatives){
-      try{
-        const updated=await yearPlanProvider.update(item.id,{projectId:null});
-        if(updated)upsertYearPlanItem(updated);
-        else updateYearPlanItemInCache(item.id,item.year,{projectId:null});
-      }catch(err){
-        toast('Не удалось отвязать инициативу');
-      }
-    }
-  }
-  renderYearPlanIfVisible();
-  render();
-}
-async function deleteProject(id){
-  closeEmojiPicker();
-  if(isServerMode()&&!yearPlanCache.has(yearPlanYear)){
-    await ensureYearPlanData(yearPlanYear);
-  }
-  const initiatives=getYearPlanItemsForProject(id);
-  if(initiatives.length){
-    openProjectDeleteDialog(id,initiatives);
-    return;
-  }
-  removeProjectById(id);
-}
-if(projAdd&&projList){projAdd.addEventListener('click',()=>{closeEmojiPicker();const placeholder=projList.firstElementChild;if(placeholder&&placeholder.classList.contains('is-empty')){placeholder.remove()}const row=document.createElement('div');row.className='proj-item';const input=document.createElement('input');input.className='proj-input';input.placeholder='Название проекта…';row.appendChild(input);if(projList.firstChild){projList.prepend(row)}else{projList.appendChild(row)}input.focus();let saved=false;const finish=save=>{if(saved)return;saved=true;const v=(input.value||'').trim();if(save){if(!v){toast('Назови проект');input.focus();saved=false;return}const project={id:uid(),title:v,emoji:null};projects.unshift(project);ProjectsStore.write(projects);if(isServerMode())queueProjectCreate(project)}renderProjects()};input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();finish(true)}else if(e.key==='Escape'){e.preventDefault();finish(false)}});input.addEventListener('blur',()=>{if(!saved)finish(true)})})}
 
 document.addEventListener('keydown',e=>{
   if(isEditableShortcutTarget(e.target))return;
@@ -1214,13 +1017,10 @@ document.addEventListener('keydown',e=>{
 });
 
 if(!tasks.length&&!isServerMode()){const rootId=uid();const childId=uid();tasks=[{id:rootId,title:'Добавь несколько задач',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:null,children:[{id:childId,title:'Пример подзадачи',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:rootId,children:[]} ]},{id:uid(),title:'ПКМ по строке → «Редактировать»',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:null,children:[]},{id:uid(),title:'Отметь как выполненную — увидишь зачёркивание',done:true,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:null,children:[] }];ensureTaskParentIds(tasks,null);Store.write(tasks)}
-if(!projects.length&&!isServerMode()){projects=[{id:uid(),title:'Личный',emoji:DEFAULT_PROJECT_EMOJI},{id:uid(),title:'Работа',emoji:'💼'}];ProjectsStore.write(projects)}
+if(!projects.length&&!isServerMode()){setProjects([{id:uid(),title:'Личный',emoji:DEFAULT_PROJECT_EMOJI},{id:uid(),title:'Работа',emoji:'💼'}]);ProjectsStore.write(projects)}
 
 renderProjects();
 
-function getProjectTitle(id){if(!id)return'Без проекта';const p=projects.find(x=>x.id===id);return p?p.title:'Проект'}
-function getProjectEmoji(id){const p=projects.find(x=>x.id===id);if(!p)return DEFAULT_PROJECT_EMOJI;if(typeof p.emoji==='string'){const trimmed=p.emoji.trim();if(trimmed)return trimmed}return DEFAULT_PROJECT_EMOJI}
-function getProjectMeta(id){return{emoji:getProjectEmoji(id),title:getProjectTitle(id)}}
 function sprintProjectKey(id){return id==null?SPRINT_UNASSIGNED_KEY:id}
 function isSprintProjectVisible(projectId){const key=sprintProjectKey(projectId);return!sprintVisibleProjects.has(key)||sprintVisibleProjects.get(key)!==false}
 function syncSprintFilterState(keys){const set=new Set(keys);for(const key of keys){if(!sprintVisibleProjects.has(key))sprintVisibleProjects.set(key,true)}for(const key of Array.from(sprintVisibleProjects.keys())){if(!set.has(key))sprintVisibleProjects.delete(key)}}
