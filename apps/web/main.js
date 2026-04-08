@@ -1,5 +1,5 @@
 import { STORAGE_MODES, MIN_TASK_MINUTES, MAX_TASK_MINUTES, MAX_TASK_TIME_MS, TIME_PRESETS, MONTH_NAMES, DEFAULT_PROJECT_EMOJI, YEAR_PLAN_DEFAULT_TITLE } from './src/config.js';
-import { $, $$, getTaskRowById, isEditableShortcutTarget, uid, isDueToday, filterTree, isoWeekInfo, clampTimeSpentMs, normalizeDate, sameDay, buildMonthMatrix, renderMonthInto, formatDue } from './src/utils.js';
+import { $, $$, uid, isDueToday, filterTree, isoWeekInfo, clampTimeSpentMs, normalizeDate, sameDay, buildMonthMatrix, renderMonthInto, formatDue } from './src/utils.js';
 import { openDuePicker, closeDuePicker, getDueEl, getDueAnchor, registerDuePickerCallbacks } from './src/due-picker.js';
 import { buildSprintData, renderSprint, clearSprintFiltersUI, sprintVisibleProjects, registerSprintCallbacks } from './src/sprint.js';
 import { formatYearPlanRangeLabel } from './src/yearplan/normalize.js';
@@ -11,8 +11,7 @@ import {
   yearPlanEditingId,
   yearPlanResizeState, yearPlanMoveState, yearPlanDraft,
   setYearPlanMonthMeta, setYearPlanFocusId,
-  findYearPlanItem,
-  ensureYearPlanData, deleteYearPlanItem,
+  ensureYearPlanData,
   resetYearPlanCache, syncYearPlanDataMode,
   registerYearPlanDataCallbacks
 } from './src/yearplan/data.js';
@@ -46,9 +45,8 @@ import {
   findTask, walkTasks,
   getTaskDepth,
   totalTimeMs, hasActiveTimer, syncTimerLoop,
-  stopTaskTimer, stopAllTimersExcept, toggleTaskTimer,
-  addTask, addSubtask, toggleTask, markTaskDone,
-  deleteTask, handleDelete,
+  stopTaskTimer, stopAllTimersExcept,
+  addTask, markTaskDone,
   archiveCompletedTasks, afterTasksPersisted, restoreActiveTimersFromStore,
   removeActiveTimerState, registerTasksDataCallbacks,
 } from './src/tasks-data.js';
@@ -63,7 +61,7 @@ import {
   renderProjects,
   initProjects, registerProjectsCallbacks,
 } from './src/projects.js';
-import { apiAuthLocked, apiAuthMessage, apiAuthReason, resetApiAuthLock, lockApiAuth, apiRequest, handleApiError, runServerAction, queueTaskUpdate, flushPendingTaskUpdates, handleServerWorkdayWrite, flushPendingWorkdaySync, ApiSettingsUI, apiSettingsBlocking, openApiSettings, closeApiSettings, isApiSettingsOpen, toggleApiKeyVisibility, saveApiKey, clearApiKey, switchToLocalMode, registerApiCallbacks } from './src/api.js';
+import { apiAuthLocked, apiAuthMessage, apiAuthReason, resetApiAuthLock, lockApiAuth, apiRequest, handleApiError, runServerAction, queueTaskUpdate, flushPendingTaskUpdates, handleServerWorkdayWrite, flushPendingWorkdaySync, ApiSettingsUI, apiSettingsBlocking, openApiSettings, closeApiSettings, toggleApiKeyVisibility, saveApiKey, clearApiKey, switchToLocalMode, registerApiCallbacks } from './src/api.js';
 import {
   Ctx, NotesPanel,
   registerTasksRenderCallbacks,
@@ -76,6 +74,7 @@ import {
   setInheritedHover, getVisibleTaskIds,
   hoveredParentTaskId,
 } from './src/tasks-render.js';
+import { registerKeyboardCallbacks } from './src/keyboard.js';
 
 let archivedTasks=ArchiveStore.read();
 let selectedTaskId=null;
@@ -235,37 +234,6 @@ window.addEventListener('click',e=>{
     closeTimePresetMenu();
   }
   if(YearPlanCtx.el.style.display==='block'&&!YearPlanCtx.el.contains(e.target))closeYearPlanContextMenu();
-});
-window.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){
-    closeContextMenu();
-    closeTimePresetMenu();
-    closeYearPlanContextMenu();
-    closeNotesPanel();
-    closeDuePicker();
-    closeWorkdayDialog();
-    closeProjectDeleteDialog();
-    closeTimeDialog();
-  }
-  if(YearPlanCtx.el.style.display==='block'&&(e.key==='p'||e.key==='P'||e.code==='KeyP')){
-    const itemId=YearPlanCtx.activityId;
-    const item=itemId?findYearPlanItem(itemId):null;
-    const projectId=item?item.projectId:null;
-    if(projectId){
-      e.preventDefault();
-      closeYearPlanContextMenu();
-      currentView='project';
-      currentProjectId=projectId;
-      render();
-    }
-  }
-  if((e.key==='Delete'||e.key==='Backspace')&&currentView==='year'&&yearPlanSelectedId){
-    const active=document.activeElement;
-    const isInputActive=active&&(active.tagName==='INPUT'||active.tagName==='TEXTAREA'||active.isContentEditable);
-    if(yearPlanEditingId||isInputActive)return;
-    e.preventDefault();
-    deleteYearPlanItem(yearPlanSelectedId);
-  }
 });
 window.addEventListener('resize',()=>{closeContextMenu();closeTimePresetMenu();closeYearPlanContextMenu()});
 window.addEventListener('scroll',()=>{closeContextMenu();closeTimePresetMenu();closeYearPlanContextMenu()},true);
@@ -639,7 +607,6 @@ if(ApiSettingsUI.toggle){ApiSettingsUI.toggle.addEventListener('click',toggleApi
 if(ApiSettingsUI.form){ApiSettingsUI.form.addEventListener('submit',saveApiKey)}
 if(ApiSettingsUI.clearBtn){ApiSettingsUI.clearBtn.addEventListener('click',clearApiKey)}
 if(ApiSettingsUI.toLocalBtn){ApiSettingsUI.toLocalBtn.addEventListener('click',()=>switchToLocalMode())}
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&isApiSettingsOpen()&&!apiSettingsBlocking){closeApiSettings()}});
 
 if(WorkdayUI.button){WorkdayUI.button.addEventListener('click',()=>{if(WorkdayUI.button.disabled)return;openWorkdayDialog()})}
 if(WorkdayUI.closeBtn){WorkdayUI.closeBtn.setAttribute('data-allow-closed-day','true');WorkdayUI.closeBtn.addEventListener('click',()=>closeWorkdayDialog());}
@@ -648,43 +615,6 @@ if(WorkdayUI.overlay)WorkdayUI.overlay.addEventListener('click',e=>{if(e.target=
 if(WorkdayUI.postponeBtn)WorkdayUI.postponeBtn.addEventListener('click',()=>postponePendingTasks());
 
 
-document.addEventListener('keydown',e=>{
-  if(isEditableShortcutTarget(e.target))return;
-  if(e.key==='Tab'&&selectedTaskId){e.preventDefault();addSubtask(selectedTaskId);return}
-  if((e.key==='Backspace'||e.key==='Delete')&&selectedTaskId){e.preventDefault();handleDelete(selectedTaskId,{visibleOrder:getVisibleTaskIds()})}
-});
-
-document.addEventListener('keydown',e=>{
-  if(!selectedTaskId)return;
-  if(isEditableShortcutTarget(e.target))return;
-  if(e.metaKey||e.ctrlKey||e.altKey)return;
-  const row=getTaskRowById(selectedTaskId);
-  if(e.code==='KeyD'){
-    const anchor=row?row.querySelector('.due-btn'):null;
-    e.preventDefault();
-    openDuePicker(selectedTaskId,anchor||null);
-    return;
-  }
-  if(e.code==='KeyF'){
-    e.preventDefault();
-    toggleTask(selectedTaskId);
-    return;
-  }
-  if(e.code==='KeyR'){
-    e.preventDefault();
-    toggleTaskTimer(selectedTaskId);
-    return;
-  }
-  if(e.code==='KeyC'){
-    e.preventDefault();
-    openNotesPanel(selectedTaskId);
-    return;
-  }
-  if(e.code==='KeyT'){
-    e.preventDefault();
-    openTimeEditDialog(selectedTaskId);
-  }
-});
 
 if(!tasks.length&&!isServerMode()){const rootId=uid();const childId=uid();setTasks([{id:rootId,title:'Добавь несколько задач',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:null,children:[{id:childId,title:'Пример подзадачи',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:rootId,children:[]} ]},{id:uid(),title:'ПКМ по строке → «Редактировать»',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:null,children:[]},{id:uid(),title:'Отметь как выполненную — увидишь зачёркивание',done:true,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:null,children:[] }]);ensureTaskParentIds(tasks,null);Store.write(tasks)}
 if(!projects.length&&!isServerMode()){setProjects([{id:uid(),title:'Личный',emoji:DEFAULT_PROJECT_EMOJI},{id:uid(),title:'Работа',emoji:'💼'}]);ProjectsStore.write(projects)}
@@ -740,6 +670,16 @@ registerDuePickerCallbacks({
 });
 registerSprintCallbacks({
   render: render,
+});
+registerKeyboardCallbacks({
+  closeTimeDialog: closeTimeDialog,
+  getCurrentView: ()=>currentView,
+  setCurrentView: v=>{currentView=v},
+  getCurrentProjectId: ()=>currentProjectId,
+  setCurrentProjectId: v=>{currentProjectId=v},
+  render: render,
+  getSelectedTaskId: ()=>selectedTaskId,
+  openTimeEditDialog: openTimeEditDialog,
 });
 
 setupSidebarResize();
