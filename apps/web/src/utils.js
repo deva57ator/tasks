@@ -78,6 +78,15 @@ export function getDaysInMonth(year, monthIndex) {
   return new Date(year, monthIndex + 1, 0).getDate();
 }
 
+// Форматирование дедлайна в формат DD.MM
+export function formatDue(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}.${mm}`;
+}
+
 // ISO-неделя по дате (ISO 8601)
 export function isoWeekInfo(d) {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));

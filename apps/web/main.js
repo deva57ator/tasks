@@ -1,5 +1,5 @@
-import { STORAGE_MODES, MIN_TASK_MINUTES, MAX_TASK_MINUTES, MAX_TASK_TIME_MS, TIME_PRESETS, TIME_UPDATE_INTERVAL, MAX_TASK_DEPTH, MONTH_NAMES, DEFAULT_PROJECT_EMOJI, SPRINT_UNASSIGNED_KEY, YEAR_PLAN_DEFAULT_TITLE } from './src/config.js';
-import { $, $$, getTaskRowById, isEditableShortcutTarget, uid, isDueToday, isDuePast, filterTree, isoWeekInfo, clampTimeSpentMs } from './src/utils.js';
+import { STORAGE_MODES, MIN_TASK_MINUTES, MAX_TASK_MINUTES, MAX_TASK_TIME_MS, TIME_PRESETS, MONTH_NAMES, DEFAULT_PROJECT_EMOJI, SPRINT_UNASSIGNED_KEY, YEAR_PLAN_DEFAULT_TITLE } from './src/config.js';
+import { $, $$, getTaskRowById, isEditableShortcutTarget, uid, isDueToday, filterTree, isoWeekInfo, clampTimeSpentMs } from './src/utils.js';
 import { formatYearPlanRangeLabel } from './src/yearplan/normalize.js';
 import {
   yearPlanYear, setYearPlanYear,
@@ -41,14 +41,14 @@ import { setupSidebarResize } from './src/sidebar.js';
 import {
   tasks, setTasks, pendingServerCreates,
   normalizeTaskTree, ensureTaskParentIds, migrate,
-  findTask, findArchivedTask, walkTasks,
-  getTaskDepth, getSubtreeDepth, containsTask, detachTaskFromTree,
+  findTask, walkTasks,
+  getTaskDepth,
   totalTimeMs, hasActiveTimer, syncTimerLoop,
-  stopTaskTimer, stopAllTimersExcept, startTaskTimer, toggleTaskTimer,
+  stopTaskTimer, stopAllTimersExcept, toggleTaskTimer,
   addTask, addSubtask, toggleTask, markTaskDone,
-  deleteTask, handleDelete, renameTask, toggleCollapse,
+  deleteTask, handleDelete,
   archiveCompletedTasks, afterTasksPersisted, restoreActiveTimersFromStore,
-  registerTasksDataCallbacks,
+  removeActiveTimerState, registerTasksDataCallbacks,
 } from './src/tasks-data.js';
 import {
   normalizeArchivedNode, normalizeArchiveList, normalizeArchivePayload,
@@ -62,6 +62,18 @@ import {
   initProjects, registerProjectsCallbacks,
 } from './src/projects.js';
 import { apiAuthLocked, apiAuthMessage, apiAuthReason, resetApiAuthLock, lockApiAuth, apiRequest, handleApiError, runServerAction, queueTaskUpdate, flushPendingTaskUpdates, handleServerWorkdayWrite, flushPendingWorkdaySync, ApiSettingsUI, apiSettingsBlocking, openApiSettings, closeApiSettings, isApiSettingsOpen, toggleApiKeyVisibility, saveApiKey, clearApiKey, switchToLocalMode, registerApiCallbacks } from './src/api.js';
+import {
+  Ctx, NotesPanel,
+  registerTasksRenderCallbacks,
+  renderTaskRow, startEdit, buildRenderContext,
+  openContextMenu, closeContextMenu,
+  openNotesPanel, closeNotesPanel, updateNoteIndicator,
+  closeAssignSubmenu, openProjectAssignSubmenu, maybeCloseSubmenu,
+  closeTimePresetMenu, getTimePresetMenuEl, getTimePresetMenuAnchor,
+  updateTimerDisplays, updateTimeControlsState,
+  setInheritedHover, getVisibleTaskIds,
+  hoveredParentTaskId,
+} from './src/tasks-render.js';
 
 let archivedTasks=ArchiveStore.read();
 let selectedTaskId=null;
@@ -69,9 +81,6 @@ let pendingEditId=null;
 let currentView='all';
 let currentProjectId=null;
 
-let activeEditId=null;
-let activeInputEl=null;
-let hoveredParentTaskId=null;
 const pendingTimeUpdates=new Set();
 let sprintVisibleProjects=new Map();
 
@@ -165,8 +174,6 @@ function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show'
 
 
 
-let draggingTaskId=null;
-let dropTargetId=null;
 let sprintDraggingId=null;
 let sprintDropColumn=null;
 
@@ -190,9 +197,6 @@ function setTimeUpdatePending(taskId,value){if(!taskId)return;const before=pendi
 
 function formatPresetLabel(minutes){if(minutes%60===0&&minutes>=60){const hours=minutes/60;return`+${hours}ч`}return`+${minutes} мин`}
 
-function applyInlineTimeControls(container,task){if(!container||!task)return;const disabled=!!task.timerActive||isTimeUpdatePending(task.id);container.classList.toggle('is-disabled',disabled);const trigger=container.querySelector('.time-preset-trigger');if(trigger){trigger.disabled=disabled;trigger.setAttribute('aria-disabled',disabled?'true':'false')}const loader=container.querySelector('.time-loading');if(loader)loader.classList.toggle('is-visible',isTimeUpdatePending(task.id))}
-
-function updateTimeControlsState(taskId){const row=getTaskRowById(taskId);const task=findTask(taskId);if(!row||!task)return;const inline=row.querySelector('.time-inline-controls');if(inline)applyInlineTimeControls(inline,task);const timerBtn=row.querySelector('.timer-btn');if(timerBtn){const disabled=isTimeUpdatePending(task.id)||(timeDialogTaskId===task.id&&isTimeDialogOpen());timerBtn.disabled=disabled}}
 
 function applyTaskTime(task,timeMs,{skipRender=false}={}){if(!task)return;task.timeSpent=clampTimeSpentMs(timeMs);task.timerActive=false;task.timerStart=null;removeActiveTimerState(task.id);Store.write(tasks);syncTimerLoop();updateTimerDisplays();if(!skipRender)updateTimeControlsState(task.id)}
 
@@ -203,34 +207,12 @@ function formatDuration(ms){if(!ms)return'0 мин';const totalMinutes=Math.floo
 function setSprintDropColumn(col){if(sprintDropColumn===col)return;if(sprintDropColumn){sprintDropColumn.classList.remove('is-drop-target')}sprintDropColumn=col||null;if(sprintDropColumn){sprintDropColumn.classList.add('is-drop-target')}}
 function clearSprintDragState(){const prev=document.querySelector('.sprint-task.is-dragging');if(prev)prev.classList.remove('is-dragging');setSprintDropColumn(null);sprintDraggingId=null}
 function applySprintDrop(targetDate){if(!sprintDraggingId)return;const task=findTask(sprintDraggingId);if(!task)return;const d=new Date(targetDate);if(isNaN(d))return;d.setHours(0,0,0,0);const iso=d.toISOString();if(task.due!==iso){task.due=iso;Store.write(tasks);if(isServerMode())queueTaskUpdate(task.id,{due:iso})}clearSprintDragState();render()}
-function setDropTarget(id){if(dropTargetId===id||dropTargetId===null&&id===null)return;if(dropTargetId){const prev=document.querySelector(`.task[data-id="${dropTargetId}"]`);prev&&prev.classList.remove('is-drop-target')}dropTargetId=id||null;if(dropTargetId){const el=document.querySelector(`.task[data-id="${dropTargetId}"]`);el&&el.classList.add('is-drop-target')}}
-function clearDragIndicators(){if(draggingTaskId){const dragEl=document.querySelector(`.task[data-id="${draggingTaskId}"]`);dragEl&&dragEl.classList.remove('is-dragging')}setDropTarget(null);draggingTaskId=null}
-function rowClass(t){return'task'+(selectedTaskId===t.id?' is-selected':'')+(t.done?' done':'')+(t.timerActive?' is-timer-active':'')}
-function getVisibleTaskIds(){return $$('#tasks .task[data-id]').map(el=>el.dataset.id)}
-function collectVisibleTaskMeta(list,visibleTaskIds,visibleTaskMap){if(!Array.isArray(list))return;for(const item of list){if(!item||typeof item!=='object')continue;visibleTaskIds.add(item.id);visibleTaskMap.set(item.id,item);if(Array.isArray(item.children)&&item.children.length)collectVisibleTaskMeta(item.children,visibleTaskIds,visibleTaskMap)}}
-function collectVisibleAncestorIds(task,visibleTaskMap){const ids=[];if(!task||!visibleTaskMap)return ids;let parentId=task.parentId||null;while(parentId&&visibleTaskMap.has(parentId)){ids.push(parentId);const parentTask=visibleTaskMap.get(parentId);parentId=parentTask&&parentTask.parentId?parentTask.parentId:null}return ids}
-function collectVisibleAncestorLevels(task,visibleTaskMap){const levels=[];if(!task||!visibleTaskMap)return levels;let level=1;let parentId=task.parentId||null;while(parentId&&visibleTaskMap.has(parentId)){levels.push(level);const parentTask=visibleTaskMap.get(parentId);parentId=parentTask&&parentTask.parentId?parentTask.parentId:null;level++}return levels}
-function setInheritedHover(parentId){hoveredParentTaskId=parentId||null;const rows=$$('#tasks .task-row[data-id]');for(const row of rows){const ancestors=(row.dataset.ancestorIds||'').split(',').filter(Boolean);row.classList.toggle('is-inherited-hover',!!(hoveredParentTaskId&&ancestors.includes(hoveredParentTaskId)))}}
-
-const Ctx={el:$('#ctxMenu'),taskId:null,sub:document.getElementById('ctxSub'),submenuAnchor:null};
-const TimePresetMenu={el:document.createElement('div'),taskId:null,anchor:null};
-TimePresetMenu.el.className='context-menu time-preset-menu';
-TimePresetMenu.el.setAttribute('role','menu');
-TimePresetMenu.el.setAttribute('aria-hidden','true');
-document.body.appendChild(TimePresetMenu.el);
-
-const NotesPanel={panel:document.getElementById('notesSidebar'),overlay:document.getElementById('notesOverlay'),close:document.getElementById('notesClose'),title:document.getElementById('notesTaskTitle'),input:document.getElementById('notesInput'),taskId:null,mode:'tasks'};
 const TimeDialog={overlay:document.getElementById('timeOverlay'),close:document.getElementById('timeDialogClose'),cancel:document.getElementById('timeDialogCancel'),form:document.getElementById('timeDialogForm'),hours:document.getElementById('timeInputHours'),minutes:document.getElementById('timeInputMinutes'),summary:document.getElementById('timeDialogSummary'),subtitle:document.getElementById('timeDialogSubtitle'),error:document.getElementById('timeDialogError'),save:document.getElementById('timeDialogSave'),presets:document.getElementById('timeDialogPresets')};
 let timeDialogTaskId=null;
 let timeDialogEditedMinutes=0;
 let timeDialogSaving=false;
 let timeDialogDeferredTimerSyncTaskId=null;
 
-function updateNoteIndicator(taskId){const btn=document.querySelector(`.task[data-id="${taskId}"] .note-btn`);if(btn){const t=findTask(taskId);btn.dataset.hasNotes=t&&t.notes&&t.notes.trim()? 'true':'false'}}
-
-function openNotesPanel(taskId,{source='tasks'}={}){if(!NotesPanel.panel||!NotesPanel.overlay||!NotesPanel.input)return;closeContextMenu();const isArchive=source==='archive';const task=isArchive?findArchivedTask(taskId):findTask(taskId);if(!task)return;NotesPanel.taskId=taskId;NotesPanel.mode=isArchive?'archive':'tasks';if(NotesPanel.title)NotesPanel.title.textContent=task.title||'';NotesPanel.input.value=task.notes||'';NotesPanel.input.readOnly=isArchive;NotesPanel.input.classList.toggle('is-readonly',isArchive);if(isArchive){NotesPanel.input.setAttribute('aria-readonly','true')}else{NotesPanel.input.removeAttribute('aria-readonly')}NotesPanel.overlay.classList.add('is-visible');NotesPanel.overlay.setAttribute('aria-hidden','false');NotesPanel.panel.classList.add('is-open');NotesPanel.panel.setAttribute('aria-hidden','false');document.body.classList.add('notes-open');if(!isArchive){setTimeout(()=>{try{NotesPanel.input.focus({preventScroll:true})}catch{NotesPanel.input.focus()}},60);updateNoteIndicator(taskId)}}
-
-function closeNotesPanel(){if(!NotesPanel.panel||!NotesPanel.overlay)return;NotesPanel.taskId=null;NotesPanel.mode='tasks';NotesPanel.overlay.classList.remove('is-visible');NotesPanel.overlay.setAttribute('aria-hidden','true');NotesPanel.panel.classList.remove('is-open');NotesPanel.panel.setAttribute('aria-hidden','true');document.body.classList.remove('notes-open');if(NotesPanel.title)NotesPanel.title.textContent='';if(NotesPanel.input){NotesPanel.input.value='';NotesPanel.input.readOnly=false;NotesPanel.input.classList.remove('is-readonly');NotesPanel.input.removeAttribute('aria-readonly')}}
 function setTimeDialogError(msg){if(!TimeDialog.error)return;TimeDialog.error.textContent=msg||''}
 function setTimeDialogInputsFromMinutes(minutes){const safe=Math.max(0,Math.round(minutes));const hours=Math.floor(safe/60);const mins=safe%60;if(TimeDialog.hours)TimeDialog.hours.value=String(hours);if(TimeDialog.minutes)TimeDialog.minutes.value=String(mins)}
 function getTimeDialogState(){if(!TimeDialog.hours||!TimeDialog.minutes)return{valid:false,totalMinutes:0,hours:0,minutes:0,hoursInvalid:true,minutesInvalid:true,rangeInvalid:true};const rawHours=Number(TimeDialog.hours.value);const rawMinutes=Number(TimeDialog.minutes.value);const hoursInvalid=!Number.isFinite(rawHours)||rawHours<0;const minutesInvalid=!Number.isFinite(rawMinutes)||rawMinutes<0||rawMinutes>59;const hours=Math.floor(Number.isFinite(rawHours)?rawHours:0);const minutes=Math.floor(Number.isFinite(rawMinutes)?rawMinutes:0);const totalMinutes=hours*60+minutes;const rangeInvalid=totalMinutes<MIN_TASK_MINUTES||totalMinutes>MAX_TASK_MINUTES;const valid=!hoursInvalid&&!minutesInvalid&&!rangeInvalid;return{valid,totalMinutes,hours,minutes,hoursInvalid,minutesInvalid,rangeInvalid}}
@@ -240,63 +222,6 @@ function openTimeEditDialog(taskId){const task=findTask(taskId);if(!task||!TimeD
 function closeTimeDialog({syncDeferred=true}={}){if(!TimeDialog.overlay)return;const taskId=timeDialogTaskId;const shouldSyncDeferred=syncDeferred&&timeDialogDeferredTimerSyncTaskId&&taskId===timeDialogDeferredTimerSyncTaskId;timeDialogTaskId=null;timeDialogSaving=false;timeDialogEditedMinutes=0;TimeDialog.overlay.classList.remove('is-open');TimeDialog.overlay.setAttribute('aria-hidden','true');document.body.classList.remove('time-dialog-open');setTimeDialogError('');if(TimeDialog.save)TimeDialog.save.disabled=false;if(shouldSyncDeferred){const task=findTask(taskId);if(task&&isServerMode()){queueTaskUpdate(task.id,{timeSpent:task.timeSpent})}}timeDialogDeferredTimerSyncTaskId=null;updateTimeControlsState(taskId)}
 function submitTimeDialog(){if(!timeDialogTaskId||timeDialogSaving)return;const task=findTask(timeDialogTaskId);if(!task){closeTimeDialog();return}const state=updateTimeDialogUI({showValidationError:true});if(!state.valid){return}timeDialogSaving=true;updateTimeDialogUI({preserveError:true});setTimeDialogError('');setTimeUpdatePending(task.id,true);saveTaskTimeMinutes(task.id,state.totalMinutes,{showSuccessToast:true}).then(()=>{timeDialogDeferredTimerSyncTaskId=null;closeTimeDialog({syncDeferred:false})}).catch(()=>{setTimeDialogError('Не удалось сохранить. Проверь соединение и попробуй ещё раз.')}).finally(()=>{timeDialogSaving=false;setTimeUpdatePending(task.id,false);updateTimeDialogUI({preserveError:true});updateTimerDisplays()})}
 function initTimeDialogPresets(){if(!TimeDialog.presets)return;TimeDialog.presets.innerHTML='';for(const delta of TIME_PRESETS){const btn=document.createElement('button');btn.type='button';btn.className='time-preset-btn';btn.textContent=formatPresetLabel(delta);btn.title=`Добавить ${formatDuration(minutesToMs(delta))}`;btn.onclick=e=>{e.preventDefault();applyTimeDialogPreset(delta)};TimeDialog.presets.appendChild(btn)}}
-function openTimePresetMenu(taskId,anchor){
-  const task=findTask(taskId);
-  if(!task)return;
-  if(task.timerActive||isTimeUpdatePending(task.id))return;
-  const menu=TimePresetMenu.el;
-  if(!menu)return;
-  if(TimePresetMenu.taskId===taskId&&menu.style.display==='block'){closeTimePresetMenu();return}
-  closeContextMenu();
-  closeDuePicker();
-  TimePresetMenu.taskId=taskId;
-  TimePresetMenu.anchor=anchor||null;
-  menu.innerHTML='';
-  for(const delta of TIME_PRESETS){
-    const item=document.createElement('div');
-    item.className='context-item';
-    item.textContent=formatPresetLabel(delta);
-    item.title=`Добавить ${formatDuration(minutesToMs(delta))}`;
-    item.onclick=()=>{closeTimePresetMenu();handleInlinePreset(taskId,delta)};
-    menu.appendChild(item);
-  }
-  menu.style.display='block';
-  menu.setAttribute('aria-hidden','false');
-  const r=anchor&&anchor.getBoundingClientRect?anchor.getBoundingClientRect():{left:0,right:0,top:0,bottom:0};
-  const mw=menu.offsetWidth||160;
-  const mh=menu.offsetHeight||120;
-  let px=Math.min(r.left,window.innerWidth-mw-8);
-  let py=r.bottom+6;
-  if(py+mh>window.innerHeight-8)py=Math.max(8,r.top-mh-6);
-  menu.style.left=px+'px';
-  menu.style.top=py+'px';
-}
-function closeTimePresetMenu(){
-  TimePresetMenu.taskId=null;
-  TimePresetMenu.anchor=null;
-  if(TimePresetMenu.el){TimePresetMenu.el.style.display='none';TimePresetMenu.el.setAttribute('aria-hidden','true')}
-}
-function openContextMenu(taskId,x,y){
-  Ctx.taskId=taskId;const menu=Ctx.el;menu.innerHTML='';closeAssignSubmenu();closeDuePicker();closeTimePresetMenu();
-  const btnEdit=document.createElement('div');btnEdit.className='context-item';btnEdit.textContent='Редактировать';
-  btnEdit.onclick=()=>{closeContextMenu();const row=document.querySelector(`.task[data-id="${taskId}"]`);const t=findTask(taskId);if(!t)return;if(row)startEdit(row,t);else{const next=prompt('Название задачи',t.title||'');if(next!==null)renameTask(taskId,next)}};
-  const btnComplete=document.createElement('div');btnComplete.className='context-item';btnComplete.textContent='Отметить выполненной';
-  btnComplete.onclick=()=>{closeContextMenu();markTaskDone(taskId)};
-  const btnAssign=document.createElement('div');btnAssign.className='context-item';btnAssign.textContent='Проект ▸';
-  btnAssign.addEventListener('mouseenter',()=>{openAssignSubmenu(taskId,btnAssign);closeDuePicker()});
-  btnAssign.addEventListener('mouseleave',()=>maybeCloseSubmenu());
-  const btnTime=document.createElement('div');btnTime.className='context-item';btnTime.textContent='Время…';
-  btnTime.onclick=()=>{closeContextMenu();openTimeEditDialog(taskId)};
-  const btnDue=document.createElement('div');btnDue.className='context-item';btnDue.textContent='Дата ▸';btnDue.dataset.menuAnchor='true';
-  btnDue.addEventListener('mouseenter',()=>{closeAssignSubmenu();openDuePicker(taskId,btnDue,{fromContext:true})});
-  btnDue.addEventListener('mouseleave',()=>{setTimeout(()=>{if(Due.el.dataset.fromContext==='true'){const anchor=Due.anchor;if(anchor&&anchor.matches(':hover'))return;if(Due.el.matches(':hover'))return;closeDuePicker()}},80)});
-  menu.append(btnEdit,btnComplete,btnAssign,btnTime,btnDue);
-  menu.style.display='block';
-  const mw=menu.offsetWidth,mh=menu.offsetHeight;const px=Math.min(x,window.innerWidth-mw-8),py=Math.min(y,window.innerHeight-mh-8);
-  menu.style.left=px+'px';menu.style.top=py+'px';
-  menu.setAttribute('aria-hidden','false');
-}
-function closeContextMenu(){Ctx.taskId=null;Ctx.el.style.display='none';Ctx.el.setAttribute('aria-hidden','true');closeAssignSubmenu();if(Due.el&&Due.el.dataset.fromContext==='true')closeDuePicker()}
 window.addEventListener('click',e=>{
   if(Due.el&&Due.el.style.display==='block'&&Due.el.dataset.fromContext==='true'){
     if(Due.el.contains(e.target))return;
@@ -304,9 +229,10 @@ window.addEventListener('click',e=>{
     if(anchor&&anchor.contains(e.target))return;
   }
   if(!Ctx.el.contains(e.target)&&!Ctx.sub.contains(e.target))closeContextMenu();
-  if(TimePresetMenu.el.style.display==='block'){
-    if(TimePresetMenu.el.contains(e.target))return;
-    const anchor=TimePresetMenu.anchor;
+  const _tpm=getTimePresetMenuEl();
+  if(_tpm&&_tpm.style.display==='block'){
+    if(_tpm.contains(e.target))return;
+    const anchor=getTimePresetMenuAnchor();
     if(anchor&&anchor.contains(e.target))return;
     closeTimePresetMenu();
   }
@@ -563,10 +489,7 @@ function render(){
       }
     }
     const dataList=filterTree(tasks,t=>t.project===currentProjectId);
-    const visibleTaskIds=new Set();
-    const visibleTaskMap=new Map();
-    collectVisibleTaskMeta(dataList,visibleTaskIds,visibleTaskMap);
-    const renderContext={visibleTaskIds,visibleTaskMap};
+    const renderContext=buildRenderContext(dataList);
     if(!dataList.length){
       const empty=document.createElement('div');
       empty.className='task';
@@ -588,10 +511,7 @@ function render(){
   }
   document.getElementById('viewTitle').textContent=currentView==='today'?'Сегодня':'Все задачи';
   const dataList=currentView==='today'?filterTree(tasks,t=>isDueToday(t.due)):tasks;
-  const visibleTaskIds=new Set();
-  const visibleTaskMap=new Map();
-  collectVisibleTaskMeta(dataList,visibleTaskIds,visibleTaskMap);
-  const renderContext={visibleTaskIds,visibleTaskMap};
+  const renderContext=buildRenderContext(dataList);
   if(!dataList.length){const empty=document.createElement('div');empty.className='task';empty.innerHTML='<div></div><div class="task-title">Здесь пусто.</div><div></div>';wrap.appendChild(empty);syncTimerLoop();return}
   for(const t of dataList){renderTaskRow(t,0,wrap,renderContext)}
   if(pendingEditId){const rowEl=document.querySelector(`[data-id="${pendingEditId}"]`);const taskObj=findTask(pendingEditId);if(rowEl&&taskObj)startEdit(rowEl,taskObj);pendingEditId=null}
@@ -600,146 +520,6 @@ function render(){
   updateWorkdayUI()
 }
 
-function renderTaskRow(t,depth,container,renderContext={visibleTaskIds:new Set(),visibleTaskMap:new Map()}){
-  const canAcceptChildren=depth<MAX_TASK_DEPTH;
-  const childList=Array.isArray(t.children)?t.children:[];
-  const hasChildren=canAcceptChildren&&childList.length>0;
-  const parentId=t.parentId||null;
-  const hasVisibleParent=!!(parentId&&renderContext.visibleTaskIds.has(parentId));
-  const visibleAncestorLevels=collectVisibleAncestorLevels(t,renderContext.visibleTaskMap);
-  const visibleAncestorIds=collectVisibleAncestorIds(t,renderContext.visibleTaskMap);
-  const row=document.createElement('div');row.className=rowClass(t);row.dataset.id=t.id;row.dataset.depth=depth;row.classList.add('task-row');
-  row.dataset.taskId=t.id;
-  row.dataset.level=String(depth);
-  row.dataset.ancestorIds=visibleAncestorIds.join(',');
-  if(parentId)row.dataset.parentId=parentId;
-  if(hasVisibleParent){row.classList.add('has-visible-parent');row.dataset.hasVisibleParent='true'}
-  if(visibleAncestorLevels.length){
-    const guides=document.createElement('div');
-    guides.className='task-inheritance-guides';
-    for(const level of visibleAncestorLevels){
-      const line=document.createElement('span');
-      line.className='task-inheritance-line';
-      line.style.left=`${-14-((level-1)*28)}px`;
-      guides.appendChild(line);
-    }
-    row.appendChild(guides);
-  }
-  if(hoveredParentTaskId&&visibleAncestorIds.includes(hoveredParentTaskId))row.classList.add('is-inherited-hover');
-  row.addEventListener('mouseenter',()=>{if(hoveredParentTaskId===t.id)return;setInheritedHover(t.id)});
-  row.addEventListener('mouseleave',()=>{if(hoveredParentTaskId!==t.id)return;setInheritedHover(null)});
-  row.setAttribute('draggable','true');
-  row.addEventListener('dragstart',e=>{draggingTaskId=t.id;row.classList.add('is-dragging');try{e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',t.id)}catch{}closeContextMenu()});
-  row.addEventListener('dragend',()=>{clearDragIndicators()});
-  row.addEventListener('dragenter',e=>{if(!draggingTaskId||draggingTaskId===t.id)return;if(!canAcceptChildren){setDropTarget(null);return}const dragged=findTask(draggingTaskId);if(!dragged)return;if(containsTask(dragged,t.id)){setDropTarget(null);return}const subtreeDepth=getSubtreeDepth(dragged);if(depth+1+subtreeDepth>MAX_TASK_DEPTH){setDropTarget(null);return}e.preventDefault();setDropTarget(t.id)});
-  row.addEventListener('dragover',e=>{if(!draggingTaskId||draggingTaskId===t.id)return;const dragged=findTask(draggingTaskId);if(!dragged)return;if(!canAcceptChildren){if(e.dataTransfer)e.dataTransfer.dropEffect='none';return}if(containsTask(dragged,t.id))return;const subtreeDepth=getSubtreeDepth(dragged);if(depth+1+subtreeDepth>MAX_TASK_DEPTH){if(e.dataTransfer)e.dataTransfer.dropEffect='none';return}e.preventDefault();if(e.dataTransfer)e.dataTransfer.dropEffect='move'});
-  row.addEventListener('dragleave',e=>{if(dropTargetId!==t.id)return;const rel=e.relatedTarget;if(rel&&row.contains(rel))return;setDropTarget(null)});
-  row.addEventListener('drop',e=>{if(!draggingTaskId)return;e.preventDefault();const sourceId=draggingTaskId;clearDragIndicators();if(sourceId===t.id)return;const draggedTask=findTask(sourceId);const targetTask=findTask(t.id);if(!draggedTask||!targetTask)return;if(!canAcceptChildren){toast('Максимальная вложенность — три уровня');return}if(containsTask(draggedTask,t.id))return;const subtreeDepth=getSubtreeDepth(draggedTask);if(depth+1+subtreeDepth>MAX_TASK_DEPTH){toast('Максимальная вложенность — три уровня');return}const moved=detachTaskFromTree(sourceId);if(!moved)return;if(!Array.isArray(targetTask.children))targetTask.children=[];const inheritedProject=typeof targetTask.project==='undefined'?null:targetTask.project;targetTask.children.push(moved);moved.project=inheritedProject;moved.parentId=targetTask.id;targetTask.collapsed=false;Store.write(tasks);if(isServerMode())queueTaskUpdate(moved.id,{parentId:targetTask.id,project:moved.project});selectedTaskId=moved.id;render()});
-  row.addEventListener('contextmenu',e=>{e.preventDefault();openContextMenu(t.id,e.clientX,e.clientY)});
-  const cb=document.createElement('div');cb.className='task-checkbox';cb.dataset.checked=t.done?'true':'false';cb.title=t.done?'Снять отметку выполнения':'Отметить как выполненную';cb.setAttribute('role','button');cb.setAttribute('aria-label',cb.title);cb.setAttribute('aria-pressed',t.done?'true':'false');cb.setAttribute('tabindex','0');cb.onclick=e=>{e.stopPropagation();toggleTask(t.id)};cb.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '||e.key==='Spacebar'){e.preventDefault();toggleTask(t.id)}});
-  const content=document.createElement('div');content.className='task-main';
-  const title=document.createElement('div');title.className='task-title';
-  const titleText=document.createElement('span');titleText.className='task-title-text';titleText.textContent=t.title;
-  title.appendChild(titleText);
-  content.appendChild(title);
-  const tagsWrap=document.createElement('div');tagsWrap.className='task-tags';
-  const timeBadge=document.createElement('span');
-  timeBadge.className='time-spent';
-  const timeSpentMs=totalTimeMs(t);
-  if(timeSpentMs>0){
-    timeBadge.textContent=formatDuration(timeSpentMs);
-    timeBadge.hidden=false;
-  }else{
-    timeBadge.textContent='';
-    timeBadge.hidden=true;
-  }
-  const timePresetTrigger=document.createElement('button');
-  timePresetTrigger.type='button';
-  timePresetTrigger.className='time-preset-trigger';
-  timePresetTrigger.textContent='+';
-  timePresetTrigger.title='Добавить время';
-  timePresetTrigger.setAttribute('aria-label','Добавить время');
-  timePresetTrigger.onclick=e=>{e.stopPropagation();openTimePresetMenu(t.id,timePresetTrigger)};
-  const timeLoader=document.createElement('span');timeLoader.className='time-loading';timeLoader.setAttribute('aria-hidden','true');
-  const timeBox=document.createElement('div');
-  timeBox.className='time-inline-controls';
-  timeBox.append(timeBadge,timePresetTrigger,timeLoader);
-  applyInlineTimeControls(timeBox,t);
-  const timerBtn=document.createElement('button');timerBtn.className='timer-btn task-btn--timer';timerBtn.type='button';timerBtn.dataset.active=t.timerActive?'true':'false';timerBtn.title=t.timerActive?'Остановить таймер':'Запустить таймер';timerBtn.setAttribute('aria-label','Таймер задачи');timerBtn.setAttribute('aria-pressed',t.timerActive?'true':'false');timerBtn.onclick=e=>{e.stopPropagation();toggleTaskTimer(t.id)};timerBtn.disabled=isTimeUpdatePending(t.id)||(timeDialogTaskId===t.id&&isTimeDialogOpen());
-  const noteBtn=document.createElement('button');noteBtn.className='note-btn task-btn--note';noteBtn.type='button';noteBtn.setAttribute('aria-label','Заметки задачи');noteBtn.title='Открыть заметки';noteBtn.onclick=e=>{e.stopPropagation();openNotesPanel(t.id)};noteBtn.dataset.hasNotes=t.notes&&t.notes.trim()? 'true':'false';
-  const dueBtn=document.createElement('button');dueBtn.className='due-btn task-btn--deadline';dueBtn.title='Установить дедлайн';dueBtn.setAttribute('aria-label','Дедлайн задачи');dueBtn.onclick=e=>{e.stopPropagation();openDuePicker(t.id,dueBtn)};
-  const del=document.createElement('button');del.className='delete-btn';del.type='button';del.setAttribute('aria-label','Удалить задачу');del.title='Удалить задачу';del.textContent='✕';del.onclick=e=>{e.stopPropagation();handleDelete(t.id)};
-  if(t.due){const tag=document.createElement('span');tag.className='due-tag';if(isDueToday(t.due))tag.classList.add('is-today');else if(isDuePast(t.due))tag.classList.add('is-overdue');tag.textContent=formatDue(t.due);tagsWrap.appendChild(tag)}
-  if(t.project){const ptag=document.createElement('span');ptag.className='proj-tag';ptag.textContent=getProjectEmoji(t.project);tagsWrap.appendChild(ptag)}
-  if(tagsWrap.childElementCount)content.appendChild(tagsWrap);
-  const actions=document.createElement('div');actions.className='task-actions';actions.append(timeBox,timerBtn,noteBtn,dueBtn);
-  row.append(cb,content,actions,del);
-  row.addEventListener('click',()=>{
-    if(activeEditId&&activeEditId!==t.id){const v=(activeInputEl?.value||'').trim();if(!v){toast('Напиши, что нужно сделать');activeInputEl&&activeInputEl.focus();return}const id=activeEditId;activeEditId=null;activeInputEl=null;selectedTaskId=t.id;renameTask(id,v);return}
-    selectedTaskId=t.id;render()
-  });
-  row.addEventListener('dblclick',e=>{
-    const target=e.target&&typeof e.target.closest==='function'?e.target:null;
-    if(target&&(target.closest('.task-checkbox')||target.closest('.task-actions')||target.closest('.delete-btn')))return;
-    e.stopPropagation();
-    selectedTaskId=t.id;
-    startEdit(row,t);
-  });
-  container.appendChild(row);
-  if(hasChildren){row.classList.add('has-children');const subWrap=document.createElement('div');subWrap.className='subtasks';const inner=document.createElement('div');inner.className='subtasks-inner';for(const c of childList){renderTaskRow(c,depth+1,inner,renderContext)}subWrap.appendChild(inner);container.appendChild(subWrap)}
-}
-
-function startEdit(row,t){
-  const titleEl=row.querySelector('.task-title');
-  const input=document.createElement('input');
-  input.className='input';
-  const originalTitle=typeof t.title==='string'?t.title:'';
-  const isNewTask=!originalTitle.trim();
-  input.value=originalTitle;
-  input.placeholder='Название задачи…';
-  input.addEventListener('mousedown',e=>e.stopPropagation());
-  input.addEventListener('click',e=>e.stopPropagation());
-  titleEl.replaceWith(input);
-  input.focus();
-  activeEditId=t.id;activeInputEl=input;
-  let finished=false;
-  const finish=()=>{finished=true;activeEditId=null;activeInputEl=null;};
-  const trySave=()=>{
-    if(finished||!input)return false;
-    const v=(input.value||'').trim();
-    if(!v){toast('Напиши, что нужно сделать');input.focus();return false}
-    const id=t.id;
-    finish();
-    renameTask(id,v);
-    return true
-  };
-  const cancelEdit=()=>{
-    if(finished)return;
-    finish();
-    if(isNewTask){
-      handleDelete(t.id,{visibleOrder:getVisibleTaskIds()});
-      return;
-    }
-    selectedTaskId=t.id;
-    render();
-  };
-  input.addEventListener('keydown',e=>{
-    if(e.key==='Enter'){
-      e.preventDefault();
-      trySave();
-    }else if(e.key==='Escape'||e.key==='Esc'){
-      e.preventDefault();
-      cancelEdit();
-    }
-  });
-  input.addEventListener('blur',()=>{
-    if(finished)return;
-    setTimeout(()=>{
-      if(finished)return;
-      try{input.focus({preventScroll:true})}catch{input.focus();}
-    },0)
-  })
-}
 
 function applyTheme(mode){const dark=mode==='dark';document.body.classList.toggle('theme-dark',dark);document.body.setAttribute('data-theme',dark?'dark':'light');const btn=$('#themeToggle');if(btn){const label=dark?'Переключить на светлую тему':'Переключить на тёмную тему';btn.dataset.mode=dark?'dark':'light';btn.setAttribute('aria-pressed',String(dark));btn.setAttribute('aria-label',label);btn.title=label}}
 const themeToggle=$('#themeToggle');
@@ -957,97 +737,6 @@ function renderSprintFiltersBar(entries){
     bar.appendChild(btn)
   }
 }
-function assignProject(taskId,projId){const t=findTask(taskId);if(!t)return;t.project=projId;Store.write(tasks);if(isServerMode())queueTaskUpdate(taskId,{project:projId});render();toast('Назначено в проект: '+getProjectTitle(projId))}
-function clearProject(taskId){const t=findTask(taskId);if(!t)return;t.project=null;Store.write(tasks);if(isServerMode())queueTaskUpdate(taskId,{project:null});render()}
-function openProjectAssignSubmenu({anchorItem,currentProjectId,onAssign,onClear}={}){
-  closeDuePicker();
-  if(!anchorItem)return;
-  const sub=Ctx.sub;
-  if(!sub)return;
-  sub.innerHTML='';
-  if(!projects.length){
-    const it=document.createElement('div');
-    it.className='ctx-submenu-item';
-    it.textContent='Нет проектов';
-    sub.appendChild(it);
-  }else{
-    for(const p of projects){
-      const it=document.createElement('div');
-      it.className='ctx-submenu-item';
-      it.textContent=`${getProjectEmoji(p.id)} ${p.title}`;
-      const handleAssign=()=>{if(typeof onAssign==='function')onAssign(p.id)};
-      it.addEventListener('mousedown',e=>{
-        if(e.button!==0)return;
-        e.preventDefault();
-        e.stopPropagation();
-        handleAssign();
-      });
-      it.addEventListener('click',e=>{
-        if(e.detail!==0)return;
-        e.stopPropagation();
-        handleAssign();
-      });
-      sub.appendChild(it);
-    }
-  }
-  if(currentProjectId){
-    const sep=document.createElement('div');
-    sep.style.height='6px';
-    sub.appendChild(sep);
-    const clr=document.createElement('div');
-    clr.className='ctx-submenu-item';
-    clr.textContent='Снять проект';
-    const handleClear=()=>{if(typeof onClear==='function')onClear()};
-    clr.addEventListener('mousedown',e=>{
-      if(e.button!==0)return;
-      e.preventDefault();
-      e.stopPropagation();
-      handleClear();
-    });
-    clr.addEventListener('click',e=>{
-      if(e.detail!==0)return;
-      e.stopPropagation();
-      handleClear();
-    });
-    sub.appendChild(clr);
-  }
-  if(Ctx.submenuAnchor&&Ctx.submenuAnchor!==anchorItem){
-    Ctx.submenuAnchor.classList.remove('is-submenu-open');
-  }
-  Ctx.submenuAnchor=anchorItem;
-  anchorItem.classList.add('is-submenu-open');
-  const r=anchorItem.getBoundingClientRect();
-  sub.style.display='block';
-  const sw=sub.offsetWidth||0;
-  const sh=sub.offsetHeight||0;
-  let left=r.right+6;
-  let top=r.top;
-  if(left+sw>window.innerWidth-8)left=Math.max(8,window.innerWidth-sw-8);
-  if(top+sh>window.innerHeight-8)top=Math.max(8,window.innerHeight-sh-8);
-  sub.style.left=left+'px';
-  sub.style.top=top+'px';
-  sub.setAttribute('aria-hidden','false');
-}
-function openAssignSubmenu(taskId,anchorItem){
-  const t=findTask(taskId);
-  const currentProjectId=t?t.project:null;
-  openProjectAssignSubmenu({
-    anchorItem,
-    currentProjectId,
-    onAssign:projId=>{assignProject(taskId,projId);closeContextMenu()},
-    onClear:()=>{clearProject(taskId);closeContextMenu()}
-  });
-}
-function closeAssignSubmenu(){
-  if(Ctx.submenuAnchor){
-    Ctx.submenuAnchor.classList.remove('is-submenu-open');
-    Ctx.submenuAnchor=null;
-  }
-  if(!Ctx.sub)return;
-  Ctx.sub.style.display='none';
-  Ctx.sub.setAttribute('aria-hidden','true');
-}
-function maybeCloseSubmenu(){setTimeout(()=>{const anchor=Ctx.submenuAnchor;if(anchor&&anchor.matches(':hover'))return;if(Ctx.sub&&Ctx.sub.matches(':hover'))return;closeAssignSubmenu()},120)}
 
 try{console.assert(monthTitle(2025,0)==='Январь 2025');const weeks=buildMonthMatrix(2025,0,{minVisibleDays:2,maxWeeks:5});console.assert(weeks.length>=4&&weeks.length<=5);console.assert(rowClass({collapsed:false,done:false,id:'x'})==='task');const sprintSample=buildSprintData([{id:'a',title:'t',due:new Date().toISOString(),children:[]}]);console.assert(Array.isArray(sprintSample));}catch(e){console.warn('Self-tests failed:',e)}
 
@@ -1241,6 +930,47 @@ function closeDuePicker(){
   if(Due.el){Due.el.style.display='none';Due.el.setAttribute('aria-hidden','true');Due.el.dataset.fromContext='false'}
 }
 window.addEventListener('click',e=>{if(Due.el.style.display==='block'&&!Due.el.contains(e.target)&&!(Due.anchor&&Due.anchor.contains(e.target))&&!e.target.closest('.due-btn'))closeDuePicker()},true);
+
+registerTasksDataCallbacks({
+  syncDisplays: updateTimerDisplays,
+  toast: toast,
+  getArchivedTasks: ()=>archivedTasks,
+  getTaskMinutes: getTaskMinutes,
+  isTimeUpdatePending: isTimeUpdatePending,
+  isTimeDialogOpen: isTimeDialogOpen,
+  getTimeDialogTaskId: ()=>timeDialogTaskId,
+  getCurrentView: ()=>currentView,
+  getCurrentProjectId: ()=>currentProjectId,
+  getProjects: ()=>projects,
+  render: render,
+  handleTaskCompletionEffects: handleTaskCompletionEffects,
+  setSelectedTaskId: id=>{selectedTaskId=id},
+  setPendingEditId: id=>{pendingEditId=id},
+  getVisibleTaskIds: getVisibleTaskIds,
+  getNotesTaskId: ()=>NotesPanel.taskId,
+  closeNotesPanel: closeNotesPanel,
+  updateNotePanelTitle: (id,v)=>{if(NotesPanel.title&&NotesPanel.taskId===id)NotesPanel.title.textContent=v},
+});
+registerTasksRenderCallbacks({
+  toast: toast,
+  render: render,
+  formatDuration: formatDuration,
+  getSelectedTaskId: ()=>selectedTaskId,
+  setSelectedTaskId: id=>{selectedTaskId=id},
+  isTimeUpdatePending: isTimeUpdatePending,
+  isTimeDialogOpen: isTimeDialogOpen,
+  getTimeDialogTaskId: ()=>timeDialogTaskId,
+  openDuePicker: openDuePicker,
+  closeDuePicker: closeDuePicker,
+  getDueEl: ()=>Due.el,
+  getDueAnchor: ()=>Due.anchor,
+  markTaskDone: markTaskDone,
+  openTimeEditDialog: openTimeEditDialog,
+  getTimePresets: ()=>TIME_PRESETS,
+  formatPresetLabel: formatPresetLabel,
+  minutesToMs: minutesToMs,
+  handleInlinePreset: handleInlinePreset,
+});
 
 setupSidebarResize();
 
