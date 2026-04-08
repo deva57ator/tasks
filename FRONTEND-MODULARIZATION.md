@@ -153,22 +153,9 @@ config.js
 
 ---
 
-### Фаза 5: Глобальный стейт (1 PR)
+### ~~Фаза 5: Глобальный стейт~~ — отменена
 
-**Извлекаем:** `state.js`
-
-**Что идёт в `state.js`:**
-- `tasks`, `archivedTasks`, `selectedTaskId`, `pendingEditId`
-- `currentView`, `currentProjectId`
-- `projects`, `activeTimersState`
-- `workdayState`
-- `pendingTimeUpdates`
-- `sprintVisibleProjects`
-- Функции-мутаторы стейта (если есть)
-
-**Зависит от:** `storage.js`
-
-**Важно:** Это самый связанный модуль — на него будут ссылаться почти все остальные. Сделать его раньше задач/проектов/рендеров.
+Глобальные переменные (`currentView`, `selectedTaskId`, `tasks` и т.д.) остаются в `main.js`. Вынос потребовал бы `export let` + сеттеры во всех модулях — излишняя сложность без реальной пользы.
 
 ---
 
@@ -262,7 +249,7 @@ config.js
 
 ---
 
-### Фаза 7f: Sprint и due-picker
+### ✅ Фаза 7f: Sprint и due-picker
 
 **Извлекаем:** `src/sprint.js`, `src/due-picker.js` (~300 строк суммарно)
 

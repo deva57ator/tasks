@@ -1,5 +1,7 @@
-import { STORAGE_MODES, MIN_TASK_MINUTES, MAX_TASK_MINUTES, MAX_TASK_TIME_MS, TIME_PRESETS, MONTH_NAMES, DEFAULT_PROJECT_EMOJI, SPRINT_UNASSIGNED_KEY, YEAR_PLAN_DEFAULT_TITLE } from './src/config.js';
-import { $, $$, getTaskRowById, isEditableShortcutTarget, uid, isDueToday, filterTree, isoWeekInfo, clampTimeSpentMs } from './src/utils.js';
+import { STORAGE_MODES, MIN_TASK_MINUTES, MAX_TASK_MINUTES, MAX_TASK_TIME_MS, TIME_PRESETS, MONTH_NAMES, DEFAULT_PROJECT_EMOJI, YEAR_PLAN_DEFAULT_TITLE } from './src/config.js';
+import { $, $$, getTaskRowById, isEditableShortcutTarget, uid, isDueToday, filterTree, isoWeekInfo, clampTimeSpentMs, normalizeDate, sameDay, buildMonthMatrix, renderMonthInto, formatDue } from './src/utils.js';
+import { openDuePicker, closeDuePicker, getDueEl, getDueAnchor, registerDuePickerCallbacks } from './src/due-picker.js';
+import { buildSprintData, renderSprint, clearSprintFiltersUI, sprintVisibleProjects, registerSprintCallbacks } from './src/sprint.js';
 import { formatYearPlanRangeLabel } from './src/yearplan/normalize.js';
 import {
   yearPlanYear, setYearPlanYear,
@@ -66,7 +68,7 @@ import {
   Ctx, NotesPanel,
   registerTasksRenderCallbacks,
   renderTaskRow, startEdit, buildRenderContext,
-  openContextMenu, closeContextMenu,
+  closeContextMenu,
   openNotesPanel, closeNotesPanel, updateNoteIndicator,
   closeAssignSubmenu, openProjectAssignSubmenu, maybeCloseSubmenu,
   closeTimePresetMenu, getTimePresetMenuEl, getTimePresetMenuAnchor,
@@ -174,8 +176,6 @@ function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show'
 
 
 
-let sprintDraggingId=null;
-let sprintDropColumn=null;
 
 
 
@@ -204,9 +204,6 @@ function saveTaskTimeMinutes(taskId,newMinutes,{showSuccessToast=false}={}){cons
 
 function handleInlinePreset(taskId,delta){const task=findTask(taskId);if(!task)return;if(task.timerActive||isTimeUpdatePending(task.id))return;const currentMinutes=getTaskMinutes(task);const nextMinutes=currentMinutes+delta;if(!isMinutesWithinBounds(nextMinutes))return;setTimeUpdatePending(task.id,true);saveTaskTimeMinutes(task.id,nextMinutes).catch(()=>toast('Не удалось сохранить время. Попробуй ещё раз.')).finally(()=>{setTimeUpdatePending(task.id,false);updateTimerDisplays()})}
 function formatDuration(ms){if(!ms)return'0 мин';const totalMinutes=Math.floor(ms/60000);if(totalMinutes<=0)return'0 мин';const hours=Math.floor(totalMinutes/60);const minutes=totalMinutes%60;const parts=[];if(hours>0)parts.push(`${hours} ч`);if(minutes>0||!parts.length)parts.push(`${minutes} мин`);return parts.join(' ')}
-function setSprintDropColumn(col){if(sprintDropColumn===col)return;if(sprintDropColumn){sprintDropColumn.classList.remove('is-drop-target')}sprintDropColumn=col||null;if(sprintDropColumn){sprintDropColumn.classList.add('is-drop-target')}}
-function clearSprintDragState(){const prev=document.querySelector('.sprint-task.is-dragging');if(prev)prev.classList.remove('is-dragging');setSprintDropColumn(null);sprintDraggingId=null}
-function applySprintDrop(targetDate){if(!sprintDraggingId)return;const task=findTask(sprintDraggingId);if(!task)return;const d=new Date(targetDate);if(isNaN(d))return;d.setHours(0,0,0,0);const iso=d.toISOString();if(task.due!==iso){task.due=iso;Store.write(tasks);if(isServerMode())queueTaskUpdate(task.id,{due:iso})}clearSprintDragState();render()}
 const TimeDialog={overlay:document.getElementById('timeOverlay'),close:document.getElementById('timeDialogClose'),cancel:document.getElementById('timeDialogCancel'),form:document.getElementById('timeDialogForm'),hours:document.getElementById('timeInputHours'),minutes:document.getElementById('timeInputMinutes'),summary:document.getElementById('timeDialogSummary'),subtitle:document.getElementById('timeDialogSubtitle'),error:document.getElementById('timeDialogError'),save:document.getElementById('timeDialogSave'),presets:document.getElementById('timeDialogPresets')};
 let timeDialogTaskId=null;
 let timeDialogEditedMinutes=0;
@@ -223,9 +220,10 @@ function closeTimeDialog({syncDeferred=true}={}){if(!TimeDialog.overlay)return;c
 function submitTimeDialog(){if(!timeDialogTaskId||timeDialogSaving)return;const task=findTask(timeDialogTaskId);if(!task){closeTimeDialog();return}const state=updateTimeDialogUI({showValidationError:true});if(!state.valid){return}timeDialogSaving=true;updateTimeDialogUI({preserveError:true});setTimeDialogError('');setTimeUpdatePending(task.id,true);saveTaskTimeMinutes(task.id,state.totalMinutes,{showSuccessToast:true}).then(()=>{timeDialogDeferredTimerSyncTaskId=null;closeTimeDialog({syncDeferred:false})}).catch(()=>{setTimeDialogError('Не удалось сохранить. Проверь соединение и попробуй ещё раз.')}).finally(()=>{timeDialogSaving=false;setTimeUpdatePending(task.id,false);updateTimeDialogUI({preserveError:true});updateTimerDisplays()})}
 function initTimeDialogPresets(){if(!TimeDialog.presets)return;TimeDialog.presets.innerHTML='';for(const delta of TIME_PRESETS){const btn=document.createElement('button');btn.type='button';btn.className='time-preset-btn';btn.textContent=formatPresetLabel(delta);btn.title=`Добавить ${formatDuration(minutesToMs(delta))}`;btn.onclick=e=>{e.preventDefault();applyTimeDialogPreset(delta)};TimeDialog.presets.appendChild(btn)}}
 window.addEventListener('click',e=>{
-  if(Due.el&&Due.el.style.display==='block'&&Due.el.dataset.fromContext==='true'){
-    if(Due.el.contains(e.target))return;
-    const anchor=Due.anchor;
+  const _due=getDueEl();
+  if(_due&&_due.style.display==='block'&&_due.dataset.fromContext==='true'){
+    if(_due.contains(e.target))return;
+    const anchor=getDueAnchor();
     if(anchor&&anchor.contains(e.target))return;
   }
   if(!Ctx.el.contains(e.target)&&!Ctx.sub.contains(e.target))closeContextMenu();
@@ -528,11 +526,6 @@ if(themeToggle){themeToggle.addEventListener('click',toggleTheme)}
 
 const cal={track:null,curr:null,nextbuf:null,title:null,legend:null,toggle:null,prev:null,next:null,today:null,month:null,year:null,collapsed:false,focusDate:null,monthWeeks:[],activeWeekIndex:0};
 const archiveBtn=document.getElementById('archiveBtn');
-function normalizeDate(value){const d=new Date(value);d.setHours(0,0,0,0);return d}
-function sameDay(a,b){return!!(a&&b)&&a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate()}
-function isoWeekNumber(d){const date=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));const dayNum=(date.getUTCDay()+6)%7;date.setUTCDate(date.getUTCDate()-dayNum+3);const firstThursday=new Date(Date.UTC(date.getUTCFullYear(),0,4));const diff=date-firstThursday;return 1+Math.round(diff/(7*24*3600*1000))}
-function buildMonthMatrix(y,m,{minVisibleDays=1,maxWeeks=6}={}){const first=new Date(y,m,1);const startDay=(first.getDay()+6)%7;const weeks=[];let day=1-startDay;const today=normalizeDate(new Date());while(true){const week={weekNum:null,days:[]};for(let i=0;i<7;i++){const d=new Date(y,m,day);const inMonth=d.getMonth()===m;const isToday=sameDay(d,today);week.days.push({d,inMonth,isToday});day++}const thursday=new Date(week.days[3].d);week.weekNum=isoWeekNumber(thursday);weeks.push(week);const lastDay=week.days[6].d;if(lastDay.getMonth()>m||(y<lastDay.getFullYear()&&lastDay.getMonth()===0))break;if(weeks.length>6)break}const countInMonth=week=>week.days.reduce((acc,cell)=>acc+(cell.inMonth?1:0),0);while(weeks.length&&countInMonth(weeks[0])<minVisibleDays)weeks.shift();while(weeks.length&&countInMonth(weeks[weeks.length-1])<minVisibleDays)weeks.pop();if(maxWeeks&&weeks.length>maxWeeks){while(weeks.length>maxWeeks){const firstCount=countInMonth(weeks[0]);const lastCount=countInMonth(weeks[weeks.length-1]);if(firstCount<=lastCount){weeks.shift()}else{weeks.pop()}}}return weeks}
-function renderMonthInto(container,y,m,options){const weeks=buildMonthMatrix(y,m,options);const wrap=document.createElement('div');wrap.className='cal-grid';weeks.forEach(week=>{const row=document.createElement('div');row.className='cal-week';const wn=document.createElement('div');wn.className='cal-weeknum';wn.textContent=String(week.weekNum).padStart(2,'0');row.appendChild(wn);for(const cell of week.days){const el=document.createElement('div');el.className='cal-day';if(!cell.inMonth)el.classList.add('is-out');if(cell.isToday)el.classList.add('is-today');el.textContent=cell.d.getDate();row.appendChild(el)}wrap.appendChild(row)});container.innerHTML='';container.appendChild(wrap);return weeks}
 const YEAR_PLAN_HOLIDAYS_2026=new Set([
   '2026-01-01',
   '2026-01-02',
@@ -698,238 +691,9 @@ if(!projects.length&&!isServerMode()){setProjects([{id:uid(),title:'Личный
 
 renderProjects();
 
-function sprintProjectKey(id){return id==null?SPRINT_UNASSIGNED_KEY:id}
-function isSprintProjectVisible(projectId){const key=sprintProjectKey(projectId);return!sprintVisibleProjects.has(key)||sprintVisibleProjects.get(key)!==false}
-function syncSprintFilterState(keys){const set=new Set(keys);for(const key of keys){if(!sprintVisibleProjects.has(key))sprintVisibleProjects.set(key,true)}for(const key of Array.from(sprintVisibleProjects.keys())){if(!set.has(key))sprintVisibleProjects.delete(key)}}
-function clearSprintFiltersUI(){const bar=document.getElementById('sprintFilters');if(!bar)return;bar.innerHTML='';bar.classList.remove('is-active');bar.setAttribute('aria-hidden','true')}
-function renderSprintFiltersBar(entries){
-  const bar=document.getElementById('sprintFilters');
-  if(!bar)return;
-  bar.innerHTML='';
-  if(!entries.length){
-    bar.classList.remove('is-active');
-    bar.setAttribute('aria-hidden','true');
-    return
-  }
-  bar.classList.add('is-active');
-  bar.setAttribute('aria-hidden','false');
-  for(const entry of entries){
-    const active=isSprintProjectVisible(entry.projectId);
-    const btn=document.createElement('button');
-    btn.type='button';
-    btn.className='sprint-filter-btn'+(active?' is-active':'');
-    btn.setAttribute('aria-pressed',active?'true':'false');
-    btn.dataset.projectKey=entry.key;
-    btn.title=active?'Скрыть задачи проекта в спринте':'Показать задачи проекта в спринте';
-    const emoji=document.createElement('span');
-    emoji.className='sprint-filter-emoji';
-    emoji.textContent=entry.emoji;
-    const title=document.createElement('span');
-    title.className='sprint-filter-title';
-    title.textContent=entry.title;
-    btn.append(emoji,title);
-    btn.onclick=()=>{
-      const key=entry.key;
-      const next=!isSprintProjectVisible(entry.projectId);
-      sprintVisibleProjects.set(key,next);
-      render()
-    };
-    bar.appendChild(btn)
-  }
-}
 
 try{console.assert(monthTitle(2025,0)==='Январь 2025');const weeks=buildMonthMatrix(2025,0,{minVisibleDays:2,maxWeeks:5});console.assert(weeks.length>=4&&weeks.length<=5);console.assert(rowClass({collapsed:false,done:false,id:'x'})==='task');const sprintSample=buildSprintData([{id:'a',title:'t',due:new Date().toISOString(),children:[]}]);console.assert(Array.isArray(sprintSample));}catch(e){console.warn('Self-tests failed:',e)}
 
-function isoWeekStartDate(year,week){const simple=new Date(year,0,4);const day=(simple.getDay()+6)%7;const monday=new Date(simple);monday.setDate(simple.getDate()-day+(week-1)*7);return normalizeDate(monday)}
-function buildSprintData(list){const map=new Map();function visit(t){if(t.due){const d=new Date(t.due);if(!isNaN(d)){const wd=d.getDay();if(wd>=1&&wd<=5){const{week,year}=isoWeekInfo(d);const key=year+':'+week;if(!map.has(key))map.set(key,{week,year,startDate:isoWeekStartDate(year,week),days:{1:[],2:[],3:[],4:[],5:[]}});map.get(key).days[wd].push(t)}}}for(const c of t.children||[])visit(c)}for(const t of list)visit(t);return Array.from(map.values()).sort((a,b)=>a.year===b.year?a.week-b.week:a.year-b.year)}
-function renderSprint(container){
-  const sprints=buildSprintData(tasks);
-  if(!sprints.length){
-    renderSprintFiltersBar([]);
-    sprintVisibleProjects.clear();
-    const hint=document.createElement('div');
-    hint.className='sprint-empty';
-    hint.textContent='Нет задач с дедлайном — спринты появятся автоматически.';
-    container.appendChild(hint);
-    return
-  }
-  const projectMap=new Map();
-  for(const sp of sprints){
-    for(let i=1;i<=5;i++){
-      for(const task of sp.days[i]||[]){
-        const key=sprintProjectKey(task.project);
-        if(!projectMap.has(key)){
-          const meta=getProjectMeta(task.project);
-          projectMap.set(key,{key,projectId:task.project??null,emoji:meta.emoji,title:meta.title})
-        }
-      }
-    }
-  }
-  const projectEntries=Array.from(projectMap.values());
-  syncSprintFilterState(projectEntries.map(entry=>entry.key));
-  renderSprintFiltersBar(projectEntries);
-  const todayDate=normalizeDate(new Date());
-  const wrap=document.createElement('div');
-  wrap.className='sprint';
-  const dayNames=['Пн','Вт','Ср','Чт','Пт'];
-  let renderedWeeks=0;
-  for(const sp of sprints){
-    const hasVisibleTasks=[1,2,3,4,5].some(idx=>(sp.days[idx]||[]).some(task=>isSprintProjectVisible(task.project)));
-    if(!hasVisibleTasks)continue;
-    renderedWeeks++;
-    const row=document.createElement('div');
-    row.className='sprint-row';
-    const label=document.createElement('div');
-    label.className='sprint-week';
-    label.textContent='Неделя '+String(sp.week).padStart(2,'0');
-    const grid=document.createElement('div');
-    grid.className='sprint-grid';
-    const startDate=sp.startDate?new Date(sp.startDate):isoWeekStartDate(sp.year,sp.week);
-    for(let i=1;i<=5;i++){
-      const col=document.createElement('div');
-      col.className='sprint-col';
-      const title=document.createElement('div');
-      title.className='col-title';
-      const dayDate=new Date(startDate);
-      dayDate.setDate(dayDate.getDate()+i-1);
-      dayDate.setHours(0,0,0,0);
-      const dd=String(dayDate.getDate()).padStart(2,'0');
-      const mm=String(dayDate.getMonth()+1).padStart(2,'0');
-      title.textContent=`${dayNames[i-1]} ${dd}.${mm}`;
-      col.dataset.date=dayDate.toISOString();
-      if(sameDay(dayDate,todayDate))col.classList.add('is-today');
-      col.appendChild(title);
-      col.addEventListener('dragenter',e=>{if(!sprintDraggingId)return;const rel=e.relatedTarget;if(rel&&col.contains(rel))return;setSprintDropColumn(col)});
-      col.addEventListener('dragover',e=>{if(!sprintDraggingId)return;e.preventDefault();if(e.dataTransfer)e.dataTransfer.dropEffect='move';setSprintDropColumn(col)});
-      col.addEventListener('dragleave',e=>{if(!sprintDraggingId)return;const rel=e.relatedTarget;if(rel&&col.contains(rel))return;setSprintDropColumn(null)});
-      col.addEventListener('drop',e=>{if(!sprintDraggingId)return;e.preventDefault();const targetDate=col.dataset.date;if(targetDate)applySprintDrop(targetDate);else clearSprintDragState()});
-      const items=sp.days[i]||[];
-      const visibleItems=items.filter(task=>isSprintProjectVisible(task.project));
-      if(!visibleItems.length){
-        const empty=document.createElement('div');
-        empty.className='sprint-empty';
-        empty.textContent='—';
-        col.appendChild(empty);
-        grid.appendChild(col);
-        continue
-      }
-      const groups=[];const map=new Map();
-      for(const t of visibleItems){const key=sprintProjectKey(t.project);if(!map.has(key)){const meta=getProjectMeta(t.project);const group={id:key,emoji:meta.emoji,title:meta.title,tasks:[]};map.set(key,group);groups.push(group)}map.get(key).tasks.push(t)}
-      for(const grp of groups){
-        const groupEl=document.createElement('div');
-        groupEl.className='sprint-project-group';
-        const tag=document.createElement('div');
-        tag.className='sprint-project-tag';
-        const emoji=document.createElement('span');
-        emoji.className='sprint-project-emoji';
-        emoji.textContent=grp.emoji;
-        const name=document.createElement('span');
-        name.className='sprint-project-name';
-        name.textContent=grp.title;
-        tag.append(emoji,name);
-        groupEl.appendChild(tag);
-        for(const t of grp.tasks){
-          const it=document.createElement('div');
-          it.className='sprint-task';
-          it.setAttribute('draggable','true');
-          if(t.done)it.classList.add('is-done');
-          it.addEventListener('dragstart',e=>{sprintDraggingId=t.id;it.classList.add('is-dragging');setSprintDropColumn(null);try{e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',t.id)}catch{}closeContextMenu();closeDuePicker()});
-          it.addEventListener('dragend',()=>{clearSprintDragState()});
-          it.addEventListener('contextmenu',e=>{e.preventDefault();openContextMenu(t.id,e.clientX,e.clientY)});
-          const taskTitle=document.createElement('div');
-          taskTitle.className='sprint-task-title';
-          taskTitle.textContent=t.title;
-          it.append(taskTitle);
-          groupEl.appendChild(it)
-        }
-        col.appendChild(groupEl)
-      }
-      grid.appendChild(col)
-    }
-    row.append(label,grid);
-    wrap.appendChild(row)
-  }
-  if(renderedWeeks===0){
-    const empty=document.createElement('div');
-    empty.className='sprint-empty';
-    empty.textContent='Нет задач для выбранных проектов.';
-    container.appendChild(empty);
-    return
-  }
-  container.appendChild(wrap)
-}
-
-function formatDue(iso){const d=new Date(iso);if(isNaN(d))return'';const dd=String(d.getDate()).padStart(2,'0');const mm=String(d.getMonth()+1).padStart(2,'0');return`${dd}.${mm}`}
-
-const Due={el:document.getElementById('dueMenu'),taskId:null,y:null,m:null,anchor:null};
-if(Due.el){Due.el.dataset.fromContext='false';Due.el.addEventListener('mouseleave',()=>{if(Due.el.dataset.fromContext==='true'){setTimeout(()=>{const anchor=Due.anchor;if(anchor&&anchor.matches(':hover'))return;if(Due.el.matches(':hover'))return;closeDuePicker()},80)}})}
-let duePickerMinWidth=null;
-function ensureDuePickerWidth(container){if(!container)return;if(duePickerMinWidth!==null){container.style.width=`${duePickerMinWidth}px`;return;}const title=container.querySelector('.cal-title');if(!title)return;const original=title.textContent;const prevVisibility=container.style.visibility;container.style.visibility='hidden';const sampleYear='8888';let maxWidth=Math.ceil(container.offsetWidth);for(const monthName of MONTH_NAMES){title.textContent=`${monthName} ${sampleYear}`;const width=Math.ceil(container.offsetWidth);if(width>maxWidth)maxWidth=width}title.textContent=original;if(prevVisibility)container.style.visibility=prevVisibility;else container.style.removeProperty('visibility');duePickerMinWidth=maxWidth;container.style.width=`${duePickerMinWidth}px`}
-function buildDuePicker(y,m){const cont=document.createElement('div');cont.className='due-picker';const header=document.createElement('div');header.className='cal-header';const todayBtn=document.createElement('button');todayBtn.className='cal-today';todayBtn.title='К текущему месяцу';const title=document.createElement('div');title.className='cal-title';title.textContent=monthTitle(y,m);const ctrls=document.createElement('div');ctrls.className='cal-ctrls';const prev=document.createElement('button');prev.className='cal-arrow';prev.textContent='‹';const next=document.createElement('button');next.className='cal-arrow';next.textContent='›';header.append(todayBtn,title,ctrls);ctrls.append(prev,next);const legend=document.createElement('div');legend.className='cal-legend';legend.innerHTML='<div>Wk</div><div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div>';const viewport=document.createElement('div');viewport.className='cal-viewport';const monthEl=document.createElement('div');monthEl.className='cal-month';const track=document.createElement('div');track.className='cal-track';track.appendChild(monthEl);viewport.appendChild(track);cont.append(header,legend,viewport);function renderLocal(){renderMonthInto(monthEl,Due.y,Due.m);title.textContent=monthTitle(Due.y,Due.m)}prev.onclick=()=>{let ny=Due.y,nm=Due.m-1;if(nm<0){nm=11;ny--}Due.y=ny;Due.m=nm;renderLocal()};next.onclick=()=>{let ny=Due.y,nm=Due.m+1;if(nm>11){nm=0;ny++}Due.y=ny;Due.m=nm;renderLocal()};todayBtn.onclick=()=>{const now=new Date();Due.y=now.getFullYear();Due.m=now.getMonth();renderLocal()};renderLocal();cont.addEventListener('click',e=>{const dayEl=e.target.closest('.cal-day');if(!dayEl)return;const day=Number(dayEl.textContent);if(!Number.isFinite(day))return;const d=new Date(Due.y,Due.m,day);if(isNaN(d))return;d.setHours(0,0,0,0);const iso=d.toISOString();const t=findTask(Due.taskId);if(!t)return;t.due=iso;Store.write(tasks);if(isServerMode())queueTaskUpdate(t.id,{due:iso});if(Due.el&&Due.el.dataset.fromContext==='true')closeContextMenu();closeDuePicker();render()});return cont}
-function openDuePicker(taskId,anchor,options={}){
-  Due.taskId=taskId;
-  if(Due.anchor&&Due.anchor!==anchor&&Due.anchor.classList){Due.anchor.classList.remove('is-submenu-open')}
-  Due.anchor=anchor||null;
-  const existing=findTask(taskId);
-  if(existing&&existing.due){
-    const dueDate=new Date(existing.due);
-    if(!isNaN(dueDate)){
-      Due.y=dueDate.getFullYear();
-      Due.m=dueDate.getMonth();
-    }else{
-      const now=new Date();
-      Due.y=now.getFullYear();
-      Due.m=now.getMonth();
-    }
-  }else{
-    const now=new Date();
-    Due.y=now.getFullYear();
-    Due.m=now.getMonth();
-  }
-  const menu=Due.el;
-  if(!menu)return;
-  menu.innerHTML='';
-  const content=buildDuePicker(Due.y,Due.m);
-  menu.appendChild(content);
-  menu.style.display='block';
-  menu.setAttribute('aria-hidden','false');
-  ensureDuePickerWidth(content);
-  if(content.style.width){
-    menu.style.minWidth=content.style.width;
-    menu.style.width=content.style.width;
-  }else{
-    menu.style.removeProperty('min-width');
-    menu.style.removeProperty('width');
-  }
-  const fromContext=!!options.fromContext;
-  menu.dataset.fromContext=fromContext?'true':'false';
-  if(fromContext&&anchor&&anchor.classList){anchor.classList.add('is-submenu-open')}
-  const r=anchor&&anchor.getBoundingClientRect?anchor.getBoundingClientRect():{left:0,right:0,top:0,bottom:0};
-  menu.style.position='fixed';
-  const mw=menu.offsetWidth||(duePickerMinWidth||300);
-  const mh=menu.offsetHeight||320;
-  if(fromContext){
-    let px=r.right+8;
-    let py=r.top;
-    if(px+mw>window.innerWidth-8)px=Math.max(8,window.innerWidth-mw-8);
-    if(py+mh>window.innerHeight-8)py=Math.max(8,window.innerHeight-mh-8);
-    menu.style.left=px+'px';
-    menu.style.top=py+'px';
-  }else{
-    const px=Math.min(r.left,window.innerWidth-mw-8);
-    let py=r.bottom+6;
-    if(py+mh>window.innerHeight-8)py=Math.max(8,window.innerHeight-mh-8);
-    menu.style.left=px+'px';
-    menu.style.top=py+'px';
-  }
-}
-function closeDuePicker(){
-  if(Due.anchor&&Due.anchor.classList){Due.anchor.classList.remove('is-submenu-open')}
-  Due.taskId=null;
-  Due.anchor=null;
-  if(Due.el){Due.el.style.display='none';Due.el.setAttribute('aria-hidden','true');Due.el.dataset.fromContext='false'}
-}
-window.addEventListener('click',e=>{if(Due.el.style.display==='block'&&!Due.el.contains(e.target)&&!(Due.anchor&&Due.anchor.contains(e.target))&&!e.target.closest('.due-btn'))closeDuePicker()},true);
 
 registerTasksDataCallbacks({
   syncDisplays: updateTimerDisplays,
@@ -962,14 +726,20 @@ registerTasksRenderCallbacks({
   getTimeDialogTaskId: ()=>timeDialogTaskId,
   openDuePicker: openDuePicker,
   closeDuePicker: closeDuePicker,
-  getDueEl: ()=>Due.el,
-  getDueAnchor: ()=>Due.anchor,
+  getDueEl: getDueEl,
+  getDueAnchor: getDueAnchor,
   markTaskDone: markTaskDone,
   openTimeEditDialog: openTimeEditDialog,
   getTimePresets: ()=>TIME_PRESETS,
   formatPresetLabel: formatPresetLabel,
   minutesToMs: minutesToMs,
   handleInlinePreset: handleInlinePreset,
+});
+registerDuePickerCallbacks({
+  render: render,
+});
+registerSprintCallbacks({
+  render: render,
 });
 
 setupSidebarResize();
