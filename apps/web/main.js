@@ -1,5 +1,5 @@
-import { STORAGE_MODES, MIN_TASK_MINUTES, MAX_TASK_MINUTES, MAX_TASK_TIME_MS, TIME_PRESETS, MONTH_NAMES, DEFAULT_PROJECT_EMOJI, YEAR_PLAN_DEFAULT_TITLE } from './src/config.js';
-import { $, $$, uid, isDueToday, filterTree, isoWeekInfo, clampTimeSpentMs, normalizeDate, sameDay, buildMonthMatrix, renderMonthInto, formatDue } from './src/utils.js';
+import { STORAGE_MODES, TIME_PRESETS, DEFAULT_PROJECT_EMOJI, YEAR_PLAN_DEFAULT_TITLE } from './src/config.js';
+import { $, $$, uid, isDueToday, filterTree, buildMonthMatrix, formatDue, formatDuration, formatTimeHM, formatDateDMY } from './src/utils.js';
 import { openDuePicker, closeDuePicker, getDueEl, getDueAnchor, registerDuePickerCallbacks } from './src/due-picker.js';
 import { buildSprintData, renderSprint, clearSprintFiltersUI, sprintVisibleProjects, registerSprintCallbacks } from './src/sprint.js';
 import { formatYearPlanRangeLabel } from './src/yearplan/normalize.js';
@@ -33,9 +33,8 @@ import {
   WorkdayUI, workdayState, setWorkdayState,
   buildWorkdayPayloadForServer, hydrateWorkdayStateFromServer,
   ensureWorkdayInteractionGuards,
-  updateWorkdayCompletionState, syncWorkdayTaskSnapshot,
   openWorkdayDialog, closeWorkdayDialog, postponePendingTasks, finishWorkdayAndArchive,
-  updateWorkdayUI, ensureWorkdayRefreshLoop, updateWorkdayRecIndicator,
+  updateWorkdayUI, ensureWorkdayRefreshLoop,
   registerWorkdayCallbacks,
 } from './src/workday.js';
 import { setupSidebarResize } from './src/sidebar.js';
@@ -43,12 +42,11 @@ import {
   tasks, setTasks, pendingServerCreates,
   normalizeTaskTree, ensureTaskParentIds, migrate,
   findTask, walkTasks,
-  getTaskDepth,
   totalTimeMs, hasActiveTimer, syncTimerLoop,
   stopTaskTimer, stopAllTimersExcept,
   addTask, markTaskDone,
   archiveCompletedTasks, afterTasksPersisted, restoreActiveTimersFromStore,
-  removeActiveTimerState, registerTasksDataCallbacks,
+  registerTasksDataCallbacks,
 } from './src/tasks-data.js';
 import {
   normalizeArchivedNode, normalizeArchiveList, normalizeArchivePayload,
@@ -57,11 +55,11 @@ import {
 import {
   projects, setProjects,
   normalizeProjectsList,
-  getProjectTitle, getProjectMeta,
+  getProjectMeta, getProjectEmoji,
   renderProjects,
   initProjects, registerProjectsCallbacks,
 } from './src/projects.js';
-import { apiAuthLocked, apiAuthMessage, apiAuthReason, resetApiAuthLock, lockApiAuth, apiRequest, handleApiError, runServerAction, queueTaskUpdate, flushPendingTaskUpdates, handleServerWorkdayWrite, flushPendingWorkdaySync, ApiSettingsUI, apiSettingsBlocking, openApiSettings, closeApiSettings, toggleApiKeyVisibility, saveApiKey, clearApiKey, switchToLocalMode, registerApiCallbacks } from './src/api.js';
+import { apiAuthLocked, apiAuthMessage, apiAuthReason, resetApiAuthLock, lockApiAuth, apiRequest, handleApiError, queueTaskUpdate, flushPendingTaskUpdates, handleServerWorkdayWrite, flushPendingWorkdaySync, ApiSettingsUI, apiSettingsBlocking, openApiSettings, closeApiSettings, toggleApiKeyVisibility, saveApiKey, clearApiKey, switchToLocalMode, registerApiCallbacks } from './src/api.js';
 import {
   Ctx, NotesPanel,
   registerTasksRenderCallbacks,
@@ -70,11 +68,19 @@ import {
   openNotesPanel, closeNotesPanel, updateNoteIndicator,
   closeAssignSubmenu, openProjectAssignSubmenu, maybeCloseSubmenu,
   closeTimePresetMenu, getTimePresetMenuEl, getTimePresetMenuAnchor,
-  updateTimerDisplays, updateTimeControlsState,
+  updateTimerDisplays,
   setInheritedHover, getVisibleTaskIds,
   hoveredParentTaskId,
 } from './src/tasks-render.js';
 import { registerKeyboardCallbacks } from './src/keyboard.js';
+import { handleTaskCompletionEffects, isMotionReduced, registerEffectsCallbacks } from './src/effects.js';
+import {
+  isTimeDialogOpen, getTimeDialogTaskId, openTimeEditDialog, closeTimeDialog,
+  isTimeUpdatePending, handleInlinePreset,
+  getTaskMinutes, minutesToMs, formatPresetLabel,
+  registerTimeDialogCallbacks,
+} from './src/time-dialog.js';
+import { initCalendar } from './src/calendar.js';
 
 let archivedTasks=ArchiveStore.read();
 let selectedTaskId=null;
@@ -82,8 +88,6 @@ let pendingEditId=null;
 let currentView='all';
 let currentProjectId=null;
 
-const pendingTimeUpdates=new Set();
-let sprintVisibleProjects=new Map();
 
 
 {const _p=ProjectsStore.read();setProjects(Array.isArray(_p)?_p:[]);}
@@ -96,18 +100,13 @@ if(!Array.isArray(archivedTasks))archivedTasks=[];else archivedTasks=normalizeAr
 
 const API_DEFAULT_LIMIT=200;
 let isDataLoading=false;
-let dataInitialized=false;
-function minutesToMs(minutes){return clampTimeSpentMs(Math.round(minutes||0)*60000)}
-function msToMinutes(ms){return Math.round(clampTimeSpentMs(ms)/60000)}
-function isMinutesWithinBounds(minutes){return Number.isFinite(minutes)&&minutes>=MIN_TASK_MINUTES&&minutes<=MAX_TASK_MINUTES}
-function normalizeMinutes(value){const minutes=Math.round(Number(value));if(!Number.isFinite(minutes))return null;return isMinutesWithinBounds(minutes)?minutes:null}
 
 
 
 
 function updateStorageToggle({loading=false}={}){const btn=document.getElementById('storageToggle');if(!btn)return;btn.dataset.mode=isServerMode()?'server':'local';btn.classList.toggle('is-loading',loading);if(loading){btn.textContent='…';btn.setAttribute('aria-busy','true')}else{btn.textContent=isServerMode()?'API':'LS';btn.removeAttribute('aria-busy')}const label=isServerMode()?'Режим: серверный API':'Режим: localStorage';btn.title=label;btn.setAttribute('aria-label',loading?`${label}. Загрузка…`:label)}
 
-function finalizeDataLoad(){migrate(tasks);ensureTaskParentIds(tasks,null);normalizeProjectsList(projects,{persist:false});archivedTasks=normalizeArchiveList(archivedTasks,{persist:false});pendingServerCreates.clear();restoreActiveTimersFromStore();renderProjects();render();updateWorkdayUI();ensureWorkdayRefreshLoop();dataInitialized=true}
+function finalizeDataLoad(){migrate(tasks);ensureTaskParentIds(tasks,null);normalizeProjectsList(projects,{persist:false});archivedTasks=normalizeArchiveList(archivedTasks,{persist:false});pendingServerCreates.clear();restoreActiveTimersFromStore();renderProjects();render();updateWorkdayUI();ensureWorkdayRefreshLoop()}
 
 async function loadDataFromLocal(){setTasks(Store.read());migrate(tasks);ensureTaskParentIds(tasks,null);{const _p=ProjectsStore.read();setProjects(Array.isArray(_p)?_p:[]);}normalizeProjectsList(projects,{persist:!isServerMode()});archivedTasks=normalizeArchiveList(ArchiveStore.read(),{persist:!isServerMode()});{const _wd=WorkdayStore.read();setWorkdayState(!_wd||!_wd.id||typeof _wd.start!=='number'||typeof _wd.end!=='number'?null:_wd)};finalizeDataLoad();updateStorageToggle()}
 
@@ -141,36 +140,6 @@ registerApiCallbacks({
 });
 
 
-const EffectsStore={key:'mini-task-tracker:effects',read(){try{return JSON.parse(localStorage.getItem(this.key))||{}}catch{return{}}},write(d){try{localStorage.setItem(this.key,JSON.stringify(d))}catch{}}};
-const DEFAULT_EFFECTS_SETTINGS={sound:true,confetti:true};
-let effectsSettings={...DEFAULT_EFFECTS_SETTINGS,...EffectsStore.read()};
-function updateEffectsSetting(key,value){if(!(key in DEFAULT_EFFECTS_SETTINGS))return;const next={...effectsSettings,[key]:!!value};effectsSettings=next;EffectsStore.write(next)}
-function isSoundEnabled(){return effectsSettings.sound!==false}
-function isConfettiEnabled(){return effectsSettings.confetti!==false}
-if(typeof window!=='undefined'){window.TaskEffectsSettings={get:()=>({...effectsSettings}),set:(key,value)=>updateEffectsSetting(key,value)}}
-
-const prefersReducedMotionQuery=typeof window!=='undefined'&&'matchMedia'in window?window.matchMedia('(prefers-reduced-motion: reduce)'):null;
-function isMotionReduced(){return!!(prefersReducedMotionQuery&&prefersReducedMotionQuery.matches)}
-
-let sessionCompletedCount=0;
-let audioCtx=null;
-function ensureAudioContext(){if(typeof window==='undefined'||typeof window.AudioContext==='undefined')return null;if(!audioCtx){audioCtx=new AudioContext()}if(audioCtx.state==='suspended'){try{audioCtx.resume()}catch{}}return audioCtx}
-function playTaskCompleteBell(baseFreq){const ctx=ensureAudioContext();if(!ctx)return;const now=ctx.currentTime;const masterGain=ctx.createGain();masterGain.gain.setValueAtTime(0.0001,now);masterGain.connect(ctx.destination);masterGain.gain.exponentialRampToValueAtTime(0.85,now+0.01);masterGain.gain.exponentialRampToValueAtTime(0.0001,now+1.6);const hits=[{offset:0,freq:baseFreq*0.62,modFreq:3.2,modDepth:14,attack:0.01,sustain:0.16,decay:1.2,peak:0.7,type:'sine'},{offset:0.08,freq:baseFreq*0.94,modFreq:7.5,modDepth:20,attack:0.008,sustain:0.14,decay:1,peak:0.55,type:'triangle'},{offset:0.18,freq:baseFreq*1.36,modFreq:11,modDepth:12,attack:0.006,sustain:0.1,decay:0.9,peak:0.38,type:'triangle'}];for(const hit of hits){const osc=ctx.createOscillator();const mod=ctx.createOscillator();const modGain=ctx.createGain();const env=ctx.createGain();osc.type=hit.type||'sine';osc.frequency.setValueAtTime(hit.freq,now+hit.offset);mod.type='sine';mod.frequency.setValueAtTime(hit.modFreq,now+hit.offset);modGain.gain.setValueAtTime(hit.modDepth,now+hit.offset);mod.connect(modGain);modGain.connect(osc.frequency);const attackEnd=now+hit.offset+hit.attack;const sustainEnd=attackEnd+hit.sustain;const releaseEnd=sustainEnd+hit.decay;env.gain.setValueAtTime(0.0001,now+hit.offset);env.gain.exponentialRampToValueAtTime(Math.max(0.0001,hit.peak),attackEnd);env.gain.exponentialRampToValueAtTime(Math.max(0.0001,hit.peak*0.6),sustainEnd);env.gain.exponentialRampToValueAtTime(0.0001,releaseEnd);osc.connect(env);env.connect(masterGain);osc.start(now+hit.offset);mod.start(now+hit.offset);const stopAt=now+hit.offset+Math.max(hit.attack+hit.sustain+hit.decay+0.2,0.5);osc.stop(stopAt);mod.stop(stopAt)}setTimeout(()=>masterGain.disconnect(),1700)}
-
-const confettiState=new WeakMap();
-function ensureTaskCanvas(row){let canvas=row.querySelector('.task-confetti');if(!canvas){canvas=document.createElement('canvas');canvas.className='task-confetti';row.appendChild(canvas)}return canvas}
-function spawnTaskConfetti(rowEl,checkboxEl){if(!rowEl||!checkboxEl)return;if(!isConfettiEnabled()||isMotionReduced())return;const rect=rowEl.getBoundingClientRect();if(!rect.width||!rect.height)return;const canvas=ensureTaskCanvas(rowEl);const ctx=canvas.getContext('2d');if(!ctx)return;const dpr=window.devicePixelRatio||1;const width=Math.round(rect.width*dpr);const height=Math.round(rect.height*dpr);if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;canvas.style.width=rect.width+'px';canvas.style.height=rect.height+'px'}const checkboxRect=checkboxEl.getBoundingClientRect();const originX=(checkboxRect.left-rect.left+checkboxRect.width/2)*dpr;const originY=(checkboxRect.top-rect.top+checkboxRect.height/2)*dpr;const style=getComputedStyle(rowEl);const paletteVars=['--confetti-1','--confetti-2','--confetti-3','--confetti-4','--confetti-5','--confetti-6'];let palette=paletteVars.map(name=>style.getPropertyValue(name).trim()).filter(Boolean);if(!palette.length){palette=['#2ecc71','#3498db','#9b59b6','#f1c40f','#e67e22','#e74c3c'];}const duration=0.85;const gravity=900*dpr;const particleCount=26;const particles=[];for(let i=0;i<particleCount;i++){const angle=(Math.random()*Math.PI/1.2)-(Math.PI/2.4);const speed=(260+Math.random()*160)*dpr;particles.push({x:originX,y:originY,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,life:0,ttl:duration,color:palette[i%palette.length],size:(6+Math.random()*6)*dpr,shape:Math.random()>0.5?'square':'circle',rotation:Math.random()*Math.PI*2,vr:(Math.random()*4-2)})}
-const state=confettiState.get(rowEl);if(state&&state.cancel){state.cancel()}let rafId=0;const start=performance.now();let prev=start;ctx.clearRect(0,0,canvas.width,canvas.height);const draw=now=>{const dt=(now-prev)/1000;prev=now;const elapsed=(now-start)/1000;ctx.clearRect(0,0,canvas.width,canvas.height);let active=false;for(const p of particles){p.life=elapsed;const t=Math.min(1,elapsed/p.ttl);if(t>=1)continue;active=true;p.vy+=gravity*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;const alpha=1-t;ctx.save();ctx.globalAlpha=Math.max(0,alpha);ctx.translate(p.x,p.y);p.rotation+=p.vr*dt;ctx.rotate(p.rotation);ctx.fillStyle=p.color.trim()||'#fff';if(p.shape==='circle'){ctx.beginPath();ctx.arc(0,0,p.size/2,0,Math.PI*2);ctx.fill()}else{ctx.fillRect(-p.size/2,-p.size/2,p.size,p.size)}ctx.restore()}if(active){rafId=requestAnimationFrame(draw)}else{ctx.clearRect(0,0,canvas.width,canvas.height);confettiState.delete(rowEl)}};rafId=requestAnimationFrame(draw);confettiState.set(rowEl,{cancel(){if(rafId)cancelAnimationFrame(rafId);ctx.clearRect(0,0,canvas.width,canvas.height);confettiState.delete(rowEl)}})}
-
-function animateCheckboxBounce(el){if(!el||isMotionReduced())return;el.classList.remove('is-bouncing');void el.offsetWidth;el.classList.add('is-bouncing')}
-
-function handleTaskCompletionEffects(taskId,{completed=false,undone=false}={}){if(undone){sessionCompletedCount=Math.max(0,sessionCompletedCount-1);return}if(!completed)return;const base=600+sessionCompletedCount*250;sessionCompletedCount=Math.min(sessionCompletedCount+1,Number.MAX_SAFE_INTEGER);if(isSoundEnabled()){try{playTaskCompleteBell(base)}catch{}}
-  const rowEl=document.querySelector(`.task[data-id="${taskId}"]`);
-  const checkboxEl=rowEl?.querySelector('.task-checkbox');
-  if(checkboxEl){requestAnimationFrame(()=>animateCheckboxBounce(checkboxEl));}
-  if(rowEl&&checkboxEl){requestAnimationFrame(()=>spawnTaskConfetti(rowEl,checkboxEl));}
-}
-
 function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('show'),1400)}
 
 
@@ -180,44 +149,7 @@ function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show'
 
 
 
-function formatTimeHM(ms){const d=new Date(ms);if(isNaN(d))return'';return`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`}
 
-function formatDateDMY(ms){const d=new Date(ms);if(isNaN(d))return'';return`${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()}`}
-
-
-
-function getTaskMinutes(task,now=Date.now()){return msToMinutes(totalTimeMs(task,now))}
-
-function isTimeDialogOpen(){return !!(TimeDialog.overlay&&TimeDialog.overlay.classList.contains('is-open'))}
-
-function isTimeUpdatePending(taskId){return pendingTimeUpdates.has(taskId)}
-
-function setTimeUpdatePending(taskId,value){if(!taskId)return;const before=pendingTimeUpdates.has(taskId);if(value){pendingTimeUpdates.add(taskId)}else{pendingTimeUpdates.delete(taskId)}if(before!==value)updateTimeControlsState(taskId)}
-
-function formatPresetLabel(minutes){if(minutes%60===0&&minutes>=60){const hours=minutes/60;return`+${hours}ч`}return`+${minutes} мин`}
-
-
-function applyTaskTime(task,timeMs,{skipRender=false}={}){if(!task)return;task.timeSpent=clampTimeSpentMs(timeMs);task.timerActive=false;task.timerStart=null;removeActiveTimerState(task.id);Store.write(tasks);syncTimerLoop();updateTimerDisplays();if(!skipRender)updateTimeControlsState(task.id)}
-
-function saveTaskTimeMinutes(taskId,newMinutes,{showSuccessToast=false}={}){const task=findTask(taskId);if(!task)return Promise.reject(new Error('Задача не найдена'));const normalized=normalizeMinutes(newMinutes);if(normalized===null)return Promise.reject(new Error('Неверное значение времени'));const timeMs=minutesToMs(normalized);if(!isServerMode()){applyTaskTime(task,timeMs);if(showSuccessToast)toast(`Время обновлено: ${formatDuration(timeMs)}`);return Promise.resolve()}return runServerAction(()=>apiRequest(`/tasks/${encodeURIComponent(task.id)}`,{method:'PUT',body:{timeSpent:timeMs}}),{silent:true}).then(()=>{applyTaskTime(task,timeMs);if(showSuccessToast)toast(`Время обновлено: ${formatDuration(timeMs)}`)})}
-
-function handleInlinePreset(taskId,delta){const task=findTask(taskId);if(!task)return;if(task.timerActive||isTimeUpdatePending(task.id))return;const currentMinutes=getTaskMinutes(task);const nextMinutes=currentMinutes+delta;if(!isMinutesWithinBounds(nextMinutes))return;setTimeUpdatePending(task.id,true);saveTaskTimeMinutes(task.id,nextMinutes).catch(()=>toast('Не удалось сохранить время. Попробуй ещё раз.')).finally(()=>{setTimeUpdatePending(task.id,false);updateTimerDisplays()})}
-function formatDuration(ms){if(!ms)return'0 мин';const totalMinutes=Math.floor(ms/60000);if(totalMinutes<=0)return'0 мин';const hours=Math.floor(totalMinutes/60);const minutes=totalMinutes%60;const parts=[];if(hours>0)parts.push(`${hours} ч`);if(minutes>0||!parts.length)parts.push(`${minutes} мин`);return parts.join(' ')}
-const TimeDialog={overlay:document.getElementById('timeOverlay'),close:document.getElementById('timeDialogClose'),cancel:document.getElementById('timeDialogCancel'),form:document.getElementById('timeDialogForm'),hours:document.getElementById('timeInputHours'),minutes:document.getElementById('timeInputMinutes'),summary:document.getElementById('timeDialogSummary'),subtitle:document.getElementById('timeDialogSubtitle'),error:document.getElementById('timeDialogError'),save:document.getElementById('timeDialogSave'),presets:document.getElementById('timeDialogPresets')};
-let timeDialogTaskId=null;
-let timeDialogEditedMinutes=0;
-let timeDialogSaving=false;
-let timeDialogDeferredTimerSyncTaskId=null;
-
-function setTimeDialogError(msg){if(!TimeDialog.error)return;TimeDialog.error.textContent=msg||''}
-function setTimeDialogInputsFromMinutes(minutes){const safe=Math.max(0,Math.round(minutes));const hours=Math.floor(safe/60);const mins=safe%60;if(TimeDialog.hours)TimeDialog.hours.value=String(hours);if(TimeDialog.minutes)TimeDialog.minutes.value=String(mins)}
-function getTimeDialogState(){if(!TimeDialog.hours||!TimeDialog.minutes)return{valid:false,totalMinutes:0,hours:0,minutes:0,hoursInvalid:true,minutesInvalid:true,rangeInvalid:true};const rawHours=Number(TimeDialog.hours.value);const rawMinutes=Number(TimeDialog.minutes.value);const hoursInvalid=!Number.isFinite(rawHours)||rawHours<0;const minutesInvalid=!Number.isFinite(rawMinutes)||rawMinutes<0||rawMinutes>59;const hours=Math.floor(Number.isFinite(rawHours)?rawHours:0);const minutes=Math.floor(Number.isFinite(rawMinutes)?rawMinutes:0);const totalMinutes=hours*60+minutes;const rangeInvalid=totalMinutes<MIN_TASK_MINUTES||totalMinutes>MAX_TASK_MINUTES;const valid=!hoursInvalid&&!minutesInvalid&&!rangeInvalid;return{valid,totalMinutes,hours,minutes,hoursInvalid,minutesInvalid,rangeInvalid}}
-function updateTimeDialogUI({showValidationError=false,preserveError=false}={}){const state=getTimeDialogState();timeDialogEditedMinutes=state.totalMinutes;if(TimeDialog.summary){const displayMinutes=Math.min(MAX_TASK_MINUTES,Math.max(MIN_TASK_MINUTES,state.totalMinutes));TimeDialog.summary.textContent=formatDuration(minutesToMs(displayMinutes))}if(TimeDialog.save)TimeDialog.save.disabled=!state.valid||timeDialogSaving;if(TimeDialog.hours)TimeDialog.hours.classList.toggle('is-invalid',state.hoursInvalid);if(TimeDialog.minutes)TimeDialog.minutes.classList.toggle('is-invalid',state.minutesInvalid||state.rangeInvalid);if(!preserveError){if(!state.valid||showValidationError){setTimeDialogError('Неверное значение времени')}else if(!timeDialogSaving){setTimeDialogError('')}}return state}
-function applyTimeDialogPreset(delta){const next=timeDialogEditedMinutes+delta;setTimeDialogInputsFromMinutes(Math.max(0,next));timeDialogEditedMinutes=next;updateTimeDialogUI({showValidationError:next<MIN_TASK_MINUTES||next>MAX_TASK_MINUTES})}
-function openTimeEditDialog(taskId){const task=findTask(taskId);if(!task||!TimeDialog.overlay)return;if(task.timerActive){stopTaskTimer(task,{skipServer:true});timeDialogDeferredTimerSyncTaskId=task.id;syncTimerLoop()}else{timeDialogDeferredTimerSyncTaskId=null}timeDialogTaskId=taskId;const currentMinutes=getTaskMinutes(task);timeDialogEditedMinutes=currentMinutes;if(TimeDialog.subtitle)TimeDialog.subtitle.textContent=currentMinutes?`Текущее значение: ${formatDuration(minutesToMs(currentMinutes))}`:'Текущее значение: 0 мин';setTimeDialogInputsFromMinutes(currentMinutes);setTimeDialogError('');timeDialogSaving=false;updateTimeDialogUI();TimeDialog.overlay.classList.add('is-open');TimeDialog.overlay.setAttribute('aria-hidden','false');document.body.classList.add('time-dialog-open');updateTimeControlsState(taskId);const focusTarget=TimeDialog.minutes||TimeDialog.hours;setTimeout(()=>{if(!focusTarget)return;try{focusTarget.focus({preventScroll:true})}catch{focusTarget.focus()}},60)}
-function closeTimeDialog({syncDeferred=true}={}){if(!TimeDialog.overlay)return;const taskId=timeDialogTaskId;const shouldSyncDeferred=syncDeferred&&timeDialogDeferredTimerSyncTaskId&&taskId===timeDialogDeferredTimerSyncTaskId;timeDialogTaskId=null;timeDialogSaving=false;timeDialogEditedMinutes=0;TimeDialog.overlay.classList.remove('is-open');TimeDialog.overlay.setAttribute('aria-hidden','true');document.body.classList.remove('time-dialog-open');setTimeDialogError('');if(TimeDialog.save)TimeDialog.save.disabled=false;if(shouldSyncDeferred){const task=findTask(taskId);if(task&&isServerMode()){queueTaskUpdate(task.id,{timeSpent:task.timeSpent})}}timeDialogDeferredTimerSyncTaskId=null;updateTimeControlsState(taskId)}
-function submitTimeDialog(){if(!timeDialogTaskId||timeDialogSaving)return;const task=findTask(timeDialogTaskId);if(!task){closeTimeDialog();return}const state=updateTimeDialogUI({showValidationError:true});if(!state.valid){return}timeDialogSaving=true;updateTimeDialogUI({preserveError:true});setTimeDialogError('');setTimeUpdatePending(task.id,true);saveTaskTimeMinutes(task.id,state.totalMinutes,{showSuccessToast:true}).then(()=>{timeDialogDeferredTimerSyncTaskId=null;closeTimeDialog({syncDeferred:false})}).catch(()=>{setTimeDialogError('Не удалось сохранить. Проверь соединение и попробуй ещё раз.')}).finally(()=>{timeDialogSaving=false;setTimeUpdatePending(task.id,false);updateTimeDialogUI({preserveError:true});updateTimerDisplays()})}
-function initTimeDialogPresets(){if(!TimeDialog.presets)return;TimeDialog.presets.innerHTML='';for(const delta of TIME_PRESETS){const btn=document.createElement('button');btn.type='button';btn.className='time-preset-btn';btn.textContent=formatPresetLabel(delta);btn.title=`Добавить ${formatDuration(minutesToMs(delta))}`;btn.onclick=e=>{e.preventDefault();applyTimeDialogPreset(delta)};TimeDialog.presets.appendChild(btn)}}
 window.addEventListener('click',e=>{
   const _due=getDueEl();
   if(_due&&_due.style.display==='block'&&_due.dataset.fromContext==='true'){
@@ -492,7 +424,6 @@ const themeToggle=$('#themeToggle');
 function toggleTheme(){const dark=!document.body.classList.contains('theme-dark');applyTheme(dark?'dark':'light');ThemeStore.write(dark?'dark':'light')}
 if(themeToggle){themeToggle.addEventListener('click',toggleTheme)}
 
-const cal={track:null,curr:null,nextbuf:null,title:null,legend:null,toggle:null,prev:null,next:null,today:null,month:null,year:null,collapsed:false,focusDate:null,monthWeeks:[],activeWeekIndex:0};
 const archiveBtn=document.getElementById('archiveBtn');
 const YEAR_PLAN_HOLIDAYS_2026=new Set([
   '2026-01-01',
@@ -518,20 +449,6 @@ function isHolidayDay(year,monthIndex,day){
   return YEAR_PLAN_HOLIDAYS_2026.has(key);
 }
 function isWeekendDay(year,monthIndex,day){const dow=new Date(year,monthIndex,day,12,0,0).getDay();return dow===0||dow===6}
-function monthTitle(y,m){return`${MONTH_NAMES[m]} ${y}`}
-function weekTitle(date){const info=isoWeekInfo(date);return`Неделя ${String(info.week).padStart(2,'0')} · ${monthTitle(date.getFullYear(),date.getMonth())}`}
-function findWeekIndexForDate(weeks,date){if(!date)return-1;for(let i=0;i<weeks.length;i++){if(weeks[i].days.some(cell=>sameDay(cell.d,date)))return i}return-1}
-function ensureFocusDateVisible(weeks){if(!cal.focusDate)return;if(findWeekIndexForDate(weeks,cal.focusDate)!==-1)return;for(const week of weeks){const inMonthDay=week.days.find(cell=>cell.inMonth);if(inMonthDay){cal.focusDate=normalizeDate(inMonthDay.d);return}}}
-function highlightWeeks(){if(!cal.curr)return;const weekEls=cal.curr.querySelectorAll('.cal-week');weekEls.forEach((el,idx)=>{el.classList.toggle('is-active',idx===cal.activeWeekIndex)})}
-function applyCollapsedState(){const root=document.getElementById('calendar');if(!root)return;root.classList.toggle('is-collapsed',cal.collapsed);if(cal.legend)cal.legend.setAttribute('aria-hidden',cal.collapsed?'true':'false');highlightWeeks();if(cal.prev){const prevLabel=cal.collapsed?'Предыдущая неделя':'Предыдущий месяц';cal.prev.setAttribute('aria-label',prevLabel);cal.prev.title=prevLabel}if(cal.next){const nextLabel=cal.collapsed?'Следующая неделя':'Следующий месяц';cal.next.setAttribute('aria-label',nextLabel);cal.next.title=nextLabel}if(cal.today){const todayLabel=cal.collapsed?'Текущая неделя':'Текущий месяц';const todayTitle=cal.collapsed?'Перейти к текущей неделе':'Перейти к текущему месяцу';cal.today.setAttribute('aria-label',todayLabel);cal.today.title=todayTitle}if(cal.toggle){const toggleLabel=cal.collapsed?'Развернуть календарь':'Свернуть календарь';cal.toggle.setAttribute('aria-pressed',cal.collapsed?'true':'false');cal.toggle.setAttribute('aria-label',toggleLabel);cal.toggle.title=toggleLabel;cal.toggle.textContent=cal.collapsed?'▴':'▾'}}
-function updateCalendarTitle(){if(!cal.title)return;const baseDate=cal.focusDate||new Date(cal.year||new Date().getFullYear(),cal.month||0,1);cal.title.textContent=cal.collapsed?weekTitle(baseDate):monthTitle(cal.year,cal.month)}
-function setMonth(y,m,{animateDir=null,focusDate=null,keepFocus=false}={}){let targetFocus=focusDate?normalizeDate(focusDate):cal.focusDate;if((!targetFocus||(targetFocus.getFullYear()!==y||targetFocus.getMonth()!==m))&&!keepFocus){targetFocus=new Date(y,m,1);targetFocus=normalizeDate(targetFocus)}cal.focusDate=targetFocus;if(animateDir&&!cal.collapsed){const weeks=renderMonthInto(cal.nextbuf,y,m,{minVisibleDays:2,maxWeeks:5});cal.track.style.transition='none';cal.track.style.transform=animateDir>0?'translateX(0%)':'translateX(-100%)';requestAnimationFrame(()=>{requestAnimationFrame(()=>{cal.track.style.transition='transform .24s ease';cal.track.style.transform=animateDir>0?'translateX(-100%)':'translateX(0%)'})});const onEnd=()=>{cal.track.removeEventListener('transitionend',onEnd);cal.curr.innerHTML=cal.nextbuf.innerHTML;cal.track.style.transition='none';cal.track.style.transform='translateX(0%)';cal.year=y;cal.month=m;cal.monthWeeks=weeks;ensureFocusDateVisible(cal.monthWeeks);cal.activeWeekIndex=findWeekIndexForDate(cal.monthWeeks,cal.focusDate);if(cal.activeWeekIndex===-1)cal.activeWeekIndex=0;applyCollapsedState();updateCalendarTitle()};cal.track.addEventListener('transitionend',onEnd,{once:true})}else{const weeks=renderMonthInto(cal.curr,y,m,{minVisibleDays:2,maxWeeks:5});cal.year=y;cal.month=m;cal.monthWeeks=weeks;ensureFocusDateVisible(cal.monthWeeks);cal.activeWeekIndex=findWeekIndexForDate(cal.monthWeeks,cal.focusDate);if(cal.activeWeekIndex===-1)cal.activeWeekIndex=0;if(cal.track){cal.track.style.transition='none';cal.track.style.transform='translateX(0%)';}applyCollapsedState();updateCalendarTitle()}}
-function setFocusDate(date){const normalized=normalizeDate(date);cal.focusDate=normalized;const fy=normalized.getFullYear();const fm=normalized.getMonth();if(fy!==cal.year||fm!==cal.month){setMonth(fy,fm,{focusDate:normalized})}else{ensureFocusDateVisible(cal.monthWeeks);cal.activeWeekIndex=findWeekIndexForDate(cal.monthWeeks,cal.focusDate);if(cal.activeWeekIndex===-1)cal.activeWeekIndex=0;applyCollapsedState();updateCalendarTitle()}}
-function shiftMonth(dir){let y=cal.year,m=cal.month+dir;if(m<0){m=11;y--}else if(m>11){m=0;y++}setMonth(y,m,{animateDir:dir,focusDate:new Date(y,m,1)})}
-function shiftWeek(dir){if(!cal.focusDate)cal.focusDate=normalizeDate(new Date(cal.year,cal.month,1));const nextDate=new Date(cal.focusDate);nextDate.setDate(nextDate.getDate()+dir*7);setFocusDate(nextDate)}
-function jumpToToday(){const now=normalizeDate(new Date());if(cal.collapsed){setFocusDate(now);return}const ty=now.getFullYear();const tm=now.getMonth();const dir=ty===cal.year&&tm===cal.month?null:(ty>cal.year||(ty===cal.year&&tm>cal.month))?1:-1;setMonth(ty,tm,{animateDir:dir,focusDate:now})}
-function setCollapsed(state){const nextState=!!state;if(cal.collapsed===nextState)return;cal.collapsed=nextState;if(!cal.focusDate){cal.focusDate=normalizeDate(new Date(cal.year||new Date().getFullYear(),cal.month||0,1))}if(!cal.collapsed){const fy=cal.focusDate.getFullYear();const fm=cal.focusDate.getMonth();if(fy!==cal.year||fm!==cal.month){setMonth(fy,fm,{focusDate:cal.focusDate});return}}applyCollapsedState();updateCalendarTitle()}
-function initCalendar(){cal.track=$('#calTrack');cal.curr=$('#calCurr');cal.nextbuf=$('#calNextBuf');cal.title=$('#calTitle');cal.legend=document.querySelector('#calendar .cal-legend');cal.toggle=$('#calToggle');cal.prev=$('#calPrev');cal.next=$('#calNext');cal.today=$('#calToday');const now=normalizeDate(new Date());cal.month=now.getMonth();cal.year=now.getFullYear();cal.focusDate=now;setMonth(cal.year,cal.month,{focusDate:now});applyCollapsedState();if(cal.prev)cal.prev.addEventListener('click',()=>{cal.collapsed?shiftWeek(-1):shiftMonth(-1)});if(cal.next)cal.next.addEventListener('click',()=>{cal.collapsed?shiftWeek(1):shiftMonth(1)});if(cal.today)cal.today.addEventListener('click',()=>jumpToToday());if(cal.toggle)cal.toggle.addEventListener('click',()=>setCollapsed(!cal.collapsed))}
 
 const taskInput=$('#taskInput');
 const addBtn=$('#addBtn');
@@ -622,7 +539,7 @@ if(!projects.length&&!isServerMode()){setProjects([{id:uid(),title:'Личный
 renderProjects();
 
 
-try{console.assert(monthTitle(2025,0)==='Январь 2025');const weeks=buildMonthMatrix(2025,0,{minVisibleDays:2,maxWeeks:5});console.assert(weeks.length>=4&&weeks.length<=5);console.assert(rowClass({collapsed:false,done:false,id:'x'})==='task');const sprintSample=buildSprintData([{id:'a',title:'t',due:new Date().toISOString(),children:[]}]);console.assert(Array.isArray(sprintSample));}catch(e){console.warn('Self-tests failed:',e)}
+try{const weeks=buildMonthMatrix(2025,0,{minVisibleDays:2,maxWeeks:5});console.assert(weeks.length>=4&&weeks.length<=5);console.assert(rowClass({collapsed:false,done:false,id:'x'})==='task');const sprintSample=buildSprintData([{id:'a',title:'t',due:new Date().toISOString(),children:[]}]);console.assert(Array.isArray(sprintSample));}catch(e){console.warn('Self-tests failed:',e)}
 
 
 registerTasksDataCallbacks({
@@ -632,7 +549,7 @@ registerTasksDataCallbacks({
   getTaskMinutes: getTaskMinutes,
   isTimeUpdatePending: isTimeUpdatePending,
   isTimeDialogOpen: isTimeDialogOpen,
-  getTimeDialogTaskId: ()=>timeDialogTaskId,
+  getTimeDialogTaskId: getTimeDialogTaskId,
   getCurrentView: ()=>currentView,
   getCurrentProjectId: ()=>currentProjectId,
   getProjects: ()=>projects,
@@ -653,7 +570,7 @@ registerTasksRenderCallbacks({
   setSelectedTaskId: id=>{selectedTaskId=id},
   isTimeUpdatePending: isTimeUpdatePending,
   isTimeDialogOpen: isTimeDialogOpen,
-  getTimeDialogTaskId: ()=>timeDialogTaskId,
+  getTimeDialogTaskId: getTimeDialogTaskId,
   openDuePicker: openDuePicker,
   closeDuePicker: closeDuePicker,
   getDueEl: getDueEl,
@@ -681,6 +598,8 @@ registerKeyboardCallbacks({
   getSelectedTaskId: ()=>selectedTaskId,
   openTimeEditDialog: openTimeEditDialog,
 });
+registerEffectsCallbacks({ toast });
+registerTimeDialogCallbacks({ toast });
 
 setupSidebarResize();
 

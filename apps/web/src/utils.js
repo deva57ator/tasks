@@ -192,3 +192,27 @@ export function isoWeekInfo(d) {
   const week = 1 + Math.round(diff / (7 * 24 * 3600 * 1000));
   return { week, year: weekYear };
 }
+
+export function formatDuration(ms) {
+  if (!ms) return '0 мин';
+  const totalMinutes = Math.floor(ms / 60000);
+  if (totalMinutes <= 0) return '0 мин';
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const parts = [];
+  if (hours > 0) parts.push(`${hours} ч`);
+  if (minutes > 0 || !parts.length) parts.push(`${minutes} мин`);
+  return parts.join(' ');
+}
+
+export function formatTimeHM(ms) {
+  const d = new Date(ms);
+  if (isNaN(d)) return '';
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+export function formatDateDMY(ms) {
+  const d = new Date(ms);
+  if (isNaN(d)) return '';
+  return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
+}
