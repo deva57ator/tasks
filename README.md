@@ -1,78 +1,248 @@
 # Tasks
 
-Monorepo for the Tasks single-page app and Node.js API. The project serves two environments (staging and production) from the same codebase.
+Монорепозиторий личного таск-трекера. Состоит из статического SPA (`apps/web/`) и Node.js API (`apps/api/`). Работает в двух окружениях — staging и production — на одном сервере за Nginx.
 
-## Repository layout
+---
+
+## Структура репозитория
 
 ```
 apps/
-  api/           # Express-compatible API server and migrations
-  web/           # Static SPA assets (index.html, main.js, style.css)
-db/              # Policies for migrations and backups
+  api/                   # Node.js API-сервер + SQLite
+  web/                   # Статический SPA (нет сборщика, нативные ES-модули)
+db/
+  README.md              # Политика миграций и бэкапов
 infra/
-  nginx/         # Reference Nginx configuration
-  rsync/         # File delivery manifest used in CI
-  systemd/       # Reference systemd unit files
-.github/workflows/deploy.yml  # CI workflow that deploys to staging and production
-README.md        # This document
+  nginx/                 # Конфиг Nginx (справочный, деплоится вручную)
+  rsync/                 # Фильтры rsync для CI-деплоя
+  systemd/               # Unit-файлы systemd (справочные)
+.github/workflows/
+  deploy-stg.yml         # Автодеплой в staging при push в main
+  promote-prod.yml       # Ручной промоут в production
 ```
 
-## Environment configuration
+---
 
-Copy `apps/api/.env.example` to `apps/api/.env` when running locally. The API uses the following variables:
+## Web — `apps/web/`
 
-- `PORT` – TCP port to bind (default `4001`).
-- `HOST` – host/interface to bind (default `127.0.0.1`).
-- `DB_PATH` – path to the SQLite database file (default `./data/tasks.db`).
-- `API_KEY` – shared secret that clients must provide in the `x-api-key` header.
-- `CORS_ORIGIN` – optional origin allowed for browser requests (empty string disables CORS headers).
+SPA без фреймворков и сборщика. Все модули — нативные ES-модули (`type="module"`). Точка входа — `main.js`, который импортирует все остальные модули и связывает их через коллбэки (чтобы не создавать циклических зависимостей).
 
-Environment files for staging and production live on the server under `/etc/tasks-stg.env` and `/etc/tasks-prod.env` and are loaded by systemd.
+### Точка входа
 
-## Local development
+| Файл | Роль |
+|---|---|
+| `index.html` | HTML-оболочка, подключает `main.js` и `style.css` |
+| `main.js` | Инициализация всего приложения: регистрирует коллбэки между модулями, навешивает обработчики событий, запускает циклы обновления |
+| `style.css` | Все стили приложения (одностраничник без CSS-модулей) |
 
-From `apps/api/`:
+### Модули `src/`
+
+| Модуль | Что делает |
+|---|---|
+| `config.js` | Глобальные константы: URL API, лимиты времени, интервалы опроса, названия месяцев, пресеты. Автоматически переключается между `/tasks` (prod) и `/tasks-stg` (stg) по URL страницы |
+| `api.js` | HTTP-клиент (`apiRequest`), блокировка авторизации (`lockApiAuth`), очереди обновлений задач/проектов/архива с дебаунсом, синхронизация рабочего дня с сервером, UI диалога настроек API-ключа |
+| `storage.js` | Адаптеры `localStorage`: задачи (`Store`), проекты (`ProjectsStore`), рабочий день (`WorkdayStore`), архив (`ArchiveStore`), тема (`ThemeStore`), API-ключ (`ApiKeyStore`), режим хранилища (`StorageModeStore`). Поддерживает два режима: `local` (всё в localStorage) и `server` (синхронизация с API) |
+| `tasks-data.js` | Бизнес-логика задач: дерево задач с вложенностью до 2 уровней, таймеры, добавление/удаление/перемещение, миграции формата, синхронизация с сервером |
+| `tasks-render.js` | Рендер списка задач, контекстное меню, панель заметок, подменю назначения проекта, меню пресетов времени, подсветка при ховере |
+| `projects.js` | Данные и рендер проектов (список с эмодзи), назначение задач на проект |
+| `workday.js` | Рабочий день: открытие/закрытие дня, перенос незавершённых задач, синхронизация состояния с сервером, цикл автообновления раз в минуту |
+| `sprint.js` | Фильтрация задач по спринту и проекту (UI боковой панели) |
+| `archive.js` | Отображение и управление архивом завершённых рабочих дней |
+| `due-picker.js` | Попап-пикер для выбора дедлайна задачи |
+| `time-dialog.js` | Диалог ручного редактирования потраченного времени задачи |
+| `calendar.js` | Виджет мини-календаря (используется в time-dialog и due-picker) |
+| `keyboard.js` | Горячие клавиши: навигация, быстрое создание задач, открытие/закрытие панелей |
+| `effects.js` | Визуальные эффекты при выполнении задач (конфетти); учитывает `prefers-reduced-motion` |
+| `sidebar.js` | Ресайз боковой панели мышью |
+| `utils.js` | DOM-хелперы (`$`, `$$`), генератор ID, форматирование дат/времени/длительности, операции с деревом задач |
+
+### Подмодуль `src/yearplan/`
+
+Годовой план — отдельная фича с собственным набором модулей.
+
+| Модуль | Что делает |
+|---|---|
+| `data.js` | Состояние годового плана, загрузка данных с сервера или из localStorage, кэширование по годам |
+| `render.js` | Рендер сетки плана, drag-to-create, resize, move, inline-переименование активностей |
+| `interactions.js` | Контекстное меню активностей, обработка кликов и ховеров |
+| `normalize.js` | Нормализация данных с сервера/localStorage в единый формат |
+
+---
+
+## API — `apps/api/`
+
+Node.js + Express, база данных — SQLite (через `better-sqlite3`). Аутентификация — статический API-ключ в заголовке `X-API-Key`.
+
+### Точки входа
+
+| Файл | Роль |
+|---|---|
+| `src/server.js` | Запускает HTTP-сервер, запускает lifecycle рабочего дня (автозакрытие), слушает SIGINT/SIGTERM |
+| `src/app.js` | Создаёт Express-приложение, регистрирует middleware и роуты |
+
+### Конфигурация `src/config/`
+
+Читает переменные окружения из `.env` (через `dotenv`):
+
+| Переменная | По умолчанию | Описание |
+|---|---|---|
+| `PORT` | `4001` | TCP-порт сервера |
+| `HOST` | `127.0.0.1` | Интерфейс для bind |
+| `DB_PATH` | `./data/tasks.db` | Путь к SQLite-файлу |
+| `TASKS_API_KEY` | — | Секретный ключ; если не задан — все запросы кроме `/health` вернут 401 |
+| `CORS_ORIGIN` | — | Разрешённый origin для CORS (пусто — CORS-заголовки не выставляются) |
+
+### Middleware `src/middleware/`
+
+| Файл | Роль |
+|---|---|
+| `auth.js` | Проверяет заголовок `X-API-Key`. `/api/health` и OPTIONS-запросы пропускает без проверки |
+| `cors.js` | Выставляет CORS-заголовки если задан `CORS_ORIGIN` |
+| `error.js` | Централизованный обработчик ошибок Express |
+| `request-logger.js` | Логирует каждый входящий запрос |
+
+### Роуты `src/routes/`
+
+| Роут | Методы | Описание |
+|---|---|---|
+| `GET /api/health` | GET | Health check (без авторизации) |
+| `/api/tasks` | GET, POST, PUT, DELETE | CRUD задач; фильтры: `projectId`, `done`, `dueFrom`, `dueTo`, `limit`, `offset` |
+| `/api/projects` | GET, POST, PUT, DELETE | CRUD проектов |
+| `/api/archive` | GET, DELETE | Просмотр и удаление записей архива |
+| `/api/workday/current` | GET | Текущий рабочий день (с ETag) |
+| `/api/workday/sync` | POST | Сохранение состояния рабочего дня с клиента |
+| `/api/yearplan` | GET, POST, PUT, DELETE | CRUD активностей годового плана |
+| `/api/stats` | GET | Агрегированная статистика (время, задачи) |
+| `/api/import` | POST | Импорт данных из JSON-дампа |
+
+### Сервисы `src/services/`
+
+Содержат бизнес-логику; роуты только парсят запрос и вызывают сервис.
+
+| Файл | Роль |
+|---|---|
+| `tasks.js` | Список, создание, обновление, удаление задач |
+| `projects.js` | CRUD проектов |
+| `archive.js` | Запись и чтение архивных снимков рабочих дней |
+| `workdays.js` | Текущий рабочий день: автоматическое открытие по расписанию (с 06:00 до 03:00 следующего дня), автозакрытие просроченных |
+| `workdayLifecycle.js` | Фоновый тик каждые 5 минут — запускает проверку автозакрытия рабочего дня |
+| `stats.js` | Агрегация статистики по задачам и времени |
+| `importer.js` | Разбор и запись импортируемого JSON-дампа |
+| `yearplan.js` | CRUD активностей годового плана |
+
+### Вспомогательные библиотеки `src/lib/`
+
+| Файл | Роль |
+|---|---|
+| `logger.js` | Простой структурированный логгер |
+| `pagination.js` | Парсинг и валидация параметров `limit` / `offset` |
+| `time.js` | Вспомогательные функции для работы с датами и ISO-строками |
+| `task-utils.js` | Общая логика, разделяемая между сервисами (используется в тестах) |
+
+### База данных
+
+SQLite-файл. Миграции — последовательные SQL-файлы в `migrations/`, применяются скриптом `scripts/migrate.js` (`npm run migrate`).
+
+| Таблица | Ключевые поля | Назначение |
+|---|---|---|
+| `projects` | `id`, `title`, `emoji` | Проекты с эмодзи-иконкой |
+| `tasks` | `id`, `title`, `done`, `due`, `projectId`, `parentId`, `timeSpentMs` | Задачи; вложенность через `parentId` (ON DELETE CASCADE); принадлежность проекту через `projectId` (ON DELETE SET NULL) |
+| `archive` | `id`, `payload`, `archivedAt` | JSON-снимки завершённых рабочих дней |
+| `workdays` | `id` (дата), `startTs`, `endTs`, `payload`, `closedAt` | Рабочие дни; `id` = `YYYY-MM-DD` |
+| `meta` | `schemaVersion` | Версия схемы для системы миграций |
+
+**История миграций:**
+
+| № | Что добавлено |
+|---|---|
+| 001 | Начальная схема: projects, tasks, archive, workdays, meta |
+| 002 | Автозакрытие незакрытых рабочих дней при старте |
+| 003 | Таблица активностей годового плана |
+| 004 | Поддержка диапазонов дат в годовом плане |
+| 005 | Цвет активности в годовом плане |
+| 006 | Привязка активности к проекту (`project_id`) |
+
+---
+
+## Деплой
+
+### Окружения
+
+| | Staging | Production |
+|---|---|---|
+| Триггер | Автоматически при push в `main` | Вручную через `workflow_dispatch` |
+| Workflow | `deploy-stg.yml` | `promote-prod.yml` |
+| API-порт | `3102` | `3101` |
+| Путь API | `/srv/tasks-stg/apps/api` | `/srv/tasks-prod/apps/api` |
+| Путь веба | `/var/www/tasks-stg/` | `/var/www/tasks-prod/` |
+| URL | `https://parkhomenko.space/tasks-stg/` | `https://parkhomenko.space/tasks/` |
+| Systemd-юнит | `tasks-stg` | `tasks-prod` |
+| Env-файл | `/etc/tasks-stg.env` | `/etc/tasks-prod.env` |
+
+### Шаги деплоя (одинаковы для обоих окружений)
+
+1. **rsync API** — репозиторий синхронизируется во временную папку `_tmp` на сервере через фильтр `infra/rsync/api.filter` (исключает `node_modules`, `data/`, `.env`), затем `apps/api` атомарно перекладывается на место.
+2. **rsync Web** — `apps/web/` синхронизируется напрямую в webroot (`/var/www/tasks-*/`).
+3. **npm ci** — устанавливаются prod-зависимости (`--omit=dev`).
+4. **Миграции** — `npm run migrate` с явно указанным `DB_PATH`.
+5. **Рестарт** — `systemctl restart tasks-stg / tasks-prod`.
+6. **Health check** — `curl --retry 10` к `/api/health`.
+
+### Секреты GitHub Actions
+
+| Секрет | Описание |
+|---|---|
+| `SSH_KEY` | Приватный SSH-ключ для деплоя |
+| `DEPLOY_HOST` | Хост сервера |
+| `DEPLOY_USER` | SSH-пользователь |
+| `DEPLOY_PORT` | SSH-порт |
+| `DEPLOY_PATH_STG` / `DEPLOY_PATH_PROD` | Путь к директории API на сервере |
+| `DEPLOY_WEB_PATH_STG` / `DEPLOY_WEB_PATH_PROD` | Путь к webroot |
+
+---
+
+## Сервер — топология
+
+```
+Internet → Nginx (parkhomenko.space)
+              /tasks-stg/api/*  → 127.0.0.1:3102  (tasks-stg systemd unit)
+              /tasks/api/*      → 127.0.0.1:3101  (tasks-prod systemd unit)
+              /tasks-stg/*      → /var/www/tasks-stg/   (статика)
+              /tasks/*          → /var/www/tasks-prod/  (статика)
+```
+
+- Nginx проксирует только `/api/` маршруты; статика отдаётся напрямую директивой `alias`.
+- Конфиг Nginx: `infra/nginx/parkhomenko.space.conf` — справочный, устанавливается вручную.
+- Unit-файлы systemd: `infra/systemd/tasks-*.service` — справочные, устанавливаются вручную.
+
+---
+
+## Локальная разработка
 
 ```bash
+cd apps/api
+cp .env.example .env   # задать TASKS_API_KEY и при необходимости DB_PATH
 npm install
 npm run migrate
-npm run dev
+npm run dev            # --watch, перезапуск при изменении файлов
 ```
 
-The API will listen on `http://127.0.0.1:4001/api`. The SPA in `apps/web/` can be opened directly in a browser (it expects the API on the same host under `/api`).
+API поднимется на `http://127.0.0.1:4001/api`.
 
-Useful scripts:
-
-- `npm run start` – start the API without file watching.
-- `npm run dev` – start the API with live reload (Node.js `--watch`).
-- `npm run migrate` – apply pending SQL migrations from `apps/api/migrations/`.
-- `npm run lint` – run the lightweight lint script.
-- `npm test` – execute the Node.js test suite stubs.
-
-## Deployment workflow
-
-Continuous delivery is handled by GitHub Actions (`.github/workflows/deploy.yml`). On every push to `main` (or manual dispatch) the pipeline:
-
-1. Syncs the repository to `/srv/tasks-stg` and `/srv/tasks-prod` via `rsync` using `infra/rsync/.rsync-filter` to ship only the API and SPA assets.
-2. Copies the SPA bundle to `/var/www/tasks-stg/` and `/var/www/tasks-prod/`.
-3. Runs `npm ci --omit=dev`, executes database migrations, and restarts the `tasks-stg` / `tasks-prod` systemd units.
-
-The deployment keeps the existing directory layout on the servers, so no downtime or unit changes are required. Verify deployments with:
+Веб — открыть `apps/web/index.html` напрямую в браузере или через любой статик-сервер. В режиме `local` (по умолчанию) API не нужен — все данные хранятся в localStorage. Для режима `server` нужен запущенный API и ключ, который вводится через диалог настроек в интерфейсе.
 
 ```bash
-curl -sS https://parkhomenko.space/tasks-stg/api/health
-curl -sS https://parkhomenko.space/tasks/api/health
+npm run lint   # базовая проверка кода
+npm test       # тесты (Node.js --test)
 ```
 
-## Server topology
+---
 
-- API services run as systemd units defined in `infra/systemd/`. Their working directories are `/srv/tasks-stg` and `/srv/tasks-prod`, and each unit executes `node apps/api/src/server.js`.
-- Static files are served by Nginx from `/var/www/tasks-stg/` and `/var/www/tasks-prod/`. The reference configuration is stored in `infra/nginx/parkhomenko.space.conf` and proxies `/tasks-stg/api/*` and `/tasks/api/*` to the respective Node.js services.
-- SQLite databases reside in `/srv/tasks-*/apps/api/data/` on the servers. See `db/README.md` for migration and backup policies.
+## Откат
 
-## Rollback strategy
+1. Восстановить предыдущий снимок API из бэкапа или прежнего деплоя в `/srv/tasks-*/apps/api`.
+2. Перезапустить юниты: `sudo systemctl restart tasks-stg tasks-prod`.
+3. При необходимости — вернуться на предыдущий коммит, запустить `promote-prod.yml` с нужным `ref`.
+4. Проверить: `curl -sS https://parkhomenko.space/tasks/api/health`.
 
-1. Restore the previous application snapshot under `/srv/tasks-stg` and `/srv/tasks-prod` (from backup or tag).
-2. Restart the services: `sudo systemctl restart tasks-stg tasks-prod`.
-3. If necessary, revert to the previous Git revision or temporarily disable the deploy workflow by editing `on.push` in GitHub Actions.
-4. Validate with the health-check endpoints and static SPA URLs.
+Бэкапы и политика миграций — в `db/README.md`.

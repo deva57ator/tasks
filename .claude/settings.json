@@ -1,7 +1,21 @@
 {
   "permissions": {
     "allow": [
-      "Bash(grep -n \"^const STORAGE_MODES\\\\|^const API_PREFIX\\\\|^const API_BASE\\\\|^const api=\\\\|^const MIN_TASK_MINUTES\\\\|^const MAX_TASK_MINUTES\\\\|^const DEFAULT_PROJECT_EMOJI\\\\|^const SPRINT_UNASSIGNED_KEY\\\\|^const YEAR_PLAN_COLORS\\\\|^const WORKDAY_REFRESH_INTERVAL\\\\|^const MAX_TASK_DEPTH\\\\|^const MONTH_NAMES\\\\|^const TIME_UPDATE_INTERVAL\\\\|^const YEAR_PLAN_MAX_DAYS\\\\|^const \\\\$=\\\\|^function escapeAttributeValue\\\\|^function getTaskRowById\\\\|^const NON_TEXT_INPUT_TYPES\\\\|^function isEditableShortcutTarget\\\\|^const uid=\\\\|^function isDueToday\\\\|^function isDuePast\\\\|^function filterTree\\\\|^function isoWeekInfo\" /home/deva57ator/Documents/repo/tasks/apps/web/main.js)"
+      "Bash(grep -n \"^const STORAGE_MODES\\\\|^const API_PREFIX\\\\|^const API_BASE\\\\|^const api=\\\\|^const MIN_TASK_MINUTES\\\\|^const MAX_TASK_MINUTES\\\\|^const DEFAULT_PROJECT_EMOJI\\\\|^const SPRINT_UNASSIGNED_KEY\\\\|^const YEAR_PLAN_COLORS\\\\|^const WORKDAY_REFRESH_INTERVAL\\\\|^const MAX_TASK_DEPTH\\\\|^const MONTH_NAMES\\\\|^const TIME_UPDATE_INTERVAL\\\\|^const YEAR_PLAN_MAX_DAYS\\\\|^const \\\\$=\\\\|^function escapeAttributeValue\\\\|^function getTaskRowById\\\\|^const NON_TEXT_INPUT_TYPES\\\\|^function isEditableShortcutTarget\\\\|^const uid=\\\\|^function isDueToday\\\\|^function isDuePast\\\\|^function filterTree\\\\|^function isoWeekInfo\" /home/deva57ator/Documents/repo/tasks/apps/web/main.js)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(node --input-type=module)",
+      "Bash(node --check /home/deva57ator/Documents/repo/tasks/apps/web/src/sidebar.js)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(k,':',v\\) for k,v in d.get\\('scripts',{}\\).items\\(\\)]\")",
+      "Bash(node --check apps/web/main.js)",
+      "Bash(node --input-type=module --check)",
+      "Bash(git push:*)",
+      "Read(//^function |^async function /{name=$0; line=NR} /^function renderTaskRow/{start=NR} start && NR>start{count++} /^function [a-zA-Z]/**)",
+      "Read(//home/deva57ator/Documents/repo/tasks/**)",
+      "Bash(awk -F: 'NR>=60{print}')"
+    ],
+    "additionalDirectories": [
+      "/home/deva57ator/Documents/repo/tasks/apps/web/src"
     ]
   }
 }
