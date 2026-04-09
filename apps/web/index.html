@@ -33,29 +33,31 @@
         </div>
       </div>
 
-      <section class="calendar" id="calendar">
-        <div class="cal-header">
-          <button class="cal-today" id="calToday" aria-label="Текущий месяц" title="Перейти к текущему месяцу"></button>
-          <div class="cal-title" id="calTitle">Месяц ГГГГ</div>
-          <div class="cal-ctrls">
-            <button class="cal-arrow" id="calPrev" aria-label="Предыдущий месяц">‹</button>
-            <button class="cal-arrow" id="calNext" aria-label="Следующий месяц">›</button>
-            <button class="cal-collapse" id="calToggle" aria-label="Свернуть календарь" aria-pressed="false" title="Свернуть календарь">▾</button>
+      <div class="sidebar-bottom">
+        <section class="calendar" id="calendar">
+          <div class="cal-header">
+            <button class="cal-today" id="calToday" aria-label="Текущий месяц" title="Перейти к текущему месяцу"></button>
+            <div class="cal-title" id="calTitle">Месяц ГГГГ</div>
+            <div class="cal-ctrls">
+              <button class="cal-arrow" id="calPrev" aria-label="Предыдущий месяц">‹</button>
+              <button class="cal-arrow" id="calNext" aria-label="Следующий месяц">›</button>
+              <button class="cal-collapse" id="calToggle" aria-label="Свернуть календарь" aria-pressed="false" title="Свернуть календарь">▾</button>
+            </div>
           </div>
-        </div>
-        <div class="cal-legend">
-          <div>Wk</div><div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div>
-        </div>
-        <div class="cal-viewport">
-          <div class="cal-track" id="calTrack">
-            <div class="cal-month" id="calCurr"></div>
-            <div class="cal-month" id="calNextBuf"></div>
+          <div class="cal-legend">
+            <div>Wk</div><div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div>
           </div>
-        </div>
-      </section>
+          <div class="cal-viewport">
+            <div class="cal-track" id="calTrack">
+              <div class="cal-month" id="calCurr"></div>
+              <div class="cal-month" id="calNextBuf"></div>
+            </div>
+          </div>
+        </section>
 
-      <div class="yearplan-access">
-        <button class="nav-btn yearplan-btn" id="yearPlanNav" data-view="year">Год</button>
+        <div class="yearplan-access">
+          <button class="nav-btn yearplan-btn" id="yearPlanNav" data-view="year">Год</button>
+        </div>
       </div>
     </div>
 
@@ -129,22 +131,19 @@
       <button type="button" class="api-settings-close" id="apiSettingsClose" aria-label="Закрыть окно">×</button>
       <div class="api-settings-sidebar" aria-label="Разделы настроек">
         <div class="api-settings-sidebar-header">
-          <div class="api-settings-kicker">Настройки</div>
-          <div class="api-settings-title" id="apiSettingsTitle">Приложение</div>
+          <div class="api-settings-title" id="apiSettingsTitle">Настройки</div>
         </div>
         <nav class="api-settings-nav">
           <button type="button" class="api-settings-nav-item is-active" data-settings-section="server" aria-current="page">
             <span class="api-settings-nav-icon" aria-hidden="true">↔</span>
             <span>
               <span class="api-settings-nav-label">Сервер</span>
-              <span class="api-settings-nav-description">API key и режим</span>
             </span>
           </button>
           <button type="button" class="api-settings-nav-item" data-settings-section="display">
             <span class="api-settings-nav-icon" aria-hidden="true">◐</span>
             <span>
-              <span class="api-settings-nav-label">Отображение</span>
-              <span class="api-settings-nav-description">Вид задач</span>
+              <span class="api-settings-nav-label">Вид</span>
             </span>
           </button>
         </nav>
@@ -152,24 +151,22 @@
       <div class="api-settings-content">
         <section class="api-settings-section is-active" data-settings-panel="server" aria-labelledby="apiSettingsServerTitle">
           <div class="api-settings-header">
-            <div class="api-settings-section-eyebrow">Раздел 1</div>
             <div class="api-settings-section-title" id="apiSettingsServerTitle">Сервер</div>
-            <div class="api-settings-section-subtitle">Подключение к API и ключ доступа для выбранного окружения.</div>
             <div class="api-settings-description" id="apiSettingsEnv"></div>
             <div class="api-settings-hint" id="apiSettingsHint"></div>
             <div class="api-settings-message" id="apiSettingsMessage"></div>
           </div>
           <form class="api-settings-form" id="apiSettingsForm">
             <div class="api-settings-field">
-              <label class="api-settings-label" for="apiKeyInput">API key</label>
+              <label class="api-settings-label" for="apiKeyInput">Ключ API</label>
               <div class="api-settings-input-wrap">
                 <input type="password" class="api-settings-input" id="apiKeyInput" autocomplete="off" />
                 <button
                   type="button"
                   class="api-settings-toggle"
                   id="apiKeyToggle"
-                  aria-label="Показать API key"
-                  title="Показать API key"
+                  aria-label="Показать ключ API"
+                  title="Показать ключ API"
                 >
                   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                     <path
@@ -181,23 +178,20 @@
             </div>
             <div class="api-settings-error" id="apiSettingsError" role="alert" aria-live="polite"></div>
             <div class="api-settings-actions">
-              <button type="button" class="api-settings-secondary" id="apiKeyClear">очистить</button>
+              <button type="button" class="api-settings-secondary" id="apiKeyClear">Очистить</button>
               <div class="api-settings-actions-spacer"></div>
-              <button type="button" class="api-settings-secondary" id="apiKeyToLocal">local</button>
-              <button type="submit" class="api-settings-primary" id="apiSettingsSave">сохранить</button>
+              <button type="button" class="api-settings-secondary" id="apiKeyToLocal">Локально</button>
+              <button type="submit" class="api-settings-primary" id="apiSettingsSave">Сохранить</button>
             </div>
           </form>
         </section>
         <section class="api-settings-section" data-settings-panel="display" aria-labelledby="apiSettingsDisplayTitle">
           <div class="api-settings-header">
-            <div class="api-settings-section-eyebrow">Раздел 2</div>
-            <div class="api-settings-section-title" id="apiSettingsDisplayTitle">Отображение</div>
-            <div class="api-settings-section-subtitle">Тема и палитра интерфейса.</div>
+            <div class="api-settings-section-title" id="apiSettingsDisplayTitle">Вид</div>
           </div>
           <div class="settings-subsection" aria-labelledby="themeSectionTitle">
             <div class="settings-subsection-header">
-              <div class="settings-subsection-title" id="themeSectionTitle">Тема оформления</div>
-              <div class="settings-subsection-description">Выберите светлый или тёмный режим, затем палитру для него.</div>
+              <div class="settings-subsection-title" id="themeSectionTitle">Тема</div>
             </div>
             <div class="settings-toggle-group" role="group" aria-label="Режим темы">
               <button type="button" class="settings-choice" data-theme-mode="light">Светлая</button>
@@ -208,16 +202,14 @@
           </div>
           <div class="settings-subsection" aria-labelledby="fontSectionTitle">
             <div class="settings-subsection-header">
-              <div class="settings-subsection-title" id="fontSectionTitle">Шрифт интерфейса</div>
-              <div class="settings-subsection-description">Смена применяется сразу ко всему интерфейсу.</div>
+              <div class="settings-subsection-title" id="fontSectionTitle">Шрифт</div>
             </div>
-            <label class="settings-select-label" for="fontSelect">Гарнитура</label>
-            <select class="settings-select" id="fontSelect">
-              <option value="plex">IBM Plex Sans — рабочий</option>
-              <option value="inter">Inter — нейтральный</option>
-              <option value="manrope">Manrope — собранный</option>
-              <option value="nunito">Nunito Sans — мягкий</option>
-              <option value="pt">PT Sans — книжный</option>
+            <select class="settings-select" id="fontSelect" aria-label="Шрифт">
+              <option value="plex">IBM Plex Sans</option>
+              <option value="inter">Inter</option>
+              <option value="manrope">Manrope</option>
+              <option value="nunito">Nunito Sans</option>
+              <option value="pt">PT Sans</option>
             </select>
             <div class="settings-section-divider" aria-hidden="true"></div>
           </div>

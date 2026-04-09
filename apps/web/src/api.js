@@ -32,12 +32,12 @@ function ensureApiKeyAvailable(reason) {
   if (!isServerMode()) return null;
   if (apiAuthLocked && apiAuthReason) {
     lockApiAuth(apiAuthReason, apiAuthMessage);
-    throw apiError(apiAuthMessage || 'Требуется API key', 'auth-locked');
+    throw apiError(apiAuthMessage || 'Требуется ключ API', 'auth-locked');
   }
   const key = ApiKeyStore.read();
   if (!key) {
-    lockApiAuth(reason || 'missing', 'Нужен API key для доступа к API');
-    throw apiError('API key не указан', 'missing-key');
+    lockApiAuth(reason || 'missing', 'Нужен ключ API для доступа к API');
+    throw apiError('Ключ API не указан', 'missing-key');
   }
   return key;
 }
@@ -73,7 +73,7 @@ export async function apiRequest(path, { method = 'GET', body } = {}) {
   }
   if (response.status === 401) {
     lockApiAuth('unauthorized', 'Ключ неверный или не подходит для этого окружения');
-    throw apiError('Требуется корректный API key', 'unauthorized');
+    throw apiError('Требуется корректный ключ API', 'unauthorized');
   }
   if (!response.ok) {
     let message = `Ошибка API (${response.status})`;
@@ -367,8 +367,8 @@ export function openApiSettings({ blocking = false, reason = null, message = nul
     ApiSettingsUI.input.type = 'password';
   }
   if (ApiSettingsUI.toggle) {
-    ApiSettingsUI.toggle.setAttribute('aria-label', 'Показать API key');
-    ApiSettingsUI.toggle.setAttribute('title', 'Показать API key');
+    ApiSettingsUI.toggle.setAttribute('aria-label', 'Показать ключ API');
+    ApiSettingsUI.toggle.setAttribute('title', 'Показать ключ API');
     ApiSettingsUI.toggle.classList.remove('is-active');
   }
   if (ApiSettingsUI.closeBtn) ApiSettingsUI.closeBtn.style.display = apiSettingsBlocking ? 'none' : 'block';
@@ -396,7 +396,7 @@ export function toggleApiKeyVisibility() {
   if (!ApiSettingsUI.input || !ApiSettingsUI.toggle) return;
   const showing = ApiSettingsUI.input.type === 'text';
   ApiSettingsUI.input.type = showing ? 'password' : 'text';
-  const label = showing ? 'Показать API key' : 'Скрыть API key';
+  const label = showing ? 'Показать ключ API' : 'Скрыть ключ API';
   ApiSettingsUI.toggle.setAttribute('aria-label', label);
   ApiSettingsUI.toggle.setAttribute('title', label);
   ApiSettingsUI.toggle.classList.toggle('is-active', !showing);
@@ -406,7 +406,7 @@ export async function saveApiKey(event) {
   event && event.preventDefault();
   if (!ApiSettingsUI.input) return;
   const value = (ApiSettingsUI.input.value || '').trim();
-  if (!value) { setApiSettingsError('Введите API key'); return; }
+  if (!value) { setApiSettingsError('Введите ключ API'); return; }
   ApiKeyStore.write(value);
   setApiSettingsError('');
   const reset = () => { if (ApiSettingsUI.saveBtn) ApiSettingsUI.saveBtn.disabled = false; };
@@ -416,7 +416,7 @@ export async function saveApiKey(event) {
     if (isServerMode()) { await apiRequest('/tasks?limit=1'); }
     apiSettingsBlocking = false;
     closeApiSettings({ force: true });
-    _cb.toast?.('API key сохранён');
+    _cb.toast?.('Ключ API сохранён');
     if (isServerMode()) await _cb.refreshData?.({ silent: true });
   } catch (err) {
     if (err && err.code === 'unauthorized') {
@@ -438,7 +438,7 @@ export function clearApiKey() {
   ApiKeyStore.clear();
   if (ApiSettingsUI.input) ApiSettingsUI.input.value = '';
   setApiSettingsError('Ключ очищен');
-  if (isServerMode()) lockApiAuth('missing', 'Нужен API key для доступа к API');
+  if (isServerMode()) lockApiAuth('missing', 'Нужен ключ API для доступа к API');
 }
 
 export async function switchToLocalMode() {
