@@ -100,12 +100,6 @@ export function migrate(list, depth = 0) {
 
 // ── Дерево задач ───────────────────────────────────────────────────────────
 export function findTask(id, list = tasks) { for (const t of list) { if (t.id === id) return t; const r = findTask(id, t.children || []); if (r) return r } return null }
-export function findArchivedTask(id, list) {
-  if (!list) list = _cb.getArchivedTasks?.() ?? [];
-  if (!Array.isArray(list)) return null;
-  for (const item of list) { if (item && item.id === id) return item; const nested = findArchivedTask(id, item?.children || []); if (nested) return nested }
-  return null;
-}
 export function walkTasks(list, cb) { if (!Array.isArray(list)) return; for (const item of list) { if (!item) continue; cb(item); if (Array.isArray(item.children) && item.children.length) walkTasks(item.children, cb) } }
 export function getTaskDepth(id, list = tasks, depth = 0) { for (const t of list) { if (t.id === id) return depth; const childDepth = getTaskDepth(id, t.children || [], depth + 1); if (childDepth !== -1) return childDepth } return -1 }
 export function getSubtreeDepth(task) { if (!task || !Array.isArray(task.children) || !task.children.length) return 0; let max = 0; for (const child of task.children) { const d = 1 + getSubtreeDepth(child); if (d > max) max = d } return max }
@@ -219,6 +213,8 @@ export function toggleTask(id) {
   t.done = nextDone;
   updateWorkdayCompletionState(t, nextDone, now);
   if (nextDone) stopTaskTimer(t, { silent: true });
+  if (nextDone) _cb.markRecentlyCompleted?.(id);
+  else _cb.unmarkRecentlyCompleted?.(id);
   Store.write(tasks);
   if (isServerMode()) { const payload = { done: nextDone }; if (nextDone && typeof t.timeSpent === 'number') payload.timeSpent = t.timeSpent; queueTaskUpdate(id, payload) }
   syncTimerLoop(); _cb.render?.();
@@ -232,6 +228,7 @@ export function markTaskDone(id) {
   const now = Date.now(); t.done = true;
   updateWorkdayCompletionState(t, true, now);
   stopTaskTimer(t, { silent: true });
+  _cb.markRecentlyCompleted?.(id);
   Store.write(tasks);
   if (isServerMode()) { const payload = { done: true }; if (typeof t.timeSpent === 'number') payload.timeSpent = t.timeSpent; queueTaskUpdate(id, payload) }
   syncTimerLoop(); _cb.render?.();
@@ -278,32 +275,6 @@ export function renameTask(id, title) {
 }
 
 export function toggleCollapse(id) { const t = findTask(id); if (!t) return; t.collapsed = !t.collapsed; Store.write(tasks); _cb.render?.() }
-
-// ── Архивирование ──────────────────────────────────────────────────────────
-function cloneTaskForArchive(task, { archivedAt, completedLookup, children = [] }) {
-  const completedAt = completedLookup && typeof completedLookup[task.id] === 'number' && isFinite(completedLookup[task.id]) ? completedLookup[task.id] : null;
-  return { id: task.id, title: task.title || '', done: true, due: typeof task.due === 'string' && task.due ? task.due : null, project: typeof task.project === 'string' && task.project ? task.project : null, notes: typeof task.notes === 'string' ? task.notes : '', timeSpent: totalTimeMs(task, archivedAt), archivedAt, completedAt, children };
-}
-function partitionTasksForArchive(list, completedLookup, archivedAt) {
-  const remaining = []; const archived = [];
-  if (!Array.isArray(list)) return { remaining, archived };
-  for (const task of list) {
-    if (!task || typeof task !== 'object') continue;
-    const childList = Array.isArray(task.children) ? task.children : [];
-    const { remaining: childRemaining, archived: childArchived } = partitionTasksForArchive(childList, completedLookup, archivedAt);
-    task.children = childRemaining;
-    if (task.done) { archived.push(cloneTaskForArchive(task, { archivedAt, completedLookup, children: childArchived })) }
-    else { if (childArchived.length) archived.push(...childArchived); remaining.push(task) }
-  }
-  return { remaining, archived };
-}
-export function archiveCompletedTasks(now = Date.now()) {
-  const lookup = workdayState && workdayState.completed ? workdayState.completed : null;
-  const { remaining, archived } = partitionTasksForArchive(tasks, lookup, now);
-  if (!archived.length) return [];
-  tasks = remaining;
-  return archived;
-}
 
 // ── После сохранения задач ─────────────────────────────────────────────────
 export function afterTasksPersisted() { syncWorkdayTaskSnapshot(); updateWorkdayUI() }

@@ -656,7 +656,7 @@ test('automatic close moves overdue pending tasks to current astronomical day', 
   }
 });
 
-test('automatic close archives completed tasks and removes them from active list', async () => {
+test('automatic close keeps completed tasks in the active task table', async () => {
   const now = new Date('2026-03-18T03:10:00.000Z').getTime();
   const realNow = Date.now;
   Date.now = () => now;
@@ -667,29 +667,23 @@ test('automatic close archives completed tasks and removes them from active list
     const active = await tasks.create({ title: 'Active task', done: false });
 
     await workdays.upsert({
-      id: 'day-archive-auto',
+      id: 'day-completed-auto',
       startTs: now - 8 * 3600000,
       endTs: now - 60 * 1000,
       summaryTimeMs: 0,
       summaryDone: 0,
-      payload: { id: 'day-archive-auto', baseline: {}, completed: {}, manualClosedStats: { timeMs: 0, doneCount: 0 }, closedManually: false },
+      payload: { id: 'day-completed-auto', baseline: {}, completed: {}, manualClosedStats: { timeMs: 0, doneCount: 0 }, closedManually: false },
       closedAt: null
     });
 
     await workdays.getCurrent();
 
-    assert.equal(await tasks.getById(root.id), null);
-    assert.equal(await tasks.getById(child.id), null);
+    assert.ok(await tasks.getById(root.id));
+    assert.ok(await tasks.getById(child.id));
     assert.ok(await tasks.getById(active.id));
 
     const archived = await db.all('SELECT id, payload FROM archive ORDER BY archivedAt DESC');
-    assert.equal(archived.length, 1);
-    assert.equal(archived[0].id, root.id);
-    const payload = JSON.parse(archived[0].payload);
-    assert.equal(payload.id, root.id);
-    assert.equal(payload.children.length, 1);
-    assert.equal(payload.children[0].id, child.id);
-    assert.ok(payload.archivedAt);
+    assert.equal(archived.length, 0);
   } finally {
     Date.now = realNow;
   }

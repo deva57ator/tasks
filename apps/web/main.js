@@ -1,5 +1,5 @@
 import { STORAGE_MODES, TIME_PRESETS, DEFAULT_PROJECT_EMOJI, YEAR_PLAN_DEFAULT_TITLE } from './src/config.js';
-import { $, $$, uid, isDueToday, filterTree, buildMonthMatrix, formatDue, formatDuration, formatTimeHM, formatDateDMY } from './src/utils.js';
+import { $, $$, uid, isDueToday, filterTree, buildMonthMatrix, formatDuration, formatTimeHM, formatDateDMY } from './src/utils.js';
 import { openDuePicker, closeDuePicker, getDueEl, getDueAnchor, registerDuePickerCallbacks } from './src/due-picker.js';
 import { buildSprintData, renderSprint, clearSprintFiltersUI, sprintVisibleProjects, registerSprintCallbacks } from './src/sprint.js';
 import { formatYearPlanRangeLabel } from './src/yearplan/normalize.js';
@@ -28,7 +28,7 @@ import {
   updateYearPlanResizeFromEvent, finalizeYearPlanResize,
   updateYearPlanDraftFromEvent, finalizeYearPlanDraft,
 } from './src/yearplan/render.js';
-import { storageMode, setStorageMode, isServerMode, StorageModeStore, ApiKeyStore, Store, ThemeStore, ProjectsStore, WorkdayStore, persistLocalWorkdayState, ArchiveStore, registerStorageCallbacks } from './src/storage.js';
+import { storageMode, setStorageMode, isServerMode, StorageModeStore, ApiKeyStore, Store, ThemeStore, ProjectsStore, WorkdayStore, persistLocalWorkdayState, registerStorageCallbacks } from './src/storage.js';
 import {
   WorkdayUI, workdayState, setWorkdayState,
   buildWorkdayPayloadForServer, hydrateWorkdayStateFromServer,
@@ -45,13 +45,9 @@ import {
   totalTimeMs, hasActiveTimer, syncTimerLoop,
   stopTaskTimer, stopAllTimersExcept,
   addTask, markTaskDone,
-  archiveCompletedTasks, afterTasksPersisted, restoreActiveTimersFromStore,
+  afterTasksPersisted, restoreActiveTimersFromStore,
   registerTasksDataCallbacks,
 } from './src/tasks-data.js';
-import {
-  normalizeArchivedNode, normalizeArchiveList, normalizeArchivePayload,
-  renderArchive, registerArchiveCallbacks,
-} from './src/archive.js';
 import {
   projects, setProjects,
   normalizeProjectsList,
@@ -82,11 +78,13 @@ import {
 } from './src/time-dialog.js';
 import { initCalendar } from './src/calendar.js';
 
-let archivedTasks=ArchiveStore.read();
 let selectedTaskId=null;
 let pendingEditId=null;
 let currentView='all';
 let currentProjectId=null;
+const completedOpenByView=new Map();
+const recentlyCompletedByView=new Map();
+const completedDockHeightByView=new Map();
 
 
 
@@ -95,7 +93,6 @@ normalizeProjectsList(projects,{persist:!isServerMode()});
 
 
 {setTasks(Store.read());migrate(tasks);ensureTaskParentIds(tasks,null);}
-if(!Array.isArray(archivedTasks))archivedTasks=[];else archivedTasks=normalizeArchiveList(archivedTasks,{persist:!isServerMode()});
 
 
 const API_DEFAULT_LIMIT=200;
@@ -106,11 +103,11 @@ let isDataLoading=false;
 
 function updateStorageToggle({loading=false}={}){const btn=document.getElementById('storageToggle');if(!btn)return;btn.dataset.mode=isServerMode()?'server':'local';btn.classList.toggle('is-loading',loading);if(loading){btn.textContent='…';btn.setAttribute('aria-busy','true')}else{btn.textContent=isServerMode()?'API':'LS';btn.removeAttribute('aria-busy')}const label=isServerMode()?'Режим: серверный API':'Режим: localStorage';btn.title=label;btn.setAttribute('aria-label',loading?`${label}. Загрузка…`:label)}
 
-function finalizeDataLoad(){migrate(tasks);ensureTaskParentIds(tasks,null);normalizeProjectsList(projects,{persist:false});archivedTasks=normalizeArchiveList(archivedTasks,{persist:false});pendingServerCreates.clear();restoreActiveTimersFromStore();renderProjects();render();updateWorkdayUI();ensureWorkdayRefreshLoop()}
+function finalizeDataLoad(){migrate(tasks);ensureTaskParentIds(tasks,null);normalizeProjectsList(projects,{persist:false});pendingServerCreates.clear();restoreActiveTimersFromStore();renderProjects();render();updateWorkdayUI();ensureWorkdayRefreshLoop()}
 
-async function loadDataFromLocal(){setTasks(Store.read());migrate(tasks);ensureTaskParentIds(tasks,null);{const _p=ProjectsStore.read();setProjects(Array.isArray(_p)?_p:[]);}normalizeProjectsList(projects,{persist:!isServerMode()});archivedTasks=normalizeArchiveList(ArchiveStore.read(),{persist:!isServerMode()});{const _wd=WorkdayStore.read();setWorkdayState(!_wd||!_wd.id||typeof _wd.start!=='number'||typeof _wd.end!=='number'?null:_wd)};finalizeDataLoad();updateStorageToggle()}
+async function loadDataFromLocal(){setTasks(Store.read());migrate(tasks);ensureTaskParentIds(tasks,null);{const _p=ProjectsStore.read();setProjects(Array.isArray(_p)?_p:[]);}normalizeProjectsList(projects,{persist:!isServerMode()});{const _wd=WorkdayStore.read();setWorkdayState(!_wd||!_wd.id||typeof _wd.start!=='number'||typeof _wd.end!=='number'?null:_wd)};finalizeDataLoad();updateStorageToggle()}
 
-async function loadDataFromServer({silent=false}={}){if(isDataLoading)return;if(apiAuthLocked&&apiAuthReason){lockApiAuth(apiAuthReason,apiAuthMessage);return}const key=ApiKeyStore.read();if(!key){lockApiAuth('missing','Нужен API key для доступа к API');return}isDataLoading=true;updateStorageToggle({loading:true});try{const [tasksPayload,projectsPayload,archivePayload,workdayPayload]=await Promise.all([apiRequest('/tasks'),apiRequest(`/projects?limit=${API_DEFAULT_LIMIT}`),apiRequest(`/archive?limit=${API_DEFAULT_LIMIT}`),apiRequest('/workday/current')]);const serverTasks=Array.isArray(tasksPayload?.items)?tasksPayload.items:Array.isArray(tasksPayload)?tasksPayload:[];setTasks(normalizeTaskTree(serverTasks,null));setProjects(normalizeProjectsList(projectsPayload&&Array.isArray(projectsPayload.items)?projectsPayload.items:[],{persist:false}));const archiveItems=normalizeArchivePayload(archivePayload&&Array.isArray(archivePayload.items)?archivePayload.items:[]);archivedTasks=normalizeArchiveList(archiveItems,{persist:false});const serverWorkday=workdayPayload&&workdayPayload.workday?workdayPayload.workday:null;setWorkdayState(hydrateWorkdayStateFromServer(serverWorkday));persistLocalWorkdayState(workdayState);finalizeDataLoad();resetApiAuthLock()}catch(err){if(err&&['missing-key','unauthorized','auth-locked','network'].includes(err.code)){return}if(!silent)handleApiError(err,'Не удалось загрузить данные с сервера')}finally{isDataLoading=false;updateStorageToggle({loading:false})}}
+async function loadDataFromServer({silent=false}={}){if(isDataLoading)return;if(apiAuthLocked&&apiAuthReason){lockApiAuth(apiAuthReason,apiAuthMessage);return}const key=ApiKeyStore.read();if(!key){lockApiAuth('missing','Нужен API key для доступа к API');return}isDataLoading=true;updateStorageToggle({loading:true});try{const [tasksPayload,projectsPayload,workdayPayload]=await Promise.all([apiRequest('/tasks'),apiRequest(`/projects?limit=${API_DEFAULT_LIMIT}`),apiRequest('/workday/current')]);const serverTasks=Array.isArray(tasksPayload?.items)?tasksPayload.items:Array.isArray(tasksPayload)?tasksPayload:[];setTasks(normalizeTaskTree(serverTasks,null));setProjects(normalizeProjectsList(projectsPayload&&Array.isArray(projectsPayload.items)?projectsPayload.items:[],{persist:false}));const serverWorkday=workdayPayload&&workdayPayload.workday?workdayPayload.workday:null;setWorkdayState(hydrateWorkdayStateFromServer(serverWorkday));persistLocalWorkdayState(workdayState);finalizeDataLoad();resetApiAuthLock()}catch(err){if(err&&['missing-key','unauthorized','auth-locked','network'].includes(err.code)){return}if(!silent)handleApiError(err,'Не удалось загрузить данные с сервера')}finally{isDataLoading=false;updateStorageToggle({loading:false})}}
 
 async function refreshDataForCurrentMode(options={}){if(isServerMode())return loadDataFromServer(options);return loadDataFromLocal()}
 
@@ -122,13 +119,11 @@ function finalizeActiveTimersBeforeModeChange(mode=storageMode){const targetMode
 
 function handleServerTaskWrite(){afterTasksPersisted()}
 function handleServerProjectsWrite(data){if(Array.isArray(data)){setProjects(data)}}
-function handleServerArchiveWrite(data){if(Array.isArray(data))archivedTasks=normalizeArchiveList(data,{persist:false})}
 
 // Регистрируем коллбэки — все зависимости являются function declaration и доступны через hoisting.
 registerStorageCallbacks({
   onServerTaskWrite: handleServerTaskWrite,
   onServerProjectsWrite: handleServerProjectsWrite,
-  onServerArchiveWrite: handleServerArchiveWrite,
   onServerWorkdayWrite: handleServerWorkdayWrite,
   afterTasksPersisted: afterTasksPersisted
 });
@@ -193,7 +188,7 @@ window.addEventListener('mouseup',()=>{
 
 NotesPanel.overlay&&NotesPanel.overlay.addEventListener('click',()=>closeNotesPanel());
 NotesPanel.close&&NotesPanel.close.addEventListener('click',()=>closeNotesPanel());
-NotesPanel.input&&NotesPanel.input.addEventListener('input',()=>{if(NotesPanel.mode==='archive')return;if(!NotesPanel.taskId)return;const task=findTask(NotesPanel.taskId);if(!task)return;task.notes=NotesPanel.input.value;Store.write(tasks);if(isServerMode())queueTaskUpdate(task.id,{notes:task.notes},{debounce:true});updateNoteIndicator(task.id)});
+NotesPanel.input&&NotesPanel.input.addEventListener('input',()=>{if(!NotesPanel.taskId)return;const task=findTask(NotesPanel.taskId);if(!task)return;task.notes=NotesPanel.input.value;Store.write(tasks);if(isServerMode())queueTaskUpdate(task.id,{notes:task.notes},{debounce:true});updateNoteIndicator(task.id)});
 
 
 
@@ -211,7 +206,7 @@ registerYearPlanInteractionsCallbacks({
   setYearPlanHover,
   clearYearPlanHover,
   startYearPlanRename,
-  navigateToProject:(projectId)=>{currentView='project';currentProjectId=projectId;render()},
+  navigateToProject:(projectId)=>{switchView('project',projectId);render()},
 });
 registerYearPlanRenderCallbacks({
   render,
@@ -227,8 +222,6 @@ registerWorkdayCallbacks({
   toast,
   render,
   getTasks: () => tasks,
-  getArchivedTasks: () => archivedTasks,
-  setArchivedTasks: (arr) => { archivedTasks = arr; },
   findTask,
   walkTasks,
   totalTimeMs,
@@ -240,8 +233,6 @@ registerWorkdayCallbacks({
   formatDuration,
   formatTimeHM,
   formatDateDMY,
-  archiveCompletedTasks,
-  normalizeArchivedNode,
   refreshDataForCurrentMode,
   closeNotesPanel,
   getNotesTaskId: () => NotesPanel.taskId,
@@ -253,21 +244,11 @@ registerProjectsCallbacks({
   render,
   renderYearPlanIfVisible,
   getCurrentView: () => currentView,
-  setCurrentView: (v) => { currentView = v; },
+  setCurrentView: (v) => { switchView(v); },
   getCurrentProjectId: () => currentProjectId,
-  setCurrentProjectId: (id) => { currentProjectId = id; },
+  setCurrentProjectId: (id) => { if(id!==currentProjectId||currentView==='project')clearRecentlyCompletedForCurrentView(); currentProjectId = id; },
 });
 initProjects();
-registerArchiveCallbacks({
-  formatDuration,
-  formatTimeHM,
-  formatDateDMY,
-  formatDue,
-  openNotesPanel,
-  getArchivedTasks: () => archivedTasks,
-  getCurrentView: () => currentView,
-  render,
-});
 function requestYearPlanFocus(id){setYearPlanFocusId(id)}
 
 function setYearPlanSelected(id){
@@ -292,9 +273,155 @@ function clearYearPlanHover(id){
   setYearPlanHoverId(null);
   if(!yearPlanEditingId)renderYearPlanIfVisible();
 }
+function cloneTaskForView(task,children){
+  return {...task,children};
+}
+function splitCompletedTasks(list){
+  const active=[];
+  const completed=[];
+  if(!Array.isArray(list))return{active,completed};
+  for(const task of list){
+    if(!task||typeof task!=='object')continue;
+    const childSplit=splitCompletedTasks(task.children||[]);
+    if(task.done&&!shouldKeepCompletedVisible(task)){
+      completed.push(cloneTaskForView(task,childSplit.completed));
+      if(childSplit.active.length)active.push(...childSplit.active);
+    }else{
+      active.push(cloneTaskForView(task,childSplit.active));
+      if(childSplit.completed.length)completed.push(...childSplit.completed);
+    }
+  }
+  return{active,completed};
+}
+function countTaskNodes(list){
+  if(!Array.isArray(list))return 0;
+  let total=0;
+  for(const task of list){if(!task)continue;total+=1+countTaskNodes(task.children||[])}
+  return total;
+}
+function completedViewKey(){
+  return currentView==='project'?`project:${currentProjectId||''}`:currentView;
+}
+function clearRecentlyCompletedForCurrentView(){
+  recentlyCompletedByView.delete(completedViewKey());
+}
+function markRecentlyCompletedInCurrentView(id){
+  if(!id)return;
+  const key=completedViewKey();
+  const ids=recentlyCompletedByView.get(key)||new Set();
+  ids.add(id);
+  recentlyCompletedByView.set(key,ids);
+}
+function unmarkRecentlyCompleted(id){
+  if(!id)return;
+  for(const ids of recentlyCompletedByView.values()){ids.delete(id)}
+}
+function shouldKeepCompletedVisible(task){
+  if(!task||!task.done)return false;
+  return recentlyCompletedByView.get(completedViewKey())?.has(task.id)===true;
+}
+function switchView(nextView,nextProjectId=currentProjectId,{forceRefresh=false}={}){
+  const projectChanged=nextView==='project'&&nextProjectId!==currentProjectId;
+  if(forceRefresh||nextView!==currentView||projectChanged)clearRecentlyCompletedForCurrentView();
+  currentView=nextView;
+  if(nextView==='project')currentProjectId=nextProjectId;
+}
+function isCompletedOpen(){
+  return completedOpenByView.get(completedViewKey())===true;
+}
+function setCompletedOpen(open){
+  completedOpenByView.set(completedViewKey(),open===true);
+}
+function getCompletedDockHeight(){
+  return completedDockHeightByView.get(completedViewKey())||null;
+}
+function setCompletedDockHeight(height){
+  completedDockHeightByView.set(completedViewKey(),height);
+}
+function renderEmptyTask(container,text){
+  const empty=document.createElement('div');
+  empty.className='task';
+  empty.innerHTML=`<div></div><div class="task-title">${text}</div><div></div>`;
+  container.appendChild(empty);
+}
+function renderTaskTree(list,container){
+  const renderContext=buildRenderContext(list);
+  for(const t of list){renderTaskRow(t,0,container,renderContext)}
+}
+function renderTasksWithCompleted(sourceList,container,{emptyText='Здесь пусто.'}={}){
+  const split=splitCompletedTasks(sourceList);
+  const completedCount=countTaskNodes(split.completed);
+  if(split.active.length)renderTaskTree(split.active,container);
+  else renderEmptyTask(container,completedCount?'Нет активных задач.':emptyText);
+  return { completed: split.completed, completedCount };
+}
+function renderCompletedDock(completedList,completedCount){
+  const dock=document.getElementById('completedDock');
+  if(!dock)return;
+  dock.innerHTML='';
+  const shouldShow=currentView!=='sprint'&&currentView!=='year'&&completedCount>0;
+  dock.hidden=!shouldShow;
+  dock.setAttribute('aria-hidden',shouldShow?'false':'true');
+  dock.classList.toggle('is-open',shouldShow&&isCompletedOpen());
+  if(!shouldShow)return;
+  const btn=document.createElement('button');
+  btn.type='button';
+  btn.className='completed-toggle';
+  btn.setAttribute('aria-expanded',isCompletedOpen()?'true':'false');
+  const chevron=document.createElement('span');
+  chevron.className='completed-toggle-chevron';
+  chevron.setAttribute('aria-hidden','true');
+  chevron.textContent='›';
+  const label=document.createElement('span');
+  label.className='completed-toggle-label';
+  label.textContent='Завершённые';
+  const count=document.createElement('span');
+  count.className='completed-toggle-count';
+  count.textContent=String(completedCount);
+  btn.append(chevron,label,count);
+  dock.appendChild(btn);
+  btn.onclick=()=>{setCompletedOpen(!isCompletedOpen());render()};
+  if(completedCount){
+    if(isCompletedOpen()){
+      const resizer=document.createElement('div');
+      resizer.className='completed-resizer';
+      resizer.setAttribute('role','separator');
+      resizer.setAttribute('aria-orientation','horizontal');
+      resizer.setAttribute('aria-label','Изменить высоту выполненных задач');
+      const list=document.createElement('div');
+      list.className='completed-list';
+      renderTaskTree(completedList,list);
+      dock.append(resizer,list);
+      const savedHeight=getCompletedDockHeight();
+      if(savedHeight)dock.style.setProperty('--completed-dock-height',`${savedHeight}px`);
+      else dock.style.removeProperty('--completed-dock-height');
+      resizer.addEventListener('pointerdown',event=>{
+        event.preventDefault();
+        const startY=event.clientY;
+        const startHeight=dock.getBoundingClientRect().height;
+        const maxHeight=Math.min(420,Math.max(180,Math.round((window.innerHeight-32)*0.5)));
+        const minHeight=btn.getBoundingClientRect().height+88;
+        resizer.setPointerCapture?.(event.pointerId);
+        const onMove=moveEvent=>{
+          const next=Math.max(minHeight,Math.min(maxHeight,startHeight+(startY-moveEvent.clientY)));
+          dock.style.setProperty('--completed-dock-height',`${next}px`);
+          setCompletedDockHeight(next);
+        };
+        const onUp=()=>{
+          resizer.removeEventListener('pointermove',onMove);
+          resizer.removeEventListener('pointerup',onUp);
+          resizer.removeEventListener('pointercancel',onUp);
+        };
+        resizer.addEventListener('pointermove',onMove);
+        resizer.addEventListener('pointerup',onUp);
+        resizer.addEventListener('pointercancel',onUp);
+      });
+    }
+  }
+}
 function render(){
   $$('.nav-btn').forEach(b=>b.classList.toggle('is-active',b.dataset.view===currentView));
-  if(archiveBtn)archiveBtn.classList.toggle('is-active',currentView==='archive');
+  renderCompletedDock([],0);
   if(currentView!=='year'){
     closeYearPlanContextMenu();
     resetYearPlanEditingState();
@@ -309,16 +436,14 @@ function render(){
   }
   const composer=$('.composer');
   if(composer){
-    const hide=currentView==='sprint'||currentView==='archive'||currentView==='year';
+    const hide=currentView==='sprint'||currentView==='year';
     if(composer.hidden!==hide)composer.hidden=hide;
     composer.setAttribute('aria-hidden',hide?'true':'false');
     document.body.classList.toggle('view-sprint',currentView==='sprint');
   }
-  document.body.classList.toggle('view-archive',currentView==='archive');
   document.body.classList.toggle('view-year',currentView==='year');
   const wrap=$('#tasks');wrap.innerHTML='';
   wrap.classList.toggle('is-project-view',currentView==='project');
-  if(currentView==='archive'){document.getElementById('viewTitle').textContent='Архив';renderArchive(wrap);updateWorkdayUI();return}
   if(currentView==='sprint'){document.getElementById('viewTitle').textContent='Спринт';renderSprint(wrap);syncTimerLoop();return}
   if(currentView==='year'){document.getElementById('viewTitle').textContent='План года';renderYearPlan(wrap);updateWorkdayUI();return}
   if(currentView==='project'){
@@ -374,23 +499,15 @@ function render(){
           setYearPlanYear(item.year||yearPlanYear);
           setYearPlanSelectedId(item.id);
           requestYearPlanFocus(item.id);
-          currentView='year';
+          switchView('year');
           render();
         };
         yearList.appendChild(row);
       }
     }
     const dataList=filterTree(tasks,t=>t.project===currentProjectId);
-    const renderContext=buildRenderContext(dataList);
-    if(!dataList.length){
-      const empty=document.createElement('div');
-      empty.className='task';
-      empty.innerHTML='<div></div><div class="task-title">Нет задач этого проекта.</div><div></div>';
-      tasksWrap.appendChild(empty);
-      syncTimerLoop();
-      return;
-    }
-    for(const t of dataList){renderTaskRow(t,0,tasksWrap,renderContext)}
+    const completedState=renderTasksWithCompleted(dataList,tasksWrap,{emptyText:'Нет задач этого проекта.'});
+    renderCompletedDock(completedState.completed,completedState.completedCount);
     if(pendingEditId){
       const rowEl=document.querySelector(`[data-id="${pendingEditId}"]`);
       const taskObj=findTask(pendingEditId);
@@ -403,9 +520,8 @@ function render(){
   }
   document.getElementById('viewTitle').textContent=currentView==='today'?'Сегодня':'Все задачи';
   const dataList=currentView==='today'?filterTree(tasks,t=>isDueToday(t.due)):tasks;
-  const renderContext=buildRenderContext(dataList);
-  if(!dataList.length){const empty=document.createElement('div');empty.className='task';empty.innerHTML='<div></div><div class="task-title">Здесь пусто.</div><div></div>';wrap.appendChild(empty);syncTimerLoop();return}
-  for(const t of dataList){renderTaskRow(t,0,wrap,renderContext)}
+  const completedState=renderTasksWithCompleted(dataList,wrap,{emptyText:'Здесь пусто.'});
+  renderCompletedDock(completedState.completed,completedState.completedCount);
   if(pendingEditId){const rowEl=document.querySelector(`[data-id="${pendingEditId}"]`);const taskObj=findTask(pendingEditId);if(rowEl&&taskObj)startEdit(rowEl,taskObj);pendingEditId=null}
   if(hoveredParentTaskId)setInheritedHover(hoveredParentTaskId);
   syncTimerLoop();
@@ -418,7 +534,6 @@ const themeToggle=$('#themeToggle');
 function toggleTheme(){const dark=!document.body.classList.contains('theme-dark');applyTheme(dark?'dark':'light');ThemeStore.write(dark?'dark':'light')}
 if(themeToggle){themeToggle.addEventListener('click',toggleTheme)}
 
-const archiveBtn=document.getElementById('archiveBtn');
 const YEAR_PLAN_HOLIDAYS_2026=new Set([
   '2026-01-01',
   '2026-01-02',
@@ -505,8 +620,7 @@ if(taskInput){
     commitTaskInput();
   });
 }
-$$('.nav-btn').forEach(btn=>btn.onclick=()=>{const view=btn.dataset.view;if(view==='today'){currentView='today';render();return}if(view==='sprint'){currentView='sprint';render();return}if(view==='year'){currentView='year';render();return}currentView='all';render()});
-if(archiveBtn){archiveBtn.addEventListener('click',()=>{currentView='archive';render()})}
+$$('.nav-btn').forEach(btn=>btn.onclick=()=>{const view=btn.dataset.view;if(view==='today'){switchView('today',currentProjectId,{forceRefresh:currentView==='today'});render();return}if(view==='sprint'){switchView('sprint',currentProjectId,{forceRefresh:currentView==='sprint'});render();return}if(view==='year'){switchView('year',currentProjectId,{forceRefresh:currentView==='year'});render();return}switchView('all',currentProjectId,{forceRefresh:currentView==='all'});render()});
 
 const storageToggleBtn=document.getElementById('storageToggle');
 if(storageToggleBtn){storageToggleBtn.addEventListener('click',async()=>{if(isDataLoading)return;const switchingToServer=!isServerMode();updateStorageToggle({loading:true});try{if(!switchingToServer){await setStorageModeAndReload(STORAGE_MODES.LOCAL,{forceReload:true,skipToggleUpdate:true});toast('Режим: localStorage');return}await setStorageModeAndReload(STORAGE_MODES.SERVER,{forceReload:true,skipToggleUpdate:true});const key=ApiKeyStore.read();if(!key){lockApiAuth('missing','Нужен API key для доступа к API');return}toast('Режим: API')}catch(err){console.error(err);if(switchingToServer){lockApiAuth('network','API недоступен')}}finally{updateStorageToggle({loading:false})}})}
@@ -539,7 +653,6 @@ try{const weeks=buildMonthMatrix(2025,0,{minVisibleDays:2,maxWeeks:5});console.a
 registerTasksDataCallbacks({
   syncDisplays: updateTimerDisplays,
   toast: toast,
-  getArchivedTasks: ()=>archivedTasks,
   getTaskMinutes: getTaskMinutes,
   isTimeUpdatePending: isTimeUpdatePending,
   isTimeDialogOpen: isTimeDialogOpen,
@@ -549,6 +662,8 @@ registerTasksDataCallbacks({
   getProjects: ()=>projects,
   render: render,
   handleTaskCompletionEffects: handleTaskCompletionEffects,
+  markRecentlyCompleted: markRecentlyCompletedInCurrentView,
+  unmarkRecentlyCompleted: unmarkRecentlyCompleted,
   setSelectedTaskId: id=>{selectedTaskId=id},
   setPendingEditId: id=>{pendingEditId=id},
   getVisibleTaskIds: getVisibleTaskIds,
@@ -585,9 +700,9 @@ registerSprintCallbacks({
 registerKeyboardCallbacks({
   closeTimeDialog: closeTimeDialog,
   getCurrentView: ()=>currentView,
-  setCurrentView: v=>{currentView=v},
+  setCurrentView: v=>{switchView(v)},
   getCurrentProjectId: ()=>currentProjectId,
-  setCurrentProjectId: v=>{currentProjectId=v},
+  setCurrentProjectId: v=>{if(v!==currentProjectId||currentView==='project')clearRecentlyCompletedForCurrentView();currentProjectId=v},
   render: render,
   getSelectedTaskId: ()=>selectedTaskId,
   openTimeEditDialog: openTimeEditDialog,

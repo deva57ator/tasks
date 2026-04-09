@@ -1,14 +1,13 @@
 import { WORKDAY_REFRESH_INTERVAL } from './config.js';
-import { WorkdayStore, Store, ArchiveStore, normalizeWorkdayState, persistLocalWorkdayState, isServerMode } from './storage.js';
+import { WorkdayStore, Store, normalizeWorkdayState, persistLocalWorkdayState, isServerMode } from './storage.js';
 import { apiRequest, handleApiError, runServerAction, queueTaskUpdate } from './api.js';
 
 const _cb = {};
 export function registerWorkdayCallbacks(cbs) { Object.assign(_cb, cbs); }
-// Callbacks: toast, render, getTasks, getArchivedTasks, setArchivedTasks,
+// Callbacks: toast, render, getTasks,
 //            findTask, walkTasks, totalTimeMs, hasActiveTimer,
 //            stopAllTimersExcept, syncTimerLoop, getProjectMeta,
 //            isMotionReduced, formatDuration, formatTimeHM, formatDateDMY,
-//            archiveCompletedTasks, normalizeArchivedNode,
 //            refreshDataForCurrentMode, closeNotesPanel,
 //            getNotesTaskId, getSelectedTaskId, setSelectedTaskId
 
@@ -643,35 +642,10 @@ export function finishWorkdayAndArchive() {
   workdayState.closedAt = now; workdayState.closedManually = true; workdayState.locked = true;
   WorkdayStore.write(workdayState);
   if (_cb.hasActiveTimer?.()) { _cb.stopAllTimersExcept?.(null); Store.write(_cb.getTasks?.()); _cb.syncTimerLoop?.(); }
-  const archived = _cb.archiveCompletedTasks?.(now) || [];
-  let normalizedArchived = [];
-  if (archived.length) {
-    normalizedArchived = archived.map(item => _cb.normalizeArchivedNode?.(item)).filter(Boolean);
-    if (normalizedArchived.length) {
-      const newArchivedTasks = [...normalizedArchived, ..._cb.getArchivedTasks?.()];
-      _cb.setArchivedTasks?.(newArchivedTasks);
-      ArchiveStore.write(newArchivedTasks);
-      if (workdayState && workdayState.completed) {
-        let removedAny = false;
-        const stack = [...normalizedArchived];
-        while (stack.length) {
-          const entry = stack.pop();
-          if (entry && workdayState.completed[entry.id]) { delete workdayState.completed[entry.id]; removedAny = true; }
-          if (entry && Array.isArray(entry.children) && entry.children.length) { for (const child of entry.children) stack.push(child); }
-        }
-        if (removedAny) WorkdayStore.write(workdayState);
-      }
-    }
-  }
-  const notesTaskId = _cb.getNotesTaskId?.();
-  if (notesTaskId && !_cb.findTask?.(notesTaskId)) { _cb.closeNotesPanel?.(); }
-  const selectedTaskId = _cb.getSelectedTaskId?.();
-  if (selectedTaskId && !_cb.findTask?.(selectedTaskId)) { _cb.setSelectedTaskId?.(null); }
   Store.write(_cb.getTasks?.());
   if (isServerMode()) {
-    const completedIds = normalizedArchived.map(item => item.id);
     const workdayPayload = { id: workdayState.id, startTs: workdayState.start || null, endTs: workdayState.end || null, summaryTimeMs: aggregated.timeMs, summaryDone: aggregated.doneCount, payload: { ...workdayState }, closedAt: now };
-    runServerAction(() => apiRequest('/workday/close', { method: 'POST', body: { workday: workdayPayload, completedTaskIds: completedIds } }), {
+    runServerAction(() => apiRequest('/workday/close', { method: 'POST', body: { workday: workdayPayload } }), {
       onSuccess: () => _cb.refreshDataForCurrentMode?.({ silent: true }),
       onError: () => _cb.refreshDataForCurrentMode?.({ silent: true }),
     });
@@ -679,7 +653,7 @@ export function finishWorkdayAndArchive() {
   closeWorkdayDialog();
   _cb.render?.();
   updateWorkdayUI();
-  if (normalizedArchived.length) { _cb.toast?.('Выполненные задачи отправлены в архив'); } else { _cb.toast?.('Рабочий день закрыт'); }
+  _cb.toast?.('Рабочий день закрыт');
 }
 
 let workdayRefreshTimer = null;

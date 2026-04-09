@@ -1,7 +1,7 @@
 import { MAX_TASK_DEPTH } from './config.js';
 import { $, $$, getTaskRowById, isDueToday, isDuePast, formatDue } from './utils.js';
 import {
-  tasks, findTask, findArchivedTask,
+  tasks, findTask,
   detachTaskFromTree, containsTask, getSubtreeDepth,
   totalTimeMs, toggleTask, toggleTaskTimer, handleDelete, renameTask,
   removeActiveTimerState,
@@ -359,26 +359,23 @@ export function getTimePresetMenuEl() { return TimePresetMenu.el; }
 export function getTimePresetMenuAnchor() { return TimePresetMenu.anchor; }
 
 // ── Заметки ────────────────────────────────────────────────────────────────
-export function openNotesPanel(taskId, { source = 'tasks' } = {}) {
+export function openNotesPanel(taskId) {
   if (!NotesPanel.panel || !NotesPanel.overlay || !NotesPanel.input) return;
   closeContextMenu();
-  const isArchive = source === 'archive';
-  const task = isArchive ? findArchivedTask(taskId) : findTask(taskId);
+  const task = findTask(taskId);
   if (!task) return;
   NotesPanel.taskId = taskId;
-  NotesPanel.mode = isArchive ? 'archive' : 'tasks';
+  NotesPanel.mode = 'tasks';
   if (NotesPanel.title) NotesPanel.title.textContent = task.title || '';
   NotesPanel.input.value = task.notes || '';
-  NotesPanel.input.readOnly = isArchive;
-  NotesPanel.input.classList.toggle('is-readonly', isArchive);
-  if (isArchive) { NotesPanel.input.setAttribute('aria-readonly', 'true'); } else { NotesPanel.input.removeAttribute('aria-readonly'); }
+  NotesPanel.input.readOnly = false;
+  NotesPanel.input.classList.remove('is-readonly');
+  NotesPanel.input.removeAttribute('aria-readonly');
   NotesPanel.overlay.classList.add('is-visible'); NotesPanel.overlay.setAttribute('aria-hidden', 'false');
   NotesPanel.panel.classList.add('is-open'); NotesPanel.panel.setAttribute('aria-hidden', 'false');
   document.body.classList.add('notes-open');
-  if (!isArchive) {
-    setTimeout(() => { try { NotesPanel.input.focus({ preventScroll: true }); } catch { NotesPanel.input.focus(); } }, 60);
-    updateNoteIndicator(taskId);
-  }
+  setTimeout(() => { try { NotesPanel.input.focus({ preventScroll: true }); } catch { NotesPanel.input.focus(); } }, 60);
+  updateNoteIndicator(taskId);
 }
 
 export function closeNotesPanel() {

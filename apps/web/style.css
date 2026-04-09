@@ -15,11 +15,6 @@ body.sidebar-resizing{cursor:ew-resize}
 .nav-btn{appearance:none;border:none;background:transparent;color:var(--text);padding:8px 10px;text-align:left;cursor:pointer;border-radius:10px;transition:background .12s ease,color .12s ease,transform .08s ease;font-size:16px;font-weight:700}
 .nav-btn:hover,.nav-btn.is-active{background:var(--hover-strong)}
 .nav-btn:active{transform:translateY(1px)}
-.archive-access{margin:4px 6px 0}
-.archive-btn{appearance:none;border:1px solid var(--hint);background:transparent;color:var(--text);padding:8px 12px;width:100%;border-radius:12px;font-weight:700;font-size:15px;cursor:pointer;transition:background .12s ease,border-color .12s ease,color .12s ease,transform .12s ease;text-align:left}
-.archive-btn:hover{background:var(--hover);border-color:var(--muted)}
-.archive-btn:active{transform:translateY(1px)}
-.archive-btn.is-active{background:var(--hover-strong);border-color:var(--text)}
 .calendar{margin-top:6px;margin-bottom:0;border-radius:12px;overflow:hidden;width:100%;min-width:0;flex:0 0 auto}
 .cal-header{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:6px;padding:6px 4px 8px}
 .cal-title{font-size:13px;font-weight:700;justify-self:center}
@@ -132,7 +127,7 @@ body.theme-dark .year-plan-status.is-error{color:#ff8c8c}
 .year-plan-color-swatch.is-active{border-color:var(--text);box-shadow:0 0 0 2px var(--hover-strong)}
 .tasks.is-project-view{overflow:visible}
 .project-layout{display:flex;gap:16px;align-items:stretch;width:100%;min-width:0}
-.project-tasks{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0;overflow:auto}
+.project-tasks{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0;overflow-y:auto;overflow-x:hidden}
 .year-side{flex:0 0 20%;min-width:200px;max-width:320px;background:var(--surface);border:1px solid var(--toast-border);border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:10px;height:fit-content}
 .year-side-header{font-weight:800;font-size:12px;letter-spacing:.3px;text-transform:uppercase;color:var(--muted)}
 .year-side-list{display:flex;flex-direction:column;gap:8px}
@@ -158,7 +153,7 @@ body.theme-dark .year-side-status.is-error{color:#ff8c8c}
 .year-plan-grid::-webkit-scrollbar{height:8px}
 .year-plan-grid::-webkit-scrollbar-thumb{background:var(--hint);border-radius:999px}
 .year-plan-grid::-webkit-scrollbar-track{background:transparent}
-.main{display:grid;grid-template-rows:auto auto 1fr;gap:10px;padding:8px}
+.main{display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;gap:10px;padding:8px;height:calc(100vh - 32px);box-sizing:border-box;min-width:0}
 .header{display:flex;flex-direction:column;gap:12px}
 .header-top{display:flex;align-items:center;gap:14px;width:100%;flex-wrap:wrap}
 .header-leading{display:flex;flex-direction:column;gap:6px;min-width:180px;flex:0 1 auto}
@@ -312,7 +307,7 @@ body.view-sprint .composer,body.view-year .composer{display:none}
 .input:focus{border-bottom-color:#9a9ea5}
 .add-btn{border:none;background:transparent;color:var(--text);cursor:pointer;padding:8px 10px;border-radius:10px}
 .add-btn:hover{background:var(--hover)}
-.tasks{display:flex;flex-direction:column;gap:6px;overflow:auto}
+.tasks{display:flex;flex-direction:column;gap:6px;overflow-y:auto;overflow-x:hidden;min-height:0;min-width:0}
 .archive-container{display:flex;flex-direction:column;gap:6px}
 .archive-empty{padding:20px 12px;border-radius:var(--radius);background:var(--surface);border:1px dashed var(--hint);color:var(--muted);text-align:center}
 .archive-task{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:flex-start;padding:10px 12px;border-radius:var(--radius);background:var(--surface);border:1px solid var(--toast-border)}
@@ -333,7 +328,7 @@ body.view-sprint .composer,body.view-year .composer{display:none}
 .archive-delete:active,.delete-btn:active{transform:scale(.92)}
 .archive-delete:focus-visible,.delete-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .archive-time{font-size:12px;color:var(--muted)}
-.task{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;padding:8px 10px;border-radius:var(--radius);transition:background .16s ease,box-shadow .2s ease,transform .18s ease;border:1px solid transparent;background:var(--surface);position:relative;overflow:hidden}
+.task{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:8px 10px;border-radius:var(--radius);transition:background .16s ease,box-shadow .2s ease,transform .18s ease;border:1px solid transparent;background:var(--surface);position:relative;overflow:hidden;box-sizing:border-box;max-width:100%}
 .task[draggable="true"]{cursor:grab}
 .task.is-dragging{opacity:.6;cursor:grabbing}
 .task.is-drop-target{background:var(--hover-strong);box-shadow:0 0 0 2px var(--hint) inset}
@@ -417,6 +412,21 @@ body.theme-dark .note-btn:focus-visible,body.theme-dark .timer-btn:focus-visible
 .task-checkbox:hover{background:var(--hover);box-shadow:0 0 0 4px rgba(0,0,0,.04) inset}
 .task-checkbox.is-bouncing{animation:taskCheckboxBounce .16s ease-out}
 .task-checkbox:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.completed-dock{--completed-dock-height:220px;display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--toast-border);padding-top:6px;min-height:0;box-sizing:border-box}
+.completed-dock[hidden]{display:none}
+.completed-dock.is-open{height:var(--completed-dock-height);max-height:min(50vh,420px);min-height:132px}
+.completed-toggle{appearance:none;border:1px solid var(--toast-border);background:var(--surface);color:var(--muted);border-radius:8px;padding:8px 10px;display:flex;align-items:center;gap:8px;width:100%;cursor:pointer;font-size:13px;font-weight:800;text-align:left;transition:background .12s ease,color .12s ease,border-color .12s ease;flex:0 0 auto}
+.completed-toggle:hover{background:var(--hover);color:var(--text);border-color:var(--hint)}
+.completed-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.completed-toggle-chevron{font-size:18px;line-height:1;transition:transform .12s ease}
+.completed-toggle[aria-expanded="true"] .completed-toggle-chevron{transform:rotate(90deg)}
+.completed-toggle-label{flex:1}
+.completed-toggle-count{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:22px;border-radius:8px;background:var(--hover);color:var(--muted);font-variant-numeric:tabular-nums;font-size:12px}
+.completed-resizer{height:8px;margin:-2px 0;cursor:ns-resize;position:relative;flex:0 0 auto;touch-action:none}
+.completed-resizer::before{content:'';position:absolute;left:50%;top:50%;width:46px;height:3px;border-radius:999px;background:var(--hint);transform:translate(-50%,-50%);opacity:.65}
+.completed-resizer:hover::before{background:var(--muted);opacity:1}
+.completed-list{display:flex;flex-direction:column;gap:6px;overflow-y:auto;overflow-x:hidden;min-height:0;padding-right:2px}
+.completed-list .task{opacity:.76}
 
 @keyframes taskCheckboxBounce{0%{transform:scale(1)}45%{transform:scale(1.14)}100%{transform:scale(1)}}
 
@@ -501,7 +511,7 @@ body.theme-dark .proj-item{background:rgba(23,27,34,.85);box-shadow:0 1px 0 rgba
 @keyframes timerButtonPulse{0%,100%{background-color:var(--timer-glow);box-shadow:0 4px 12px var(--timer-shadow)}50%{background-color:var(--timer-glow-strong);box-shadow:0 10px 24px var(--timer-shadow)}}
 @keyframes timeSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.note-btn,.timer-btn,.due-btn{transition:opacity .12s ease,background-color .18s ease,color .18s ease;transform:none!important}.note-btn:hover,.timer-btn:hover,.due-btn:hover,.note-btn:active,.timer-btn:active,.due-btn:active{transform:none}.timer-btn[data-active="true"],.task.is-timer-active{animation:none}}
-@media (max-width:860px){body{grid-template-columns:1fr}.sidebar{order:2;position:static;height:auto;overflow:visible;width:auto;min-width:0;max-width:none}.main{order:1}}
+@media (max-width:860px){body{grid-template-columns:1fr}.sidebar{order:2;position:static;height:auto;overflow:visible;width:auto;min-width:0;max-width:none}.main{order:1;height:auto;min-height:calc(100vh - 32px)}.completed-dock.is-open{max-height:min(50vh,360px)}}
 
 button,input,select,textarea{font:inherit}
 

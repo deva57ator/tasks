@@ -1,8 +1,5 @@
 const express = require('express');
 const workdays = require('../services/workdays');
-const tasks = require('../services/tasks');
-const archive = require('../services/archive');
-const { nowIso } = require('../lib/time');
 
 const router = express.Router();
 
@@ -50,7 +47,7 @@ router.post('/close', async (req, res, next) => {
     }
     const current = await workdays.getById(payload.workday.id);
     if (current && current.closedAt !== null) {
-      return res.json({ workday: current, archived: [] });
+      return res.json({ workday: current });
     }
     const closedAtSource = payload.workday.closedAt;
     const closedAt = Number.isFinite(Number(closedAtSource)) ? Number(closedAtSource) : Date.now();
@@ -58,25 +55,8 @@ router.post('/close', async (req, res, next) => {
       ...payload.workday,
       closedAt: null
     });
-    const archivedIds = Array.isArray(payload.completedTaskIds) ? payload.completedTaskIds : [];
-    const archivedAt = nowIso();
-    const archivedPayloads = [];
-    const applyArchivedAt = (node) => ({
-      ...node,
-      archivedAt,
-      children: Array.isArray(node.children) ? node.children.map(applyArchivedAt) : []
-    });
-
-    if (archivedIds.length) {
-      const snapshot = await tasks.archiveAndRemove(archivedIds);
-      for (const item of snapshot.payloads) {
-        const normalized = applyArchivedAt(item);
-        archivedPayloads.push(normalized);
-        await archive.insert({ id: normalized.id, payload: normalized, archivedAt });
-      }
-    }
     const workdayRecord = await workdays.closeById(payload.workday.id, closedAt);
-    res.json({ workday: workdayRecord, archived: archivedPayloads });
+    res.json({ workday: workdayRecord });
   } catch (err) {
     next(err);
   }
