@@ -64,6 +64,12 @@ export const ThemeStore = {
   write(v) { localStorage.setItem(this.key, v); }
 };
 
+export const ThemePaletteStore = {
+  key: 'mini-task-tracker:theme-palette',
+  read() { return localStorage.getItem(this.key) || ''; },
+  write(v) { localStorage.setItem(this.key, v); }
+};
+
 // ---------------------------------------------------------------------------
 // Проекты
 // ---------------------------------------------------------------------------

@@ -28,7 +28,7 @@ import {
   updateYearPlanResizeFromEvent, finalizeYearPlanResize,
   updateYearPlanDraftFromEvent, finalizeYearPlanDraft,
 } from './src/yearplan/render.js';
-import { storageMode, setStorageMode, isServerMode, StorageModeStore, ApiKeyStore, Store, ThemeStore, ProjectsStore, WorkdayStore, persistLocalWorkdayState, registerStorageCallbacks } from './src/storage.js';
+import { storageMode, setStorageMode, isServerMode, StorageModeStore, ApiKeyStore, Store, ThemeStore, ThemePaletteStore, ProjectsStore, WorkdayStore, persistLocalWorkdayState, registerStorageCallbacks } from './src/storage.js';
 import {
   WorkdayUI, workdayState, setWorkdayState,
   buildWorkdayPayloadForServer, hydrateWorkdayStateFromServer,
@@ -529,10 +529,74 @@ function render(){
 }
 
 
-function applyTheme(mode){const dark=mode==='dark';document.body.classList.toggle('theme-dark',dark);document.body.setAttribute('data-theme',dark?'dark':'light');const btn=$('#themeToggle');if(btn){const label=dark?'Переключить на светлую тему':'Переключить на тёмную тему';btn.dataset.mode=dark?'dark':'light';btn.setAttribute('aria-pressed',String(dark));btn.setAttribute('aria-label',label);btn.title=label}}
+const THEME_PALETTES={
+  light:[
+    {id:'base',name:'Ясный день',swatches:['#f6f7f9','#ffffff','#3a82f6']},
+    {id:'garden',name:'Сад после дождя',swatches:['#f4f8f3','#ffffff','#2f8f69']},
+    {id:'berry',name:'Ягодная бумага',swatches:['#f8f3f6','#ffffff','#b64a75']},
+  ],
+  dark:[
+    {id:'base',name:'Глубокий фокус',swatches:['#0f1115','#171b22','#7da6ff']},
+    {id:'graphite',name:'Зелёный графит',swatches:['#101312','#171d1a','#67c39b']},
+    {id:'ember',name:'Тёплая ночь',swatches:['#151111','#1e1715','#e29b69']},
+  ],
+};
+let themePalettePrefs=readThemePalettePrefs();
+
+function readThemePalettePrefs(){
+  const raw=ThemePaletteStore.read();
+  if(!raw)return {light:'base',dark:'base'};
+  try{
+    const parsed=JSON.parse(raw);
+    if(parsed&&typeof parsed==='object')return {light:parsed.light||'base',dark:parsed.dark||'base'};
+  }catch{}
+  return {light:raw||'base',dark:'base'};
+}
+function writeThemePalettePrefs(){ThemePaletteStore.write(JSON.stringify(themePalettePrefs))}
+function getThemePalette(mode,palette){
+  const list=THEME_PALETTES[mode]||THEME_PALETTES.light;
+  return list.some(item=>item.id===palette)?palette:list[0].id;
+}
+function renderThemeSettings(mode,palette){
+  $$('[data-theme-mode]').forEach(btn=>{
+    const active=btn.dataset.themeMode===mode;
+    btn.classList.toggle('is-active',active);
+    btn.setAttribute('aria-pressed',String(active));
+  });
+  const list=THEME_PALETTES[mode]||THEME_PALETTES.light;
+  $$('[data-palette-choice]').forEach((btn,index)=>{
+    const item=list[index];
+    if(!item){btn.hidden=true;return}
+    btn.hidden=false;
+    btn.dataset.paletteChoice=item.id;
+    btn.classList.toggle('is-active',item.id===palette);
+    btn.setAttribute('aria-pressed',String(item.id===palette));
+    const name=btn.querySelector('.settings-palette-name');
+    if(name)name.textContent=item.name;
+    btn.setAttribute('aria-label',item.name);
+    btn.querySelectorAll('.settings-palette-swatch span').forEach((swatch,swatchIndex)=>{
+      swatch.style.background=item.swatches[swatchIndex]||item.swatches[0];
+    });
+  });
+}
+function applyTheme(mode,requestedPalette){
+  const nextMode=mode==='dark'?'dark':'light';
+  const palette=getThemePalette(nextMode,requestedPalette||themePalettePrefs[nextMode]);
+  themePalettePrefs[nextMode]=palette;
+  const dark=nextMode==='dark';
+  document.body.classList.toggle('theme-dark',dark);
+  document.body.setAttribute('data-theme',nextMode);
+  document.body.setAttribute('data-palette',palette);
+  const btn=$('#themeToggle');
+  if(btn){const label=dark?'Переключить на светлую тему':'Переключить на тёмную тему';btn.dataset.mode=nextMode;btn.setAttribute('aria-pressed',String(dark));btn.setAttribute('aria-label',label);btn.title=label}
+  renderThemeSettings(nextMode,palette);
+}
 const themeToggle=$('#themeToggle');
-function toggleTheme(){const dark=!document.body.classList.contains('theme-dark');applyTheme(dark?'dark':'light');ThemeStore.write(dark?'dark':'light')}
+function setTheme(mode,palette){applyTheme(mode,palette);ThemeStore.write(mode==='dark'?'dark':'light');writeThemePalettePrefs()}
+function toggleTheme(){const dark=!document.body.classList.contains('theme-dark');const mode=dark?'dark':'light';setTheme(mode,themePalettePrefs[mode])}
 if(themeToggle){themeToggle.addEventListener('click',toggleTheme)}
+$$('[data-theme-mode]').forEach(btn=>{btn.addEventListener('click',()=>{const mode=btn.dataset.themeMode==='dark'?'dark':'light';setTheme(mode,themePalettePrefs[mode])})})
+$$('[data-palette-choice]').forEach(btn=>{btn.addEventListener('click',()=>{const mode=document.body.dataset.theme==='dark'?'dark':'light';setTheme(mode,btn.dataset.paletteChoice||'base')})})
 
 const YEAR_PLAN_HOLIDAYS_2026=new Set([
   '2026-01-01',
