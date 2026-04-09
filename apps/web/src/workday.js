@@ -544,7 +544,7 @@ export function updateWorkdayDialogContent() {
   const manuallyClosed = hasState && workdayState.closedManually;
   const activeNow = hasState && info.state === 'active' && workdayState.id === info.id && !manuallyClosed;
   const completed = activeNow && hasState ? collectWorkdayCompletedTasks(workdayState) : [];
-  if (WorkdayUI.title) { WorkdayUI.title.textContent = activeNow ? 'Промежуточные итоги' : 'Итоги рабочего дня'; }
+  if (WorkdayUI.title) { WorkdayUI.title.textContent = 'Итоги дня'; }
   if (WorkdayUI.completedSection) WorkdayUI.completedSection.style.display = activeNow ? 'block' : 'none';
   if (WorkdayUI.completedList) {
     WorkdayUI.completedList.innerHTML = '';
@@ -625,7 +625,7 @@ export function postponePendingTasks() {
     Store.write(_cb.getTasks?.());
     if (updatedIds.length) { updatedIds.forEach(id => queueTaskUpdate(id, { due: nextIso })); }
     _cb.render?.();
-    _cb.toast?.('Дедлайны перенесены на следующий день');
+    _cb.toast?.('Перенесено на завтра');
     updateWorkdayDialogContent();
   }
 }

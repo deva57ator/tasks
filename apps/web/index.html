@@ -75,12 +75,12 @@
         <div class="workday-bar" id="workdayBar" aria-live="polite">
           <div class="workday-stats">
             <div class="workday-stat">
-              <span class="workday-stat-label">Сделано:</span>
+              <span class="workday-stat-label">Готово</span>
               <span class="workday-stat-value" id="workdayDone">0</span>
             </div>
             <div class="workday-stat workday-stat--time">
               <span class="workday-stat-label">
-                Время сегодня:
+                Время
               </span>
               <span class="workday-stat-value" id="workdayTime">0 мин</span>
               <span class="workday-rec" id="workdayRec" aria-hidden="true">
@@ -88,7 +88,7 @@
               </span>
             </div>
           </div>
-          <button type="button" class="workday-finish" id="workdayFinishBtn">Завершить день</button>
+          <button type="button" class="workday-finish" id="workdayFinishBtn">Закрыть день</button>
         </div>
         <div class="header-actions">
           <button
@@ -236,7 +236,7 @@
     <div class="time-dialog" role="dialog" aria-modal="true" aria-labelledby="timeDialogTitle">
       <button type="button" class="time-dialog-close" id="timeDialogClose" aria-label="Закрыть окно">×</button>
       <div class="time-dialog-header">
-        <div class="time-dialog-title" id="timeDialogTitle">Затраченное время</div>
+        <div class="time-dialog-title" id="timeDialogTitle">Время</div>
         <div class="time-dialog-subtitle" id="timeDialogSubtitle"></div>
       </div>
       <form class="time-dialog-form" id="timeDialogForm">
@@ -277,32 +277,32 @@
     <div class="workday-dialog" role="dialog" aria-modal="true" aria-labelledby="workdayDialogTitle">
       <button type="button" class="workday-dialog-close" id="workdayDialogClose" aria-label="Закрыть окно">×</button>
       <div class="workday-dialog-header">
-        <div class="workday-dialog-title" id="workdayDialogTitle">Итоги рабочего дня</div>
+        <div class="workday-dialog-title" id="workdayDialogTitle">Итоги дня</div>
         <div class="workday-dialog-range" id="workdayDialogRange"></div>
       </div>
       <div class="workday-summary">
         <div class="workday-summary-item">
-          <div class="workday-summary-label">Затраченное время</div>
+          <div class="workday-summary-label">Время</div>
           <div class="workday-summary-value" id="workdaySummaryTime">0 мин</div>
         </div>
         <div class="workday-summary-item">
-          <div class="workday-summary-label">Закрыто задач</div>
+          <div class="workday-summary-label">Закрыто</div>
           <div class="workday-summary-value" id="workdaySummaryDone">0</div>
         </div>
       </div>
       <div class="workday-dialog-section" id="workdayCompletedSection">
-        <div class="workday-dialog-subtitle">Закрытые задачи на сегодня</div>
-        <div class="workday-dialog-empty" id="workdayDialogCompletedEmpty">Сегодня ещё нет закрытых задач.</div>
+        <div class="workday-dialog-subtitle">Закрыто сегодня</div>
+        <div class="workday-dialog-empty" id="workdayDialogCompletedEmpty">Пока ничего</div>
         <ul class="workday-dialog-list" id="workdayCompletedList" aria-live="polite"></ul>
       </div>
       <div class="workday-dialog-section">
-        <div class="workday-dialog-subtitle">Незакрытые задачи на сегодня</div>
-        <div class="workday-dialog-empty" id="workdayDialogEmpty">Все задачи закрыты — отличный результат!</div>
+        <div class="workday-dialog-subtitle">Осталось</div>
+        <div class="workday-dialog-empty" id="workdayDialogEmpty">Всё закрыто</div>
         <ul class="workday-dialog-list" id="workdayPendingList" aria-live="polite"></ul>
       </div>
       <div class="workday-dialog-actions">
-        <button type="button" class="workday-dialog-action" id="workdayPostponeBtn">Перенести на следующий день</button>
-        <button type="button" class="workday-dialog-secondary" id="workdayDialogDone">На сегодня всё!</button>
+        <button type="button" class="workday-dialog-action" id="workdayPostponeBtn">На завтра</button>
+        <button type="button" class="workday-dialog-secondary" id="workdayDialogDone">Закрыть день</button>
       </div>
     </div>
   </div>
