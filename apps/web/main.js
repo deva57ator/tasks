@@ -55,7 +55,7 @@ import {
   renderProjects,
   initProjects, registerProjectsCallbacks,
 } from './src/projects.js';
-import { apiAuthLocked, apiAuthMessage, apiAuthReason, resetApiAuthLock, lockApiAuth, apiRequest, handleApiError, queueTaskUpdate, flushPendingTaskUpdates, handleServerWorkdayWrite, flushPendingWorkdaySync, ApiSettingsUI, apiSettingsBlocking, openApiSettings, closeApiSettings, toggleApiKeyVisibility, saveApiKey, clearApiKey, switchToLocalMode, registerApiCallbacks } from './src/api.js';
+import { apiAuthLocked, apiAuthMessage, apiAuthReason, resetApiAuthLock, lockApiAuth, apiRequest, handleApiError, queueTaskUpdate, flushPendingTaskUpdates, handleServerWorkdayWrite, flushPendingWorkdaySync, ApiSettingsUI, apiSettingsBlocking, openApiSettings, closeApiSettings, toggleApiKeyVisibility, saveApiKey, clearApiKey, switchToLocalMode, setActiveSettingsSection, registerApiCallbacks } from './src/api.js';
 import {
   Ctx, NotesPanel,
   registerTasksRenderCallbacks,
@@ -628,6 +628,7 @@ if(storageToggleBtn){storageToggleBtn.addEventListener('click',async()=>{if(isDa
 if(ApiSettingsUI.openBtn){ApiSettingsUI.openBtn.addEventListener('click',()=>{const needsKey=isServerMode()&&!ApiKeyStore.read();const shouldBlock=needsKey||apiAuthLocked;const reason=apiAuthReason||(needsKey?'missing':null);openApiSettings({blocking:shouldBlock,reason,message:apiAuthMessage||null})})}
 if(ApiSettingsUI.closeBtn){ApiSettingsUI.closeBtn.addEventListener('click',()=>closeApiSettings())}
 if(ApiSettingsUI.overlay){ApiSettingsUI.overlay.addEventListener('click',e=>{if(e.target===ApiSettingsUI.overlay&&!apiSettingsBlocking)closeApiSettings()})}
+ApiSettingsUI.navItems.forEach(item=>{item.addEventListener('click',()=>setActiveSettingsSection(item.dataset.settingsSection||'server'))})
 if(ApiSettingsUI.toggle){ApiSettingsUI.toggle.addEventListener('click',toggleApiKeyVisibility)}
 if(ApiSettingsUI.form){ApiSettingsUI.form.addEventListener('submit',saveApiKey)}
 if(ApiSettingsUI.clearBtn){ApiSettingsUI.clearBtn.addEventListener('click',clearApiKey)}

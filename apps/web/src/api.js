@@ -308,10 +308,26 @@ export const ApiSettingsUI = {
   saveBtn: document.getElementById('apiSettingsSave'),
   clearBtn: document.getElementById('apiKeyClear'),
   toLocalBtn: document.getElementById('apiKeyToLocal'),
-  openBtn: document.getElementById('apiSettingsBtn')
+  openBtn: document.getElementById('apiSettingsBtn'),
+  navItems: Array.from(document.querySelectorAll('[data-settings-section]')),
+  sections: Array.from(document.querySelectorAll('[data-settings-panel]'))
 };
 
 function apiEnvDescription() { return `Окружение: ${API_ENV_LABEL}`; }
+
+export function setActiveSettingsSection(sectionId = 'server') {
+  const hasSection = ApiSettingsUI.sections.some(section => section.dataset.settingsPanel === sectionId);
+  const nextSectionId = hasSection ? sectionId : 'server';
+  ApiSettingsUI.navItems.forEach(item => {
+    const isActive = item.dataset.settingsSection === nextSectionId;
+    item.classList.toggle('is-active', isActive);
+    if (isActive) item.setAttribute('aria-current', 'page');
+    else item.removeAttribute('aria-current');
+  });
+  ApiSettingsUI.sections.forEach(section => {
+    section.classList.toggle('is-active', section.dataset.settingsPanel === nextSectionId);
+  });
+}
 
 export function setApiSettingsError(message) {
   if (ApiSettingsUI.error) ApiSettingsUI.error.textContent = message || '';
@@ -334,6 +350,7 @@ function syncApiSettingsStaticText() {
 
 export function openApiSettings({ blocking = false, reason = null, message = null, resetInput = false } = {}) {
   syncApiSettingsStaticText();
+  setActiveSettingsSection('server');
   apiSettingsBlocking = !!blocking;
   const overlay = ApiSettingsUI.overlay;
   if (!overlay) return;

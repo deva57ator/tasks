@@ -93,8 +93,8 @@
             type="button"
             class="icon-btn settings-btn"
             id="apiSettingsBtn"
-            aria-label="Настройки API key"
-            title="Настройки API key"
+            aria-label="Настройки приложения"
+            title="Настройки приложения"
           ></button>
           <button
             type="button"
@@ -127,40 +127,91 @@
   <div class="api-settings-overlay" id="apiSettingsOverlay" aria-hidden="true">
     <div class="api-settings-dialog" id="apiSettingsDialog" role="dialog" aria-modal="true" aria-labelledby="apiSettingsTitle">
       <button type="button" class="api-settings-close" id="apiSettingsClose" aria-label="Закрыть окно">×</button>
-      <div class="api-settings-header">
-        <div class="api-settings-title" id="apiSettingsTitle">API key</div>
-        <div class="api-settings-description" id="apiSettingsEnv"></div>
-        <div class="api-settings-hint" id="apiSettingsHint"></div>
-        <div class="api-settings-message" id="apiSettingsMessage"></div>
+      <div class="api-settings-sidebar" aria-label="Разделы настроек">
+        <div class="api-settings-sidebar-header">
+          <div class="api-settings-kicker">Настройки</div>
+          <div class="api-settings-title" id="apiSettingsTitle">Приложение</div>
+        </div>
+        <nav class="api-settings-nav">
+          <button type="button" class="api-settings-nav-item is-active" data-settings-section="server" aria-current="page">
+            <span class="api-settings-nav-icon" aria-hidden="true">↔</span>
+            <span>
+              <span class="api-settings-nav-label">Сервер</span>
+              <span class="api-settings-nav-description">API key и режим</span>
+            </span>
+          </button>
+          <button type="button" class="api-settings-nav-item" data-settings-section="display">
+            <span class="api-settings-nav-icon" aria-hidden="true">◐</span>
+            <span>
+              <span class="api-settings-nav-label">Отображение</span>
+              <span class="api-settings-nav-description">Вид задач</span>
+            </span>
+          </button>
+          <button type="button" class="api-settings-nav-item" data-settings-section="fonts">
+            <span class="api-settings-nav-icon" aria-hidden="true">Aa</span>
+            <span>
+              <span class="api-settings-nav-label">Шрифты</span>
+              <span class="api-settings-nav-description">Текст и размер</span>
+            </span>
+          </button>
+        </nav>
       </div>
-      <form class="api-settings-form" id="apiSettingsForm">
-        <div class="api-settings-field">
-          <label class="api-settings-label" for="apiKeyInput">API key</label>
-          <div class="api-settings-input-wrap">
-            <input type="password" class="api-settings-input" id="apiKeyInput" autocomplete="off" />
-            <button
-              type="button"
-              class="api-settings-toggle"
-              id="apiKeyToggle"
-              aria-label="Показать API key"
-              title="Показать API key"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path
-                  d="M12 5.5c-4.7 0-8.7 3-10 6.5 1.3 3.5 5.3 6.5 10 6.5s8.7-3 10-6.5c-1.3-3.5-5.3-6.5-10-6.5Zm0 11a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9Zm0-2a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"
-                />
-              </svg>
-            </button>
+      <div class="api-settings-content">
+        <section class="api-settings-section is-active" data-settings-panel="server" aria-labelledby="apiSettingsServerTitle">
+          <div class="api-settings-header">
+            <div class="api-settings-section-eyebrow">Раздел 1</div>
+            <div class="api-settings-section-title" id="apiSettingsServerTitle">Сервер</div>
+            <div class="api-settings-section-subtitle">Подключение к API и ключ доступа для выбранного окружения.</div>
+            <div class="api-settings-description" id="apiSettingsEnv"></div>
+            <div class="api-settings-hint" id="apiSettingsHint"></div>
+            <div class="api-settings-message" id="apiSettingsMessage"></div>
           </div>
-        </div>
-        <div class="api-settings-error" id="apiSettingsError" role="alert" aria-live="polite"></div>
-        <div class="api-settings-actions">
-          <button type="button" class="api-settings-secondary" id="apiKeyClear">очистить</button>
-          <div class="api-settings-actions-spacer"></div>
-          <button type="button" class="api-settings-secondary" id="apiKeyToLocal">local</button>
-          <button type="submit" class="api-settings-primary" id="apiSettingsSave">сохранить</button>
-        </div>
-      </form>
+          <form class="api-settings-form" id="apiSettingsForm">
+            <div class="api-settings-field">
+              <label class="api-settings-label" for="apiKeyInput">API key</label>
+              <div class="api-settings-input-wrap">
+                <input type="password" class="api-settings-input" id="apiKeyInput" autocomplete="off" />
+                <button
+                  type="button"
+                  class="api-settings-toggle"
+                  id="apiKeyToggle"
+                  aria-label="Показать API key"
+                  title="Показать API key"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path
+                      d="M12 5.5c-4.7 0-8.7 3-10 6.5 1.3 3.5 5.3 6.5 10 6.5s8.7-3 10-6.5c-1.3-3.5-5.3-6.5-10-6.5Zm0 11a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9Zm0-2a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="api-settings-error" id="apiSettingsError" role="alert" aria-live="polite"></div>
+            <div class="api-settings-actions">
+              <button type="button" class="api-settings-secondary" id="apiKeyClear">очистить</button>
+              <div class="api-settings-actions-spacer"></div>
+              <button type="button" class="api-settings-secondary" id="apiKeyToLocal">local</button>
+              <button type="submit" class="api-settings-primary" id="apiSettingsSave">сохранить</button>
+            </div>
+          </form>
+        </section>
+        <section class="api-settings-section" data-settings-panel="display" aria-labelledby="apiSettingsDisplayTitle">
+          <div class="api-settings-header">
+            <div class="api-settings-section-eyebrow">Скоро</div>
+            <div class="api-settings-section-title" id="apiSettingsDisplayTitle">Отображение</div>
+            <div class="api-settings-section-subtitle">Плотность, карточки задач и поведение списков.</div>
+          </div>
+          <div class="api-settings-empty">Параметров пока нет.</div>
+        </section>
+        <section class="api-settings-section" data-settings-panel="fonts" aria-labelledby="apiSettingsFontsTitle">
+          <div class="api-settings-header">
+            <div class="api-settings-section-eyebrow">Скоро</div>
+            <div class="api-settings-section-title" id="apiSettingsFontsTitle">Шрифты</div>
+            <div class="api-settings-section-subtitle">Гарнитура, размер текста и интервалы.</div>
+          </div>
+          <div class="api-settings-empty">Параметров пока нет.</div>
+        </section>
+      </div>
     </div>
   </div>
 
