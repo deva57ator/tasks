@@ -338,6 +338,21 @@ function getCompletedDockHeight(){
 function setCompletedDockHeight(height){
   completedDockHeightByView.set(completedViewKey(),height);
 }
+function getProjectVisibleTimeSpent(projectId){
+  let currentTasksTime = 0;
+  walkTasks(tasks,item=>{
+    if(item&&item.project===projectId)currentTasksTime+=totalTimeMs(item);
+  });
+  return currentTasksTime;
+}
+function updateProjectSummaryDisplay(){
+  if(currentView!=='project'||!currentProjectId)return;
+  const value=document.querySelector('.project-summary-value');
+  if(value)value.textContent=formatDuration(getProjectVisibleTimeSpent(currentProjectId));
+}
+function syncDisplays(){
+  updateTimerDisplays();
+}
 function renderEmptyTask(container,text){
   const empty=document.createElement('div');
   empty.className='task';
@@ -453,6 +468,16 @@ function render(){
     layout.className='project-layout';
     const tasksWrap=document.createElement('div');
     tasksWrap.className='project-tasks';
+    const projectHeader=document.createElement('div');
+    projectHeader.className='project-summary';
+    const projectTimeLabel=document.createElement('div');
+    projectTimeLabel.className='project-summary-label';
+    projectTimeLabel.textContent='Потрачено';
+    const projectTimeValue=document.createElement('div');
+    projectTimeValue.className='project-summary-value';
+    projectTimeValue.textContent=formatDuration(getProjectVisibleTimeSpent(currentProjectId));
+    projectHeader.append(projectTimeLabel,projectTimeValue);
+    tasksWrap.appendChild(projectHeader);
     const yearSide=document.createElement('div');
     yearSide.className='year-side';
     const yearHeader=document.createElement('div');
@@ -746,7 +771,7 @@ try{const weeks=buildMonthMatrix(2025,0,{minVisibleDays:2,maxWeeks:5});console.a
 
 
 registerTasksDataCallbacks({
-  syncDisplays: updateTimerDisplays,
+  syncDisplays: syncDisplays,
   toast: toast,
   getTaskMinutes: getTaskMinutes,
   isTimeUpdatePending: isTimeUpdatePending,
@@ -785,6 +810,7 @@ registerTasksRenderCallbacks({
   formatPresetLabel: formatPresetLabel,
   minutesToMs: minutesToMs,
   handleInlinePreset: handleInlinePreset,
+  updateProjectSummaryDisplay: updateProjectSummaryDisplay,
 });
 registerDuePickerCallbacks({
   render: render,

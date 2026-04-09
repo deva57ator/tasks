@@ -686,7 +686,7 @@ export function finishWorkday() {
   workdayState.finalTimeMs = Math.max(workdayState.finalTimeMs || 0, aggregated.timeMs);
   workdayState.finalDoneCount = Math.max(workdayState.finalDoneCount || 0, aggregated.doneCount);
   workdayState.closedAt = now; workdayState.closedManually = true; workdayState.locked = true;
-  WorkdayStore.write(workdayState);
+  WorkdayStore.write(workdayState, { skipServerSync: isServerMode() });
   syncActiveTimersForWorkdayClose();
   Store.write(_cb.getTasks?.());
   if (isServerMode()) {

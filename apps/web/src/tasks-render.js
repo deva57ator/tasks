@@ -174,6 +174,7 @@ export function updateTimerDisplays() {
     const inline = row.querySelector('.time-inline-controls');
     if (inline) applyInlineTimeControls(inline, task);
   }
+  _cb.updateProjectSummaryDisplay?.();
 }
 
 // ── Назначение проекта ─────────────────────────────────────────────────────

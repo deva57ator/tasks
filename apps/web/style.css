@@ -134,6 +134,9 @@ body.theme-dark .year-plan-status.is-error{color:#ff8c8c}
 .tasks.is-project-view{overflow:visible}
 .project-layout{display:flex;gap:16px;align-items:stretch;width:100%;min-width:0}
 .project-tasks{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0;overflow-y:auto;overflow-x:hidden}
+.project-summary{display:flex;align-items:baseline;gap:10px;padding:2px 0 10px;color:var(--text)}
+.project-summary-label{font-size:13px;color:var(--muted);font-weight:600}
+.project-summary-value{font-size:18px;font-weight:800;font-variant-numeric:tabular-nums}
 .year-side{flex:0 0 20%;min-width:200px;max-width:320px;background:var(--surface);border:1px solid var(--toast-border);border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:10px;height:fit-content}
 .year-side-header{font-weight:800;font-size:12px;letter-spacing:.3px;text-transform:uppercase;color:var(--muted)}
 .year-side-list{display:flex;flex-direction:column;gap:8px}

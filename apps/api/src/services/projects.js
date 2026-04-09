@@ -7,6 +7,7 @@ function mapProject(row) {
     id: row.id,
     title: row.title,
     emoji: row.emoji || null,
+    timeSpent: Number(row.timeSpentMs || 0),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt
   };
@@ -14,7 +15,10 @@ function mapProject(row) {
 
 async function list({ limit = 50, offset = 0 } = {}) {
   const totalRow = await db.get('SELECT COUNT(1) AS count FROM projects');
-  const rows = await db.all('SELECT * FROM projects ORDER BY createdAt DESC LIMIT ? OFFSET ?', [limit, offset]);
+  const rows = await db.all(
+    'SELECT p.*, COALESCE(SUM(t.timeSpentMs), 0) AS timeSpentMs FROM projects p LEFT JOIN tasks t ON t.projectId = p.id GROUP BY p.id ORDER BY p.createdAt DESC LIMIT ? OFFSET ?',
+    [limit, offset]
+  );
   return {
     items: rows.map(mapProject),
     total: totalRow ? Number(totalRow.count) : 0
@@ -32,7 +36,10 @@ async function create(data) {
 }
 
 async function getById(id) {
-  const row = await db.get('SELECT * FROM projects WHERE id = ?', [id]);
+  const row = await db.get(
+    'SELECT p.*, COALESCE(SUM(t.timeSpentMs), 0) AS timeSpentMs FROM projects p LEFT JOIN tasks t ON t.projectId = p.id WHERE p.id = ? GROUP BY p.id',
+    [id]
+  );
   return row ? mapProject(row) : null;
 }
 
