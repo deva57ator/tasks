@@ -63,7 +63,7 @@ import { apiAuthLocked, apiAuthMessage, apiAuthReason, resetApiAuthLock, lockApi
 import {
   Ctx, NotesPanel,
   registerTasksRenderCallbacks,
-  renderTaskRow, startEdit, buildRenderContext,
+  renderTaskRow, rowClass, startEdit, buildRenderContext,
   closeContextMenu,
   openNotesPanel, closeNotesPanel, updateNoteIndicator,
   closeAssignSubmenu, openProjectAssignSubmenu, maybeCloseSubmenu,
@@ -195,12 +195,6 @@ NotesPanel.overlay&&NotesPanel.overlay.addEventListener('click',()=>closeNotesPa
 NotesPanel.close&&NotesPanel.close.addEventListener('click',()=>closeNotesPanel());
 NotesPanel.input&&NotesPanel.input.addEventListener('input',()=>{if(NotesPanel.mode==='archive')return;if(!NotesPanel.taskId)return;const task=findTask(NotesPanel.taskId);if(!task)return;task.notes=NotesPanel.input.value;Store.write(tasks);if(isServerMode())queueTaskUpdate(task.id,{notes:task.notes},{debounce:true});updateNoteIndicator(task.id)});
 
-TimeDialog.overlay&&TimeDialog.overlay.addEventListener('click',e=>{if(e.target===TimeDialog.overlay)closeTimeDialog()});
-TimeDialog.close&&TimeDialog.close.addEventListener('click',()=>closeTimeDialog());
-TimeDialog.cancel&&TimeDialog.cancel.addEventListener('click',()=>closeTimeDialog());
-TimeDialog.form&&TimeDialog.form.addEventListener('submit',e=>{e.preventDefault();submitTimeDialog()});
-for(const input of[TimeDialog.hours,TimeDialog.minutes]){if(!input)continue;input.addEventListener('input',()=>updateTimeDialogUI());input.addEventListener('blur',()=>{const state=getTimeDialogState();if(state.valid)setTimeDialogInputsFromMinutes(state.totalMinutes);updateTimeDialogUI({showValidationError:true})})}
-initTimeDialogPresets();
 
 
 function renderYearPlanIfVisible(){if(currentView==='year'||currentView==='project')render()}
