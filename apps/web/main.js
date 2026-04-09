@@ -539,6 +539,7 @@ const THEME_PALETTES={
     {id:'base',name:'Глубокий фокус',swatches:['#0f1115','#171b22','#7da6ff']},
     {id:'graphite',name:'Зелёный графит',swatches:['#101312','#171d1a','#67c39b']},
     {id:'ember',name:'Тёплая ночь',swatches:['#151111','#1e1715','#e29b69']},
+    {id:'radar',name:'Неоновый радар',swatches:['#0b1118','#ff3c78','#ffd600']},
   ],
 };
 let themePalettePrefs=readThemePalettePrefs();
@@ -564,20 +565,30 @@ function renderThemeSettings(mode,palette){
     btn.setAttribute('aria-pressed',String(active));
   });
   const list=THEME_PALETTES[mode]||THEME_PALETTES.light;
-  $$('[data-palette-choice]').forEach((btn,index)=>{
-    const item=list[index];
-    if(!item){btn.hidden=true;return}
-    btn.hidden=false;
+  const paletteContainer=$('#themePaletteChoices');
+  if(!paletteContainer)return;
+  paletteContainer.replaceChildren(...list.map(item=>{
+    const btn=document.createElement('button');
+    btn.type='button';
+    btn.className='settings-palette';
     btn.dataset.paletteChoice=item.id;
-    btn.classList.toggle('is-active',item.id===palette);
-    btn.setAttribute('aria-pressed',String(item.id===palette));
-    const name=btn.querySelector('.settings-palette-name');
-    if(name)name.textContent=item.name;
     btn.setAttribute('aria-label',item.name);
-    btn.querySelectorAll('.settings-palette-swatch span').forEach((swatch,swatchIndex)=>{
-      swatch.style.background=item.swatches[swatchIndex]||item.swatches[0];
+    btn.setAttribute('aria-pressed',String(item.id===palette));
+    btn.classList.toggle('is-active',item.id===palette);
+    const swatches=document.createElement('span');
+    swatches.className='settings-palette-swatch';
+    swatches.setAttribute('aria-hidden','true');
+    item.swatches.forEach(color=>{
+      const swatch=document.createElement('span');
+      swatch.style.background=color;
+      swatches.appendChild(swatch);
     });
-  });
+    const name=document.createElement('span');
+    name.className='settings-palette-name';
+    name.textContent=item.name;
+    btn.append(swatches,name);
+    return btn;
+  }));
 }
 function applyTheme(mode,requestedPalette){
   const nextMode=mode==='dark'?'dark':'light';
@@ -596,7 +607,8 @@ function setTheme(mode,palette){applyTheme(mode,palette);ThemeStore.write(mode==
 function toggleTheme(){const dark=!document.body.classList.contains('theme-dark');const mode=dark?'dark':'light';setTheme(mode,themePalettePrefs[mode])}
 if(themeToggle){themeToggle.addEventListener('click',toggleTheme)}
 $$('[data-theme-mode]').forEach(btn=>{btn.addEventListener('click',()=>{const mode=btn.dataset.themeMode==='dark'?'dark':'light';setTheme(mode,themePalettePrefs[mode])})})
-$$('[data-palette-choice]').forEach(btn=>{btn.addEventListener('click',()=>{const mode=document.body.dataset.theme==='dark'?'dark':'light';setTheme(mode,btn.dataset.paletteChoice||'base')})})
+const themePaletteChoices=$('#themePaletteChoices');
+if(themePaletteChoices){themePaletteChoices.addEventListener('click',event=>{const btn=event.target.closest('[data-palette-choice]');if(!btn||!themePaletteChoices.contains(btn))return;const mode=document.body.dataset.theme==='dark'?'dark':'light';setTheme(mode,btn.dataset.paletteChoice||'base')})}
 
 const FONT_OPTIONS={
   plex:'"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,Inter,"Noto Sans",Ubuntu,Cantarell,"Helvetica Neue",Arial,sans-serif',
