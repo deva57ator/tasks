@@ -70,6 +70,12 @@ export const ThemePaletteStore = {
   write(v) { localStorage.setItem(this.key, v); }
 };
 
+export const FontStore = {
+  key: 'mini-task-tracker:font',
+  read() { return localStorage.getItem(this.key) || 'plex'; },
+  write(v) { localStorage.setItem(this.key, v); }
+};
+
 // ---------------------------------------------------------------------------
 // Проекты
 // ---------------------------------------------------------------------------

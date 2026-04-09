@@ -28,7 +28,7 @@ import {
   updateYearPlanResizeFromEvent, finalizeYearPlanResize,
   updateYearPlanDraftFromEvent, finalizeYearPlanDraft,
 } from './src/yearplan/render.js';
-import { storageMode, setStorageMode, isServerMode, StorageModeStore, ApiKeyStore, Store, ThemeStore, ThemePaletteStore, ProjectsStore, WorkdayStore, persistLocalWorkdayState, registerStorageCallbacks } from './src/storage.js';
+import { storageMode, setStorageMode, isServerMode, StorageModeStore, ApiKeyStore, Store, ThemeStore, ThemePaletteStore, FontStore, ProjectsStore, WorkdayStore, persistLocalWorkdayState, registerStorageCallbacks } from './src/storage.js';
 import {
   WorkdayUI, workdayState, setWorkdayState,
   buildWorkdayPayloadForServer, hydrateWorkdayStateFromServer,
@@ -598,6 +598,24 @@ if(themeToggle){themeToggle.addEventListener('click',toggleTheme)}
 $$('[data-theme-mode]').forEach(btn=>{btn.addEventListener('click',()=>{const mode=btn.dataset.themeMode==='dark'?'dark':'light';setTheme(mode,themePalettePrefs[mode])})})
 $$('[data-palette-choice]').forEach(btn=>{btn.addEventListener('click',()=>{const mode=document.body.dataset.theme==='dark'?'dark':'light';setTheme(mode,btn.dataset.paletteChoice||'base')})})
 
+const FONT_OPTIONS={
+  plex:'"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,Inter,"Noto Sans",Ubuntu,Cantarell,"Helvetica Neue",Arial,sans-serif',
+  inter:'Inter,system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans",Ubuntu,Cantarell,"Helvetica Neue",Arial,sans-serif',
+  manrope:'Manrope,system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans",Ubuntu,Cantarell,"Helvetica Neue",Arial,sans-serif',
+  nunito:'"Nunito Sans",system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans",Ubuntu,Cantarell,"Helvetica Neue",Arial,sans-serif',
+  pt:'"PT Sans",system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans",Ubuntu,Cantarell,"Helvetica Neue",Arial,sans-serif',
+};
+function getFontId(fontId){return Object.prototype.hasOwnProperty.call(FONT_OPTIONS,fontId)?fontId:'plex'}
+function applyFont(fontId){
+  const nextFont=getFontId(fontId);
+  document.body.dataset.font=nextFont;
+  document.documentElement.style.setProperty('--font-ui',FONT_OPTIONS[nextFont]);
+  const select=$('#fontSelect');
+  if(select)select.value=nextFont;
+}
+const fontSelect=$('#fontSelect');
+if(fontSelect){fontSelect.addEventListener('change',()=>{const fontId=getFontId(fontSelect.value);applyFont(fontId);FontStore.write(fontId)})}
+
 const YEAR_PLAN_HOLIDAYS_2026=new Set([
   '2026-01-01',
   '2026-01-02',
@@ -779,4 +797,4 @@ setupSidebarResize();
 
 ensureWorkdayInteractionGuards();
 
-(function(){applyTheme(ThemeStore.read());initCalendar();updateStorageToggle();refreshDataForCurrentMode()})();
+(function(){applyTheme(ThemeStore.read());applyFont(FontStore.read());initCalendar();updateStorageToggle();refreshDataForCurrentMode()})();

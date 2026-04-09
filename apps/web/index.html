@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
-    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&family=Nunito+Sans:wght@400;500;600;700;800&family=PT+Sans:wght@400;700&display=swap"
     rel="stylesheet"
   />
   <link rel="stylesheet" href="style.css" />
@@ -147,13 +147,6 @@
               <span class="api-settings-nav-description">Вид задач</span>
             </span>
           </button>
-          <button type="button" class="api-settings-nav-item" data-settings-section="fonts">
-            <span class="api-settings-nav-icon" aria-hidden="true">Aa</span>
-            <span>
-              <span class="api-settings-nav-label">Шрифты</span>
-              <span class="api-settings-nav-description">Текст и размер</span>
-            </span>
-          </button>
         </nav>
       </div>
       <div class="api-settings-content">
@@ -238,14 +231,21 @@
             </div>
             <div class="settings-section-divider" aria-hidden="true"></div>
           </div>
-        </section>
-        <section class="api-settings-section" data-settings-panel="fonts" aria-labelledby="apiSettingsFontsTitle">
-          <div class="api-settings-header">
-            <div class="api-settings-section-eyebrow">Скоро</div>
-            <div class="api-settings-section-title" id="apiSettingsFontsTitle">Шрифты</div>
-            <div class="api-settings-section-subtitle">Гарнитура, размер текста и интервалы.</div>
+          <div class="settings-subsection" aria-labelledby="fontSectionTitle">
+            <div class="settings-subsection-header">
+              <div class="settings-subsection-title" id="fontSectionTitle">Шрифт интерфейса</div>
+              <div class="settings-subsection-description">Смена применяется сразу ко всему интерфейсу.</div>
+            </div>
+            <label class="settings-select-label" for="fontSelect">Гарнитура</label>
+            <select class="settings-select" id="fontSelect">
+              <option value="plex">IBM Plex Sans — рабочий</option>
+              <option value="inter">Inter — нейтральный</option>
+              <option value="manrope">Manrope — собранный</option>
+              <option value="nunito">Nunito Sans — мягкий</option>
+              <option value="pt">PT Sans — книжный</option>
+            </select>
+            <div class="settings-section-divider" aria-hidden="true"></div>
           </div>
-          <div class="api-settings-empty">Параметров пока нет.</div>
         </section>
       </div>
     </div>
