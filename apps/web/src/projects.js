@@ -158,10 +158,10 @@ export function setProjectEmoji(projectId, emoji) {
 export function renderProjects() {
   if (!projList) return;
   projList.innerHTML = '';
-  if (!projects.length) { const hint = document.createElement('div'); hint.className = 'proj-item is-empty'; hint.textContent = 'Проектов пока нет'; projList.appendChild(hint); return }
+  if (!projects.length) { const hint = document.createElement('div'); hint.className = 'proj-item is-empty'; hint.textContent = 'Проектов нет'; projList.appendChild(hint); return }
   for (const p of projects) {
     const row = document.createElement('div'); row.className = 'proj-item'; row.dataset.id = p.id;
-    const emojiBtn = document.createElement('button'); emojiBtn.type = 'button'; emojiBtn.className = 'emoji-btn'; emojiBtn.textContent = getProjectEmoji(p.id); emojiBtn.title = 'Выбрать эмодзи'; emojiBtn.onclick = e => { e.stopPropagation(); openEmojiPicker(p.id, emojiBtn) }; row.appendChild(emojiBtn);
+    const emojiBtn = document.createElement('button'); emojiBtn.type = 'button'; emojiBtn.className = 'emoji-btn'; emojiBtn.textContent = getProjectEmoji(p.id); emojiBtn.title = 'Эмодзи'; emojiBtn.onclick = e => { e.stopPropagation(); openEmojiPicker(p.id, emojiBtn) }; row.appendChild(emojiBtn);
     const name = document.createElement('div'); name.className = 'name'; name.textContent = p.title; row.appendChild(name);
     row.addEventListener('click', () => { closeEmojiPicker(); _cb.setCurrentView?.('project'); _cb.setCurrentProjectId?.(p.id); _cb.render?.() });
     row.addEventListener('contextmenu', e => { e.preventDefault(); closeEmojiPicker(); openProjMenu(p.id, e.clientX, e.clientY, row) });
@@ -173,7 +173,7 @@ export function renderProjects() {
 export function openProjMenu(id, x, y, anchor) {
   ProjCtx.id = id; ProjCtx.anchor = anchor;
   const menu = ProjCtx.el; menu.innerHTML = '';
-  const edit = document.createElement('div'); edit.className = 'context-item'; edit.textContent = 'Редактировать'; edit.onclick = () => { closeProjMenu(); startProjectRename(id, anchor) };
+  const edit = document.createElement('div'); edit.className = 'context-item'; edit.textContent = 'Переименовать'; edit.onclick = () => { closeProjMenu(); startProjectRename(id, anchor) };
   const del = document.createElement('div'); del.className = 'context-item'; del.textContent = 'Удалить'; del.onclick = () => { closeProjMenu(); deleteProject(id) };
   menu.append(edit, del); menu.style.display = 'block';
   const mw = menu.offsetWidth, mh = menu.offsetHeight;
@@ -274,7 +274,7 @@ export function initProjects() {
       const placeholder = projList.firstElementChild;
       if (placeholder && placeholder.classList.contains('is-empty')) { placeholder.remove() }
       const row = document.createElement('div'); row.className = 'proj-item';
-      const input = document.createElement('input'); input.className = 'proj-input'; input.placeholder = 'Название проекта…';
+      const input = document.createElement('input'); input.className = 'proj-input'; input.placeholder = 'Название';
       row.appendChild(input);
       if (projList.firstChild) { projList.prepend(row) } else { projList.appendChild(row) }
       input.focus();

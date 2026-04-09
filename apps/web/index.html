@@ -16,9 +16,8 @@
   <aside class="sidebar">
     <div class="sidebar-content">
       <div>
-        <h2>Отображения</h2>
         <div class="nav">
-          <button class="nav-btn is-active" data-view="all">Все задачи</button>
+          <button class="nav-btn is-active" data-view="all">Все</button>
           <button class="nav-btn" data-view="today">Сегодня</button>
           <button class="nav-btn" data-view="sprint">Спринт</button>
 
@@ -45,7 +44,7 @@
             </div>
           </div>
           <div class="cal-legend">
-            <div>Wk</div><div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div>
+            <div>n</div><div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div>
           </div>
           <div class="cal-viewport">
             <div class="cal-track" id="calTrack">
@@ -110,7 +109,7 @@
       </div>
     </div>
     <div class="composer">
-      <input id="taskInput" class="input" type="text" placeholder="Новая задача…" />
+      <input id="taskInput" class="input" type="text" placeholder="Что нужно сделать?" />
       <button id="addBtn" class="add-btn">Добавить</button>
     </div>
     <div class="tasks" id="tasks"></div>
@@ -263,11 +262,11 @@
 
   <div class="project-delete-overlay" id="projectDeleteOverlay" aria-hidden="true">
     <div class="project-delete-dialog" id="projectDeleteDialog" role="dialog" aria-modal="true" aria-labelledby="projectDeleteTitle">
-      <div class="project-delete-title" id="projectDeleteTitle">К проекту привязаны инициативы:</div>
+      <div class="project-delete-title" id="projectDeleteTitle">В проекте есть инициативы</div>
       <div class="project-delete-list" id="projectDeleteList"></div>
       <div class="project-delete-actions">
-        <button type="button" class="project-delete-primary" id="projectDeleteConfirm">Удалить</button>
-        <button type="button" class="project-delete-secondary" id="projectDeleteDetach">Не удалять</button>
+        <button type="button" class="project-delete-primary" id="projectDeleteConfirm">Удалить инициативы</button>
+        <button type="button" class="project-delete-secondary" id="projectDeleteDetach">Отвязать от проекта</button>
       </div>
     </div>
   </div>

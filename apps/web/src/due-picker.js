@@ -79,7 +79,7 @@ function buildDuePicker(y, m) {
   ctrls.append(prev, next);
   const legend = document.createElement('div');
   legend.className = 'cal-legend';
-  legend.innerHTML = '<div>Wk</div><div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div>';
+  legend.innerHTML = '<div>n</div><div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div>';
   const viewport = document.createElement('div');
   viewport.className = 'cal-viewport';
   const monthEl = document.createElement('div');

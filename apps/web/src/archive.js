@@ -114,14 +114,14 @@ export function renderArchivedNode(node, depth, container) {
   time.textContent = _cb.formatDuration?.(node.timeSpent);
   actions.appendChild(time);
   const noteBtn = document.createElement('button'); noteBtn.className = 'note-btn'; noteBtn.type = 'button';
-  noteBtn.textContent = '📝'; noteBtn.title = 'Открыть заметки';
-  noteBtn.setAttribute('aria-label', 'Заметки задачи');
+  noteBtn.textContent = '📝'; noteBtn.title = 'Заметки';
+  noteBtn.setAttribute('aria-label', 'Заметки');
   noteBtn.dataset.hasNotes = node.notes && node.notes.trim() ? 'true' : 'false';
   noteBtn.onclick = e => { e.stopPropagation(); _cb.openNotesPanel?.(node.id, { source: 'archive' }) };
   actions.appendChild(noteBtn);
   const deleteBtn = document.createElement('button'); deleteBtn.className = 'archive-delete'; deleteBtn.type = 'button';
   deleteBtn.textContent = '✕'; deleteBtn.title = 'Удалить из архива';
-  deleteBtn.setAttribute('aria-label', 'Удалить задачу из архива');
+  deleteBtn.setAttribute('aria-label', 'Удалить из архива');
   deleteBtn.onclick = e => {
     e.stopPropagation();
     const archivedTasks = _cb.getArchivedTasks?.() ?? [];
@@ -146,7 +146,7 @@ export function renderArchive(container) {
   const items = [...archivedTasks];
   items.sort((a, b) => (b.archivedAt || 0) - (a.archivedAt || 0) || (b.completedAt || 0) - (a.completedAt || 0));
   if (!items.length) {
-    const empty = document.createElement('div'); empty.className = 'archive-empty'; empty.textContent = 'Архив пока пуст.';
+    const empty = document.createElement('div'); empty.className = 'archive-empty'; empty.textContent = 'Архив пуст';
     container.appendChild(empty); return;
   }
   for (const item of items) { renderArchivedNode(item, 0, wrap) }

@@ -89,7 +89,7 @@ export function openYearPlanContextMenu(id, x, y) {
   if (item && item.projectId) {
     const goToProject = document.createElement('div');
     goToProject.className = 'context-item';
-    goToProject.textContent = 'Перейти в проект';
+    goToProject.textContent = 'К проекту';
     goToProject.onclick = () => {
       const targetProjectId = item.projectId;
       closeYearPlanContextMenu();
@@ -98,8 +98,8 @@ export function openYearPlanContextMenu(id, x, y) {
     YearPlanCtx.el.appendChild(goToProject);
   }
   const assign = document.createElement('div');
-  assign.className = 'context-item';
-  assign.textContent = 'Назначить проект ▸';
+  assign.className = 'context-item has-submenu';
+  assign.textContent = 'Проект';
   assign.addEventListener('mouseenter', () => { openYearPlanAssignSubmenu(id, assign); });
   assign.addEventListener('mouseleave', () => maybeCloseSubmenu());
   YearPlanCtx.el.appendChild(assign);

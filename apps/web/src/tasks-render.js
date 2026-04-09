@@ -274,7 +274,7 @@ export function openContextMenu(taskId, x, y) {
   _cb.closeDuePicker?.();
   closeTimePresetMenu();
 
-  const btnEdit = document.createElement('div'); btnEdit.className = 'context-item'; btnEdit.textContent = 'Редактировать';
+  const btnEdit = document.createElement('div'); btnEdit.className = 'context-item'; btnEdit.textContent = 'Переименовать';
   btnEdit.onclick = () => {
     closeContextMenu();
     const row = document.querySelector(`.task[data-id="${taskId}"]`);
@@ -283,14 +283,14 @@ export function openContextMenu(taskId, x, y) {
     if (row) startEdit(row, t);
     else { const next = prompt('Название задачи', t.title || ''); if (next !== null) renameTask(taskId, next); }
   };
-  const btnComplete = document.createElement('div'); btnComplete.className = 'context-item'; btnComplete.textContent = 'Отметить выполненной';
+  const btnComplete = document.createElement('div'); btnComplete.className = 'context-item'; btnComplete.textContent = 'Выполнено';
   btnComplete.onclick = () => { closeContextMenu(); _cb.markTaskDone?.(taskId); };
-  const btnAssign = document.createElement('div'); btnAssign.className = 'context-item'; btnAssign.textContent = 'Проект ▸';
+  const btnAssign = document.createElement('div'); btnAssign.className = 'context-item has-submenu'; btnAssign.textContent = 'Проект';
   btnAssign.addEventListener('mouseenter', () => { openAssignSubmenu(taskId, btnAssign); _cb.closeDuePicker?.(); });
   btnAssign.addEventListener('mouseleave', () => maybeCloseSubmenu());
-  const btnTime = document.createElement('div'); btnTime.className = 'context-item'; btnTime.textContent = 'Время…';
+  const btnTime = document.createElement('div'); btnTime.className = 'context-item'; btnTime.textContent = 'Время';
   btnTime.onclick = () => { closeContextMenu(); _cb.openTimeEditDialog?.(taskId); };
-  const btnDue = document.createElement('div'); btnDue.className = 'context-item'; btnDue.textContent = 'Дата ▸'; btnDue.dataset.menuAnchor = 'true';
+  const btnDue = document.createElement('div'); btnDue.className = 'context-item has-submenu'; btnDue.textContent = 'Дедлайн'; btnDue.dataset.menuAnchor = 'true';
   btnDue.addEventListener('mouseenter', () => { closeAssignSubmenu(); _cb.openDuePicker?.(taskId, btnDue, { fromContext: true }); });
   btnDue.addEventListener('mouseleave', () => {
     setTimeout(() => {
@@ -501,8 +501,8 @@ export function renderTaskRow(t, depth, container, renderContext = { visibleTask
 
   const timePresetTrigger = document.createElement('button');
   timePresetTrigger.type = 'button'; timePresetTrigger.className = 'time-preset-trigger';
-  timePresetTrigger.textContent = '+'; timePresetTrigger.title = 'Добавить время';
-  timePresetTrigger.setAttribute('aria-label', 'Добавить время');
+  timePresetTrigger.textContent = '+'; timePresetTrigger.title = 'Время';
+  timePresetTrigger.setAttribute('aria-label', 'Время');
   timePresetTrigger.onclick = e => { e.stopPropagation(); openTimePresetMenu(t.id, timePresetTrigger); };
 
   const timeLoader = document.createElement('span'); timeLoader.className = 'time-loading'; timeLoader.setAttribute('aria-hidden', 'true');
@@ -514,25 +514,25 @@ export function renderTaskRow(t, depth, container, renderContext = { visibleTask
   timerBtn.className = 'timer-btn task-btn--timer'; timerBtn.type = 'button';
   timerBtn.dataset.active = t.timerActive ? 'true' : 'false';
   timerBtn.title = t.timerActive ? 'Остановить таймер' : 'Запустить таймер';
-  timerBtn.setAttribute('aria-label', 'Таймер задачи');
+  timerBtn.setAttribute('aria-label', timerBtn.title);
   timerBtn.setAttribute('aria-pressed', t.timerActive ? 'true' : 'false');
   timerBtn.onclick = e => { e.stopPropagation(); toggleTaskTimer(t.id); };
   timerBtn.disabled = !!_cb.isTimeUpdatePending?.(t.id) || (_cb.getTimeDialogTaskId?.() === t.id && _cb.isTimeDialogOpen?.());
 
   const noteBtn = document.createElement('button');
   noteBtn.className = 'note-btn task-btn--note'; noteBtn.type = 'button';
-  noteBtn.setAttribute('aria-label', 'Заметки задачи'); noteBtn.title = 'Открыть заметки';
+  noteBtn.setAttribute('aria-label', 'Заметки'); noteBtn.title = 'Заметки';
   noteBtn.onclick = e => { e.stopPropagation(); openNotesPanel(t.id); };
   noteBtn.dataset.hasNotes = t.notes && t.notes.trim() ? 'true' : 'false';
 
   const dueBtn = document.createElement('button');
-  dueBtn.className = 'due-btn task-btn--deadline'; dueBtn.title = 'Установить дедлайн';
-  dueBtn.setAttribute('aria-label', 'Дедлайн задачи');
+  dueBtn.className = 'due-btn task-btn--deadline'; dueBtn.title = 'Дедлайн';
+  dueBtn.setAttribute('aria-label', 'Дедлайн');
   dueBtn.onclick = e => { e.stopPropagation(); _cb.openDuePicker?.(t.id, dueBtn); };
 
   const del = document.createElement('button');
   del.className = 'delete-btn'; del.type = 'button';
-  del.setAttribute('aria-label', 'Удалить задачу'); del.title = 'Удалить задачу';
+  del.setAttribute('aria-label', 'Удалить'); del.title = 'Удалить';
   del.textContent = '✕'; del.onclick = e => { e.stopPropagation(); handleDelete(t.id); };
 
   if (t.due) {

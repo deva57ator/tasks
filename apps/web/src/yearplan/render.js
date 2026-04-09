@@ -658,7 +658,7 @@ export function renderYearPlan(container) {
   statusWrap.className = 'year-plan-status';
   if (loading) { statusWrap.textContent = 'Загрузка…'; }
   else if (error) { statusWrap.textContent = error; statusWrap.classList.add('is-error'); }
-  else if (!items.length) { statusWrap.textContent = 'Активностей пока нет'; statusWrap.classList.add('is-empty'); }
+  else if (!items.length) { statusWrap.textContent = 'Инициатив нет'; statusWrap.classList.add('is-empty'); }
   if (statusWrap.textContent) content.appendChild(statusWrap);
 
   const grid = document.createElement('div');

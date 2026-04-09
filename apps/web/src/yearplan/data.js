@@ -157,9 +157,9 @@ export const yearPlanProvider = {
     }
     const stored = readYearPlanStorage();
     const idx = stored.items.findIndex(entry => entry && String(entry.id) === String(id));
-    if (idx === -1) throw new Error('Активность не найдена');
+    if (idx === -1) throw new Error('Инициатива не найдена');
     const current = normalizeStoredYearPlanItem(stored.items[idx]);
-    if (!current) throw new Error('Активность не найдена');
+    if (!current) throw new Error('Инициатива не найдена');
     const nextPatch = normalizeYearPlanPatchForStorage(current, patch);
     const updated = { ...current, ...nextPatch, updatedTs: Date.now() };
     stored.items[idx] = updated;

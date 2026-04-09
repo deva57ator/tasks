@@ -136,7 +136,7 @@ export function renderSprint(container) {
     sprintVisibleProjects.clear();
     const hint = document.createElement('div');
     hint.className = 'sprint-empty';
-    hint.textContent = 'Нет задач с дедлайном — спринты появятся автоматически.';
+    hint.textContent = 'Нет задач с дедлайном';
     container.appendChild(hint);
     return;
   }
@@ -248,7 +248,7 @@ export function renderSprint(container) {
   if (renderedWeeks === 0) {
     const empty = document.createElement('div');
     empty.className = 'sprint-empty';
-    empty.textContent = 'Нет задач для выбранных проектов.';
+    empty.textContent = 'Задач нет';
     container.appendChild(empty);
     return;
   }

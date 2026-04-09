@@ -348,7 +348,7 @@ function renderTaskTree(list,container){
   const renderContext=buildRenderContext(list);
   for(const t of list){renderTaskRow(t,0,container,renderContext)}
 }
-function renderTasksWithCompleted(sourceList,container,{emptyText='Здесь пусто.'}={}){
+function renderTasksWithCompleted(sourceList,container,{emptyText='Пусто'}={}){
   const split=splitCompletedTasks(sourceList);
   const completedCount=countTaskNodes(split.completed);
   if(split.active.length)renderTaskTree(split.active,container);
@@ -445,7 +445,7 @@ function render(){
   const wrap=$('#tasks');wrap.innerHTML='';
   wrap.classList.toggle('is-project-view',currentView==='project');
   if(currentView==='sprint'){document.getElementById('viewTitle').textContent='Спринт';renderSprint(wrap);syncTimerLoop();return}
-  if(currentView==='year'){document.getElementById('viewTitle').textContent='План года';renderYearPlan(wrap);updateWorkdayUI();return}
+  if(currentView==='year'){document.getElementById('viewTitle').textContent='Год';renderYearPlan(wrap);updateWorkdayUI();return}
   if(currentView==='project'){
     const proj=projects.find(p=>p.id===currentProjectId);
     document.getElementById('viewTitle').textContent=proj?proj.title:'Проект';
@@ -481,7 +481,7 @@ function render(){
     }else if(!items.length){
       const status=document.createElement('div');
       status.className='year-side-status';
-      status.textContent='Нет инициатив';
+      status.textContent='Инициатив нет';
       yearList.appendChild(status);
     }else{
       for(const item of items){
@@ -506,7 +506,7 @@ function render(){
       }
     }
     const dataList=filterTree(tasks,t=>t.project===currentProjectId);
-    const completedState=renderTasksWithCompleted(dataList,tasksWrap,{emptyText:'Нет задач этого проекта.'});
+    const completedState=renderTasksWithCompleted(dataList,tasksWrap,{emptyText:'Задач нет'});
     renderCompletedDock(completedState.completed,completedState.completedCount);
     if(pendingEditId){
       const rowEl=document.querySelector(`[data-id="${pendingEditId}"]`);
@@ -520,7 +520,7 @@ function render(){
   }
   document.getElementById('viewTitle').textContent=currentView==='today'?'Сегодня':'Все задачи';
   const dataList=currentView==='today'?filterTree(tasks,t=>isDueToday(t.due)):tasks;
-  const completedState=renderTasksWithCompleted(dataList,wrap,{emptyText:'Здесь пусто.'});
+  const completedState=renderTasksWithCompleted(dataList,wrap,{emptyText:'Пусто'});
   renderCompletedDock(completedState.completed,completedState.completedCount);
   if(pendingEditId){const rowEl=document.querySelector(`[data-id="${pendingEditId}"]`);const taskObj=findTask(pendingEditId);if(rowEl&&taskObj)startEdit(rowEl,taskObj);pendingEditId=null}
   if(hoveredParentTaskId)setInheritedHover(hoveredParentTaskId);
@@ -736,7 +736,7 @@ if(WorkdayUI.postponeBtn)WorkdayUI.postponeBtn.addEventListener('click',()=>post
 
 
 
-if(!tasks.length&&!isServerMode()){const rootId=uid();const childId=uid();setTasks([{id:rootId,title:'Добавь несколько задач',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:null,children:[{id:childId,title:'Пример подзадачи',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:rootId,children:[]} ]},{id:uid(),title:'ПКМ по строке → «Редактировать»',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:null,children:[]},{id:uid(),title:'Отметь как выполненную — увидишь зачёркивание',done:true,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:null,children:[] }]);ensureTaskParentIds(tasks,null);Store.write(tasks)}
+if(!tasks.length&&!isServerMode()){const rootId=uid();const childId=uid();setTasks([{id:rootId,title:'Добавь несколько задач',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:null,children:[{id:childId,title:'Пример подзадачи',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:rootId,children:[]} ]},{id:uid(),title:'ПКМ по строке → «Переименовать»',done:false,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:null,children:[]},{id:uid(),title:'Отметь как выполненную — увидишь зачёркивание',done:true,collapsed:false,due:null,project:null,notes:'',timeSpent:0,timerActive:false,timerStart:null,parentId:null,children:[] }]);ensureTaskParentIds(tasks,null);Store.write(tasks)}
 if(!projects.length&&!isServerMode()){setProjects([{id:uid(),title:'Личный',emoji:DEFAULT_PROJECT_EMOJI},{id:uid(),title:'Работа',emoji:'💼'}]);ProjectsStore.write(projects)}
 
 renderProjects();
