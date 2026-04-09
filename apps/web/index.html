@@ -15,6 +15,9 @@
 <body>
   <aside class="sidebar">
     <div class="sidebar-content">
+      <div class="sidebar-close-row">
+        <button type="button" class="sidebar-close" id="sidebarClose" aria-label="Закрыть меню">×</button>
+      </div>
       <div>
         <div class="nav">
           <button class="nav-btn is-active" data-view="all">Все</button>
@@ -67,44 +70,53 @@
   <main class="main">
     <div class="header">
       <div class="header-top">
+        <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-label="Открыть меню" aria-expanded="false">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+            <rect y="2" width="18" height="2" rx="1" fill="currentColor"/>
+            <rect y="8" width="18" height="2" rx="1" fill="currentColor"/>
+            <rect y="14" width="18" height="2" rx="1" fill="currentColor"/>
+          </svg>
+        </button>
         <div class="header-leading">
           <div class="title" id="viewTitle">Все задачи</div>
           <div class="sprint-filters" id="sprintFilters" aria-hidden="true"></div>
         </div>
-        <div class="workday-bar" id="workdayBar" aria-live="polite">
-          <div class="workday-stats">
-            <div class="workday-stat">
-              <span class="workday-stat-label">Готово</span>
-              <span class="workday-stat-value" id="workdayDone">0</span>
+        <div class="header-tools">
+          <div class="workday-bar" id="workdayBar" aria-live="polite">
+            <div class="workday-stats">
+              <div class="workday-stat">
+                <span class="workday-stat-label">Готово</span>
+                <span class="workday-stat-value" id="workdayDone">0</span>
+              </div>
+              <div class="workday-stat workday-stat--time">
+                <span class="workday-stat-label">
+                  Время
+                </span>
+                <span class="workday-stat-value" id="workdayTime">0 мин</span>
+                <span class="workday-rec" id="workdayRec" aria-hidden="true">
+                  <span class="workday-rec-dot" aria-hidden="true"></span>
+                </span>
+              </div>
             </div>
-            <div class="workday-stat workday-stat--time">
-              <span class="workday-stat-label">
-                Время
-              </span>
-              <span class="workday-stat-value" id="workdayTime">0 мин</span>
-              <span class="workday-rec" id="workdayRec" aria-hidden="true">
-                <span class="workday-rec-dot" aria-hidden="true"></span>
-              </span>
-            </div>
+            <button type="button" class="workday-finish" id="workdayFinishBtn">Закрыть день</button>
           </div>
-          <button type="button" class="workday-finish" id="workdayFinishBtn">Закрыть день</button>
-        </div>
-        <div class="header-actions">
-          <button
-            type="button"
-            class="icon-btn settings-btn"
-            id="apiSettingsBtn"
-            aria-label="Настройки приложения"
-            title="Настройки приложения"
-          ></button>
-          <button
-            type="button"
-            class="icon-btn theme-btn"
-            id="themeToggle"
-            aria-label="Переключить на тёмную тему"
-            aria-pressed="false"
-            title="Переключить на тёмную тему"
-          ></button>
+          <div class="header-actions">
+            <button
+              type="button"
+              class="icon-btn settings-btn"
+              id="apiSettingsBtn"
+              aria-label="Настройки приложения"
+              title="Настройки приложения"
+            ></button>
+            <button
+              type="button"
+              class="icon-btn theme-btn"
+              id="themeToggle"
+              aria-label="Переключить на тёмную тему"
+              aria-pressed="false"
+              title="Переключить на тёмную тему"
+            ></button>
+          </div>
         </div>
       </div>
     </div>
@@ -305,6 +317,8 @@
       </div>
     </div>
   </div>
+
+  <div class="sidebar-overlay" id="sidebarOverlay" aria-hidden="true"></div>
 
   <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1/index.js"></script>
   <script type="module" src="main.js?v=2026-04-09"></script>

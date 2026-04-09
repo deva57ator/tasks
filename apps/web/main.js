@@ -37,7 +37,7 @@ import {
   updateWorkdayUI, ensureWorkdayRefreshLoop,
   registerWorkdayCallbacks,
 } from './src/workday.js';
-import { setupSidebarResize } from './src/sidebar.js';
+import { setupSidebarResize, setupMobileSidebar } from './src/sidebar.js';
 import {
   tasks, setTasks, pendingServerCreates,
   normalizeTaskTree, ensureTaskParentIds, migrate,
@@ -832,6 +832,7 @@ registerEffectsCallbacks({ toast });
 registerTimeDialogCallbacks({ toast });
 
 setupSidebarResize();
+setupMobileSidebar();
 
 ensureWorkdayInteractionGuards();
 
