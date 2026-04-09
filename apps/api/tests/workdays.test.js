@@ -140,27 +140,35 @@ test('getCurrent returns manually closed workday before scheduled end', async ()
 
 test('getCurrent creates active workday when none exists', async () => {
   const realNow = Date.now;
-  const base = new Date();
-  base.setHours(12, 0, 0, 0);
-  const fixedTs = base.getTime();
+  const fixedTs = new Date('2026-03-18T09:00:00.000Z').getTime();
   Date.now = () => fixedTs;
-  const pad = (value) => String(value).padStart(2, '0');
-  const expectedStart = new Date(base);
-  expectedStart.setHours(6, 0, 0, 0);
-  const expectedEnd = new Date(expectedStart);
-  expectedEnd.setDate(expectedEnd.getDate() + 1);
-  expectedEnd.setHours(3, 0, 0, 0);
+  const expectedStart = new Date('2026-03-18T03:00:00.000Z');
+  const expectedEnd = new Date('2026-03-19T00:00:00.000Z');
 
   try {
     const current = await workdays.getCurrent();
     assert.ok(current);
-    const expectedId = `${expectedStart.getFullYear()}-${pad(expectedStart.getMonth() + 1)}-${pad(expectedStart.getDate())}`;
-    assert.equal(current.id, expectedId);
+    assert.equal(current.id, '2026-03-18');
     assert.equal(current.startTs, expectedStart.getTime());
     assert.equal(current.endTs, expectedEnd.getTime());
     assert.equal(current.closedAt, null);
     assert.ok(current.payload);
     assert.equal(current.payload.locked, false);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test('getCurrent uses GMT+3 boundaries around midnight', async () => {
+  const realNow = Date.now;
+  Date.now = () => new Date('2026-03-18T23:30:00.000Z').getTime();
+
+  try {
+    const current = await workdays.getCurrent();
+    assert.ok(current);
+    assert.equal(current.id, '2026-03-18');
+    assert.equal(current.startTs, new Date('2026-03-18T03:00:00.000Z').getTime());
+    assert.equal(current.endTs, new Date('2026-03-19T00:00:00.000Z').getTime());
   } finally {
     Date.now = realNow;
   }
@@ -377,12 +385,12 @@ test('manual stats are not doubled on first close and remain stable after reopen
   assert.equal(secondClose.summaryDone, 1);
 });
 
-test('reopen preserves stored stats even when tasks are removed', async () => {
-  const task = await tasks.create({ title: 'Archived task', timeSpent: 180000, done: true });
+test('reopen preserves stored stats even when completed tasks are removed', async () => {
+  const task = await tasks.create({ title: 'Completed task', timeSpent: 180000, done: true });
   const start = Date.now() - 2 * 3600000;
   const end = Date.now() + 3600000;
   const payload = {
-    id: 'day-archived',
+    id: 'day-completed',
     start,
     end,
     baseline: {
@@ -648,7 +656,7 @@ test('automatic close moves overdue pending tasks to current astronomical day', 
     const overdueTask = await tasks.getById(overdue.id);
     const todayTask = await tasks.getById(today.id);
     assert.ok(overdueTask);
-    assert.equal(overdueTask.due, '2026-03-18T00:00:00.000Z');
+    assert.equal(overdueTask.due, '2026-03-17T21:00:00.000Z');
     assert.ok(todayTask);
     assert.equal(todayTask.due, '2026-03-18T00:00:00.000Z');
   } finally {

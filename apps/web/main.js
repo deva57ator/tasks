@@ -33,7 +33,7 @@ import {
   WorkdayUI, workdayState, setWorkdayState,
   buildWorkdayPayloadForServer, hydrateWorkdayStateFromServer,
   ensureWorkdayInteractionGuards,
-  openWorkdayDialog, closeWorkdayDialog, postponePendingTasks, finishWorkdayAndArchive,
+  openWorkdayDialog, closeWorkdayDialog, postponePendingTasks, finishWorkday,
   updateWorkdayUI, ensureWorkdayRefreshLoop,
   registerWorkdayCallbacks,
 } from './src/workday.js';
@@ -730,7 +730,7 @@ if(ApiSettingsUI.toLocalBtn){ApiSettingsUI.toLocalBtn.addEventListener('click',(
 
 if(WorkdayUI.button){WorkdayUI.button.addEventListener('click',()=>{if(WorkdayUI.button.disabled)return;openWorkdayDialog()})}
 if(WorkdayUI.closeBtn){WorkdayUI.closeBtn.setAttribute('data-allow-closed-day','true');WorkdayUI.closeBtn.addEventListener('click',()=>closeWorkdayDialog());}
-if(WorkdayUI.closeAction)WorkdayUI.closeAction.addEventListener('click',()=>finishWorkdayAndArchive());
+if(WorkdayUI.closeAction)WorkdayUI.closeAction.addEventListener('click',()=>finishWorkday());
 if(WorkdayUI.overlay)WorkdayUI.overlay.addEventListener('click',e=>{if(e.target===WorkdayUI.overlay)closeWorkdayDialog()});
 if(WorkdayUI.postponeBtn)WorkdayUI.postponeBtn.addEventListener('click',()=>postponePendingTasks());
 

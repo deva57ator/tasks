@@ -458,11 +458,11 @@ body.theme-dark .note-btn:focus-visible,body.theme-dark .timer-btn:focus-visible
 .task.is-selected .delete-btn{opacity:1}
 .subtasks{grid-column:1 / -1;margin-left:28px;overflow:visible}
 .subtasks-inner{display:flex;flex-direction:column;gap:6px}
-.task-checkbox{width:32px;height:32px;display:inline-grid;place-items:center;cursor:pointer;font-size:20px;line-height:1;user-select:none;border-radius:calc(var(--radius)*.35);border:1px solid var(--toast-border);color:var(--muted);background:var(--surface);transition:background .16s ease,border-color .16s ease,color .16s ease,transform .16s ease,box-shadow .18s ease;align-self:center}
+.task-checkbox{width:32px;height:32px;display:inline-grid;place-items:center;cursor:pointer;font-size:20px;line-height:1;user-select:none;border-radius:50%;border:1px solid var(--toast-border);color:var(--muted);background-color:var(--surface);background-position:center;background-repeat:no-repeat;background-size:0 0;transition:background-color .16s ease,background-size .16s ease,border-color .16s ease,color .16s ease,transform .16s ease,box-shadow .18s ease;align-self:center}
 .task-checkbox::before{content:"";font-weight:700}
-.task-checkbox[data-checked="true"]{background:var(--success-soft);border-color:var(--success-border);color:var(--success-strong)}
-.task-checkbox[data-checked="true"]::before{content:"✔"}
-.task-checkbox:hover{background:var(--hover);box-shadow:0 0 0 4px rgba(0,0,0,.04) inset}
+.task-checkbox[data-checked="true"]{background-color:transparent;background-image:url("assets/icons/checkmark.svg");background-size:38px 38px;border-color:transparent;color:var(--success-strong)}
+.task-checkbox:hover{background-color:var(--hover);box-shadow:0 0 0 4px rgba(0,0,0,.04) inset}
+.task-checkbox[data-checked="true"]:hover{background-color:transparent;background-image:url("assets/icons/checkmark.svg");background-size:38px 38px}
 .task-checkbox.is-bouncing{animation:taskCheckboxBounce .16s ease-out}
 .task-checkbox:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .completed-dock{--completed-dock-height:220px;display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--toast-border);padding-top:6px;min-height:0;box-sizing:border-box}

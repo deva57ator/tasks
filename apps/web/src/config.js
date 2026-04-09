@@ -17,6 +17,9 @@ export const TIME_PRESETS = [5, 15, 30, 45, 60, 120];
 export const WORKDAY_REFRESH_INTERVAL = 60000;
 export const TIME_UPDATE_INTERVAL = 1000;
 
+// Рабочий день считается в фиксированной зоне GMT+3.
+export const WORKDAY_TIMEZONE_OFFSET_MINUTES = 180;
+
 // Задачи
 export const MAX_TASK_DEPTH = 2;
 

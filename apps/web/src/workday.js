@@ -1,4 +1,4 @@
-import { WORKDAY_REFRESH_INTERVAL } from './config.js';
+import { WORKDAY_REFRESH_INTERVAL, WORKDAY_TIMEZONE_OFFSET_MINUTES } from './config.js';
 import { WorkdayStore, Store, normalizeWorkdayState, persistLocalWorkdayState, isServerMode } from './storage.js';
 import { apiRequest, handleApiError, runServerAction, queueTaskUpdate } from './api.js';
 
@@ -333,30 +333,59 @@ function stopWorkdayFireworks() { const c = ensureWorkdayFireworks(); if (c) c.s
 
 const WORKDAY_START_HOUR = 6;
 const WORKDAY_END_HOUR = 3;
+const WORKDAY_TIMEZONE_OFFSET_MS = WORKDAY_TIMEZONE_OFFSET_MINUTES * 60 * 1000;
+
+function getWorkdayZonedDate(value) {
+  const ts = value instanceof Date ? value.getTime() : Number(value);
+  if (!Number.isFinite(ts)) return null;
+  return new Date(ts + WORKDAY_TIMEZONE_OFFSET_MS);
+}
+
+function getWorkdayZonedParts(value) {
+  const shifted = getWorkdayZonedDate(value);
+  if (!shifted || Number.isNaN(shifted.getTime())) return null;
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth(),
+    day: shifted.getUTCDate(),
+    hour: shifted.getUTCHours(),
+  };
+}
+
+function zonedWorkdayTimeToTimestamp(year, month, day, hour) {
+  return Date.UTC(year, month, day, hour, 0, 0, 0) - WORKDAY_TIMEZONE_OFFSET_MS;
+}
+
+function zonedDayStartIsoForWorkdayDate(value, dayOffset = 0) {
+  const parts = getWorkdayZonedParts(value);
+  if (!parts) return null;
+  return new Date(zonedWorkdayTimeToTimestamp(parts.year, parts.month, parts.day + dayOffset, 0)).toISOString();
+}
 
 export function workdayDateKey(value) {
-  const d = value instanceof Date ? value : new Date(value);
-  if (isNaN(d)) return null;
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const parts = getWorkdayZonedParts(value);
+  if (!parts) return null;
+  return `${parts.year}-${String(parts.month + 1).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
 }
 
 export function getWorkdayInfo(now = Date.now()) {
-  const current = new Date(now);
-  const hour = current.getHours();
+  const current = getWorkdayZonedParts(now);
+  if (!current) return { state: 'waiting', start: null, end: null, id: null, nextStart: null };
+  const hour = current.hour;
   if (hour < WORKDAY_END_HOUR) {
-    const start = new Date(current); start.setDate(start.getDate() - 1); start.setHours(WORKDAY_START_HOUR, 0, 0, 0);
-    const end = new Date(start); end.setDate(end.getDate() + 1); end.setHours(WORKDAY_END_HOUR, 0, 0, 0);
-    return { state: 'active', start: start.getTime(), end: end.getTime(), id: workdayDateKey(start) };
+    const start = zonedWorkdayTimeToTimestamp(current.year, current.month, current.day - 1, WORKDAY_START_HOUR);
+    const end = zonedWorkdayTimeToTimestamp(current.year, current.month, current.day, WORKDAY_END_HOUR);
+    return { state: 'active', start, end, id: workdayDateKey(start) };
   }
   if (hour >= WORKDAY_START_HOUR) {
-    const start = new Date(current); start.setHours(WORKDAY_START_HOUR, 0, 0, 0);
-    const end = new Date(start); end.setDate(end.getDate() + 1); end.setHours(WORKDAY_END_HOUR, 0, 0, 0);
-    return { state: 'active', start: start.getTime(), end: end.getTime(), id: workdayDateKey(start) };
+    const start = zonedWorkdayTimeToTimestamp(current.year, current.month, current.day, WORKDAY_START_HOUR);
+    const end = zonedWorkdayTimeToTimestamp(current.year, current.month, current.day + 1, WORKDAY_END_HOUR);
+    return { state: 'active', start, end, id: workdayDateKey(start) };
   }
-  const prevStart = new Date(current); prevStart.setDate(prevStart.getDate() - 1); prevStart.setHours(WORKDAY_START_HOUR, 0, 0, 0);
-  const prevEnd = new Date(prevStart); prevEnd.setDate(prevEnd.getDate() + 1); prevEnd.setHours(WORKDAY_END_HOUR, 0, 0, 0);
-  const nextStart = new Date(current); nextStart.setHours(WORKDAY_START_HOUR, 0, 0, 0);
-  return { state: 'waiting', start: prevStart.getTime(), end: prevEnd.getTime(), id: workdayDateKey(prevStart), nextStart: nextStart.getTime() };
+  const start = zonedWorkdayTimeToTimestamp(current.year, current.month, current.day - 1, WORKDAY_START_HOUR);
+  const end = zonedWorkdayTimeToTimestamp(current.year, current.month, current.day, WORKDAY_END_HOUR);
+  const nextStart = zonedWorkdayTimeToTimestamp(current.year, current.month, current.day, WORKDAY_START_HOUR);
+  return { state: 'waiting', start, end, id: workdayDateKey(start), nextStart };
 }
 
 function createWorkdaySnapshot(info) {
@@ -520,6 +549,23 @@ function collectWorkdayPendingTasks(state) {
   return result;
 }
 
+function syncActiveTimersForWorkdayClose() {
+  const updatedIds = [];
+  _cb.walkTasks?.(_cb.getTasks?.() || [], item => {
+    if (item && item.timerActive && item.id) updatedIds.push(item.id);
+  });
+  if (!updatedIds.length) return;
+  _cb.stopAllTimersExcept?.(null);
+  Store.write(_cb.getTasks?.());
+  _cb.syncTimerLoop?.();
+  if (isServerMode()) {
+    for (const id of updatedIds) {
+      const task = _cb.findTask?.(id);
+      if (task) queueTaskUpdate(id, { timeSpent: task.timeSpent });
+    }
+  }
+}
+
 export function updateWorkdayDialogContent() {
   if (!WorkdayUI.overlay) return;
   const now = Date.now();
@@ -540,15 +586,16 @@ export function updateWorkdayDialogContent() {
   if (WorkdayUI.summaryTime) WorkdayUI.summaryTime.textContent = _cb.formatDuration?.(stats.timeMs) ?? '';
   if (WorkdayUI.summaryDone) WorkdayUI.summaryDone.textContent = String(stats.doneCount);
   if (WorkdayUI.range) WorkdayUI.range.textContent = hasState ? formatWorkdayRangeLong(workdayState.start, workdayState.end) : '';
-  const pending = hasState ? collectWorkdayPendingTasks(workdayState) : [];
+  const pending = hasState && !isWorkdayClosedForEditing() ? collectWorkdayPendingTasks(workdayState) : [];
   const manuallyClosed = hasState && workdayState.closedManually;
   const activeNow = hasState && info.state === 'active' && workdayState.id === info.id && !manuallyClosed;
-  const completed = activeNow && hasState ? collectWorkdayCompletedTasks(workdayState) : [];
+  const showCompleted = hasState;
+  const completed = showCompleted ? collectWorkdayCompletedTasks(workdayState) : [];
   if (WorkdayUI.title) { WorkdayUI.title.textContent = 'Итоги дня'; }
-  if (WorkdayUI.completedSection) WorkdayUI.completedSection.style.display = activeNow ? 'block' : 'none';
+  if (WorkdayUI.completedSection) WorkdayUI.completedSection.style.display = showCompleted ? 'block' : 'none';
   if (WorkdayUI.completedList) {
     WorkdayUI.completedList.innerHTML = '';
-    if (activeNow && completed.length) {
+    if (showCompleted && completed.length) {
       for (const item of completed) {
         const li = document.createElement('li');
         const title = document.createElement('div'); title.className = 'workday-dialog-task-title'; title.textContent = item.title; li.appendChild(title);
@@ -560,8 +607,8 @@ export function updateWorkdayDialogContent() {
         meta.textContent = parts.join(' • '); li.appendChild(meta); WorkdayUI.completedList.appendChild(li);
       }
     }
-    if (WorkdayUI.completedEmpty) WorkdayUI.completedEmpty.style.display = activeNow && !completed.length ? 'block' : 'none';
-    WorkdayUI.completedList.style.display = activeNow && completed.length ? 'flex' : 'none';
+    if (WorkdayUI.completedEmpty) WorkdayUI.completedEmpty.style.display = showCompleted && !completed.length ? 'block' : 'none';
+    WorkdayUI.completedList.style.display = showCompleted && completed.length ? 'flex' : 'none';
   }
   if (WorkdayUI.pendingList) {
     WorkdayUI.pendingList.innerHTML = '';
@@ -611,9 +658,8 @@ export function postponePendingTasks() {
   if (isWorkdayClosedForEditing()) { promptToReopenWorkday(); return; }
   const pending = collectWorkdayPendingTasks(workdayState);
   if (!pending.length) { _cb.toast?.('Все задачи уже перенесены'); return; }
-  const nextDay = new Date(workdayState.start);
-  nextDay.setDate(nextDay.getDate() + 1); nextDay.setHours(0, 0, 0, 0);
-  const nextIso = nextDay.toISOString();
+  const nextIso = zonedDayStartIsoForWorkdayDate(workdayState.start, 1);
+  if (!nextIso) { _cb.toast?.('Не удалось определить завтрашний день'); return; }
   let changed = false;
   const updatedIds = [];
   for (const item of pending) {
@@ -630,7 +676,7 @@ export function postponePendingTasks() {
   }
 }
 
-export function finishWorkdayAndArchive() {
+export function finishWorkday() {
   if (!workdayState) { closeWorkdayDialog(); return; }
   if (isWorkdayClosedForEditing()) { _cb.toast?.('Рабочий день уже закрыт'); closeWorkdayDialog(); return; }
   const now = Date.now();
@@ -641,7 +687,7 @@ export function finishWorkdayAndArchive() {
   workdayState.finalDoneCount = Math.max(workdayState.finalDoneCount || 0, aggregated.doneCount);
   workdayState.closedAt = now; workdayState.closedManually = true; workdayState.locked = true;
   WorkdayStore.write(workdayState);
-  if (_cb.hasActiveTimer?.()) { _cb.stopAllTimersExcept?.(null); Store.write(_cb.getTasks?.()); _cb.syncTimerLoop?.(); }
+  syncActiveTimersForWorkdayClose();
   Store.write(_cb.getTasks?.());
   if (isServerMode()) {
     const workdayPayload = { id: workdayState.id, startTs: workdayState.start || null, endTs: workdayState.end || null, summaryTimeMs: aggregated.timeMs, summaryDone: aggregated.doneCount, payload: { ...workdayState }, closedAt: now };

@@ -10,6 +10,9 @@ const {
   collectDescendantIds
 } = require('../lib/task-utils');
 
+const WORKDAY_TIMEZONE_OFFSET_MINUTES = 180;
+const WORKDAY_TIMEZONE_OFFSET_MS = WORKDAY_TIMEZONE_OFFSET_MINUTES * 60 * 1000;
+
 function cloneTask(task) {
   return {
     id: task.id,
@@ -62,12 +65,22 @@ function normalizeProjectId(raw) {
 }
 
 function toAstronomicalDayStartIso(value) {
-  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
-  if (Number.isNaN(date.getTime())) {
+  const ts = value instanceof Date ? value.getTime() : Number(value);
+  if (!Number.isFinite(ts)) {
     return null;
   }
-  date.setHours(0, 0, 0, 0);
-  return date.toISOString();
+  const shifted = new Date(ts + WORKDAY_TIMEZONE_OFFSET_MS);
+  if (Number.isNaN(shifted.getTime())) return null;
+  const dayStartTs = Date.UTC(
+    shifted.getUTCFullYear(),
+    shifted.getUTCMonth(),
+    shifted.getUTCDate(),
+    0,
+    0,
+    0,
+    0
+  ) - WORKDAY_TIMEZONE_OFFSET_MS;
+  return new Date(dayStartTs).toISOString();
 }
 
 function isDueBeforeDay(task, dayStartTs) {

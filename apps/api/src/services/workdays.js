@@ -5,64 +5,78 @@ const logger = require('../lib/logger');
 
 const WORKDAY_START_HOUR = 6;
 const WORKDAY_END_HOUR = 3;
+const WORKDAY_TIMEZONE_OFFSET_MINUTES = 180;
+const WORKDAY_TIMEZONE_OFFSET_MS = WORKDAY_TIMEZONE_OFFSET_MINUTES * 60 * 1000;
 
 function pad(value) {
   return String(value).padStart(2, '0');
 }
 
 function formatWorkdayId(value) {
-  const date = value instanceof Date ? value : new Date(value);
+  const ts = value instanceof Date ? value.getTime() : Number(value);
+  if (!Number.isFinite(ts)) {
+    return null;
+  }
+  const date = new Date(ts + WORKDAY_TIMEZONE_OFFSET_MS);
   if (Number.isNaN(date.getTime())) {
     return null;
   }
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
+}
+
+function getWorkdayZonedParts(value) {
+  const ts = value instanceof Date ? value.getTime() : Number(value);
+  if (!Number.isFinite(ts)) return null;
+  const shifted = new Date(ts + WORKDAY_TIMEZONE_OFFSET_MS);
+  if (Number.isNaN(shifted.getTime())) return null;
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth(),
+    day: shifted.getUTCDate(),
+    hour: shifted.getUTCHours()
+  };
+}
+
+function zonedWorkdayTimeToTimestamp(year, month, day, hour) {
+  return Date.UTC(year, month, day, hour, 0, 0, 0) - WORKDAY_TIMEZONE_OFFSET_MS;
 }
 
 function getWorkdayWindow(nowTs = Date.now()) {
-  const current = new Date(nowTs);
-  const hour = current.getHours();
+  const current = getWorkdayZonedParts(nowTs);
+  if (!current) {
+    return null;
+  }
+  const hour = current.hour;
   if (hour < WORKDAY_END_HOUR) {
-    const start = new Date(current);
-    start.setDate(start.getDate() - 1);
-    start.setHours(WORKDAY_START_HOUR, 0, 0, 0);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 1);
-    end.setHours(WORKDAY_END_HOUR, 0, 0, 0);
+    const startTs = zonedWorkdayTimeToTimestamp(current.year, current.month, current.day - 1, WORKDAY_START_HOUR);
+    const endTs = zonedWorkdayTimeToTimestamp(current.year, current.month, current.day, WORKDAY_END_HOUR);
     return {
       state: 'active',
-      id: formatWorkdayId(start),
-      startTs: start.getTime(),
-      endTs: end.getTime()
+      id: formatWorkdayId(startTs),
+      startTs,
+      endTs
     };
   }
   if (hour >= WORKDAY_START_HOUR) {
-    const start = new Date(current);
-    start.setHours(WORKDAY_START_HOUR, 0, 0, 0);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 1);
-    end.setHours(WORKDAY_END_HOUR, 0, 0, 0);
+    const startTs = zonedWorkdayTimeToTimestamp(current.year, current.month, current.day, WORKDAY_START_HOUR);
+    const endTs = zonedWorkdayTimeToTimestamp(current.year, current.month, current.day + 1, WORKDAY_END_HOUR);
     return {
       state: 'active',
-      id: formatWorkdayId(start),
-      startTs: start.getTime(),
-      endTs: end.getTime()
+      id: formatWorkdayId(startTs),
+      startTs,
+      endTs
     };
   }
 
-  const prevStart = new Date(current);
-  prevStart.setDate(prevStart.getDate() - 1);
-  prevStart.setHours(WORKDAY_START_HOUR, 0, 0, 0);
-  const prevEnd = new Date(prevStart);
-  prevEnd.setDate(prevEnd.getDate() + 1);
-  prevEnd.setHours(WORKDAY_END_HOUR, 0, 0, 0);
-  const nextStart = new Date(current);
-  nextStart.setHours(WORKDAY_START_HOUR, 0, 0, 0);
+  const startTs = zonedWorkdayTimeToTimestamp(current.year, current.month, current.day - 1, WORKDAY_START_HOUR);
+  const endTs = zonedWorkdayTimeToTimestamp(current.year, current.month, current.day, WORKDAY_END_HOUR);
+  const nextStartTs = zonedWorkdayTimeToTimestamp(current.year, current.month, current.day, WORKDAY_START_HOUR);
   return {
     state: 'waiting',
-    id: formatWorkdayId(prevStart),
-    startTs: prevStart.getTime(),
-    endTs: prevEnd.getTime(),
-    nextStartTs: nextStart.getTime()
+    id: formatWorkdayId(startTs),
+    startTs,
+    endTs,
+    nextStartTs
   };
 }
 
@@ -364,7 +378,6 @@ async function runAutoDayCloseMaintenance(nowTs = Date.now()) {
   const overdue = await tasks.rescheduleOverduePendingTasks(nowTs);
 
   return {
-    archivedIds: [],
     rescheduledIds: overdue.updatedIds,
     rescheduledDue: overdue.due
   };
