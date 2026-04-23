@@ -138,6 +138,51 @@
 
 Практическое правило: если в модуле есть скрытая зависимость на поведение другого слоя, сначала ищите не `import`, а регистрацию в `main.js`.
 
+## Матрица callback-реестров
+
+Ниже зафиксирован текущий порядок и смысл основных регистраций из `main.js`.
+
+| Реестр | Кто регистрирует | Что передаётся | Зачем модулю |
+|---|---|---|---|
+| `registerStorageCallbacks` | `main.js` | `onServerTaskWrite`, `onServerProjectsWrite`, `onServerWorkdayWrite`, `afterTasksPersisted` | `storage.js` делегирует server-mode запись, не импортируя `api.js` и orchestration напрямую |
+| `registerApiCallbacks` | `main.js` | `toast`, `buildWorkdayPayload`, `refreshData`, `setStorageModeAndReload` | `api.js` умеет показывать ошибки, пересинхронизировать данные и переключать режим |
+| `registerYearPlanDataCallbacks` | `main.js` | `render`, `toast` | data-слой year plan может запросить перерисовку и показать ошибку |
+| `registerYearPlanInteractionsCallbacks` | `main.js` | `renderIfVisible`, `toast`, submenu/context helpers, selection/hover setters, `navigateToProject` | interaction-слой year plan управляет UI без прямого знания о global state |
+| `registerYearPlanRenderCallbacks` | `main.js` | `render`, `renderIfVisible`, `toast`, holiday/weekend helpers, hover getter, `getProjectEmoji` | рендер year plan опирается на общие UI и project helpers |
+| `registerWorkdayCallbacks` | `main.js` | task accessors, timer helpers, formatters, `refreshDataForCurrentMode`, notes/selection accessors, `toast`, `render` | `workday.js` связывает рабочий день с задачами, UI и sync |
+| `registerProjectsCallbacks` | `main.js` | `toast`, `render`, `renderYearPlanIfVisible`, current view/project getters/setters | `projects.js` влияет на year plan и глобальную навигацию |
+| `registerTasksDataCallbacks` | `main.js` | view/project getters, projects getter, time helpers, notes hooks, render hooks, completion hooks | `tasks-data.js` изменяет state задач и уведомляет UI/другие фичи |
+| `registerTasksRenderCallbacks` | `main.js` | selection getters/setters, due/time dialog helpers, `render`, `toast`, project summary updater | `tasks-render.js` управляет DOM задач, не владея глобальным state |
+| `registerDuePickerCallbacks` | `main.js` | `render` | after-select сценарии требуют общий rerender |
+| `registerSprintCallbacks` | `main.js` | `render` | sprint UI триггерит общий rerender |
+| `registerKeyboardCallbacks` | `main.js` | current view/project getters/setters, `render`, selection getter, `openTimeEditDialog`, `closeTimeDialog` | hotkeys изменяют global navigation и task UI |
+| `registerEffectsCallbacks` | `main.js` | `toast` | completion effects могут сообщать о результате |
+| `registerTimeDialogCallbacks` | `main.js` | `toast` | time dialog показывает ошибки и статусы |
+
+### Практический порядок чтения
+
+Если модуль ведёт себя “магически”, идите в таком порядке:
+
+1. Найдите `registerXCallbacks(...)` экспорт в самом модуле.
+2. Найдите его вызов в `apps/web/main.js`.
+3. Посмотрите, какие функции и accessors туда прокинуты.
+4. Только потом делайте вывод о зависимостях модуля.
+
+### Практический порядок регистрации в `main.js`
+
+Сейчас ключевые регистрации идут так:
+
+1. `registerStorageCallbacks`
+2. `registerApiCallbacks`
+3. year plan callbacks
+4. `registerWorkdayCallbacks`
+5. `registerProjectsCallbacks`
+6. `registerTasksDataCallbacks`
+7. `registerTasksRenderCallbacks`
+8. due/sprint/keyboard/effects/time-dialog callbacks
+
+Это важно, потому что некоторые модули ожидают, что orchestration-слой уже передал им accessors до первого реального взаимодействия пользователя.
+
 ## Поток данных в `local` режиме
 
 ```text

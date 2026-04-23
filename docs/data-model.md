@@ -183,11 +183,14 @@ archive stores historical payloads, usually related to closed workdays or remove
 - `createdTs INTEGER NOT NULL`
 - `updatedTs INTEGER NOT NULL`
 
-Важно:
+Как получилась текущая схема:
 
-- year plan эволюционировал через несколько миграций;
-- текущий сервис `apps/api/src/services/yearplan.js` работает уже с диапазоном `startMonth/startDay -> endMonth/endDay`, цветом и `projectId`;
-- если нужно перепроверить фактическую финальную схему, смотрите все миграции `003`-`006` вместе, а не только первую.
+- `003` создала базовую таблицу;
+- `004` перевела её с `month + startDay/endDay` на диапазон `startMonth/startDay -> endMonth/endDay`;
+- `005` добавила `color`;
+- `006` добавила `projectId`.
+
+Итоговая рабочая схема выше — это уже финальное состояние после применения миграций `003`-`006`, а не приблизительное описание.
 
 Инварианты уровня сервиса:
 

@@ -486,7 +486,18 @@ function render(){
     const yearList=document.createElement('div');
     yearList.className='year-side-list';
     yearSide.append(yearHeader,yearList);
-    layout.append(tasksWrap,yearSide);
+    const todaySide=document.createElement('div');
+    todaySide.className='year-side';
+    const todayHeader=document.createElement('div');
+    todayHeader.className='year-side-header';
+    todayHeader.textContent='Сегодня';
+    const todayList=document.createElement('div');
+    todayList.className='year-side-list';
+    todaySide.append(todayHeader,todayList);
+    const rightCol=document.createElement('div');
+    rightCol.className='project-right-col';
+    rightCol.append(todaySide,yearSide);
+    layout.append(tasksWrap,rightCol);
     wrap.appendChild(layout);
     ensureYearPlanData(yearPlanYear);
     const loading=yearPlanLoadingYears.has(yearPlanYear);
@@ -528,6 +539,30 @@ function render(){
           render();
         };
         yearList.appendChild(row);
+      }
+    }
+    const todayTasks=[];
+    walkTasks(tasks,t=>{if(t&&!t.done&&isDueToday(t.due))todayTasks.push(t)});
+    if(!todayTasks.length){
+      const status=document.createElement('div');
+      status.className='year-side-status';
+      status.textContent='Нет задач на сегодня';
+      todayList.appendChild(status);
+    }else{
+      for(const task of todayTasks){
+        const row=document.createElement('button');
+        row.type='button';
+        row.className='year-side-item today-side-item'+(selectedTaskId===task.id?' is-selected':'');
+        const title=document.createElement('div');
+        title.className='year-side-item-title';
+        title.textContent=task.title;
+        row.append(title);
+        row.onclick=()=>{
+          selectedTaskId=task.id;
+          render();
+          requestAnimationFrame(()=>{const el=document.querySelector(`[data-id="${task.id}"]`);if(el)el.scrollIntoView({block:'center',behavior:'smooth'})});
+        };
+        todayList.appendChild(row);
       }
     }
     const dataList=filterTree(tasks,t=>t.project===currentProjectId);

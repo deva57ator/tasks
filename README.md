@@ -12,7 +12,9 @@
 
 ```bash
 cd apps/api
-cp .env.example .env   # задать TASKS_API_KEY
+cat > .env <<'EOF'
+TASKS_API_KEY=dev-secret
+EOF
 npm install
 npm run migrate        # создать/обновить базу
 npm run dev            # http://127.0.0.1:4001/api
@@ -46,9 +48,11 @@ cd apps/web && python3 -m http.server 8000
 ### Архитектурная документация
 
 - `docs/architecture-overview.md` — короткая карта системы и связей между слоями
+- `docs/api-contract.md` — shapes запросов и ответов для основных API endpoints
 - `docs/backend-architecture.md` — устройство API, сервисов, middleware и SQLite-слоя
 - `docs/frontend-architecture.md` — как устроен фронтенд, состояние и callback-реестры
 - `docs/data-model.md` — сущности, связи, инварианты и замечания по схеме БД
+- `docs/local-development.md` — локальный запуск, проверки и частые проблемы
 - `docs/runtime-flows.md` — пошаговые сценарии запуска, sync, import и deploy
 - `docs/repo-map.md` — быстрая карта папок, entry points и куда идти по типу задачи
 

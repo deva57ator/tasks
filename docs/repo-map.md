@@ -12,7 +12,7 @@ docs/        архитектурная и operational документация
 infra/       nginx, systemd и rsync-артефакты для окружений
 .github/     workflow деплоя и promote
 README.md    стартовая точка для человека
-AGENTS.md    локальные инструкции для агентов
+AGENTS.md    repo-local инструкции для агента; это не часть `docs/`, а operational contract файла репозитория
 ```
 
 ## `apps/`
@@ -92,6 +92,8 @@ src/
 - `apps/api/src/services/tasks.js` — влияет и на API, и на фронтендовую модель дерева
 - `apps/api/src/services/workdays.js` — связан с timezone и синхронизацией рабочего дня
 
+Для `DB_PATH` и похожих operational ловушек ориентируйтесь на `docs/backend-architecture.md`, секция `Common Pitfalls`.
+
 ## `apps/web/`
 
 ```text
@@ -168,9 +170,11 @@ yearplan/
 ```text
 docs/
   architecture-overview.md
+  api-contract.md
   backend-architecture.md
   frontend-architecture.md
   data-model.md
+  local-development.md
   runtime-flows.md
   repo-map.md
 ```
@@ -185,7 +189,9 @@ docs/
 
 - backend-задача — `docs/backend-architecture.md`
 - frontend-задача — `docs/frontend-architecture.md`
+- работа с HTTP shapes — `docs/api-contract.md`
 - изменения схемы или payload — `docs/data-model.md`
+- локальный запуск и проверки — `docs/local-development.md`
 - debugging runtime или deploy — `docs/runtime-flows.md`
 
 ## `infra/`
