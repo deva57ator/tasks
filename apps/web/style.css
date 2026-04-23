@@ -635,3 +635,12 @@ body.theme-dark .storage-toggle[data-mode="server"]:active{box-shadow:0 16px 40p
   .workday-stats{grid-area:stats;flex-wrap:nowrap;gap:12px}
   .header-actions{grid-area:actions;margin-left:0;flex-wrap:nowrap}
 }
+@media (max-width:600px){
+  .task{grid-template-columns:auto 1fr auto;grid-template-rows:auto auto;align-items:start;gap:6px 8px}
+  .task-checkbox{grid-column:1;grid-row:1 / span 2;align-self:start;margin-top:3px}
+  .task-main{grid-column:2;grid-row:1}
+  .delete-btn{grid-column:3;grid-row:1;align-self:start}
+  .task-actions{grid-column:2 / span 2;grid-row:2;justify-content:flex-start}
+  .project-layout{flex-direction:column}
+  .project-right-col{flex:unset;min-width:unset;max-width:unset;width:100%}
+}

@@ -542,7 +542,7 @@ function render(){
       }
     }
     const todayTasks=[];
-    walkTasks(tasks,t=>{if(t&&!t.done&&isDueToday(t.due))todayTasks.push(t)});
+    walkTasks(tasks,t=>{if(t&&!t.done&&t.project===currentProjectId&&isDueToday(t.due))todayTasks.push(t)});
     if(!todayTasks.length){
       const status=document.createElement('div');
       status.className='year-side-status';
