@@ -6,7 +6,7 @@ import { yearPlanSelectedId, yearPlanEditingId, findYearPlanItem, deleteYearPlan
 import { isApiSettingsOpen, apiSettingsBlocking, closeApiSettings } from './api.js';
 import { closeWorkdayDialog } from './workday.js';
 import { closeProjectDeleteDialog } from './projects.js';
-import { addSubtask, handleDelete, toggleTask, toggleTaskTimer } from './tasks-data.js';
+import { addSubtask, handleDelete, toggleTask, toggleTaskTimer, toggleTaskPriority } from './tasks-data.js';
 
 const _cb = {};
 export function registerKeyboardCallbacks(cbs) { Object.assign(_cb, cbs); }
@@ -70,6 +70,7 @@ document.addEventListener('keydown', e => {
     return;
   }
   if (e.code === 'KeyF') { e.preventDefault(); toggleTask(selectedTaskId); return; }
+  if (e.code === 'KeyE') { e.preventDefault(); toggleTaskPriority(selectedTaskId); return; }
   if (e.code === 'KeyR') { e.preventDefault(); toggleTaskTimer(selectedTaskId); return; }
   if (e.code === 'KeyC') { e.preventDefault(); openNotesPanel(selectedTaskId); return; }
   if (e.code === 'KeyT') { e.preventDefault(); _cb.openTimeEditDialog(selectedTaskId); }

@@ -19,6 +19,7 @@ export const pendingServerCreates = new Set();
 
 let activeTimersState = {};
 let timerInterval = null;
+const MAX_PRIORITY_TASKS = 3;
 
 // ── Таймерный стейт ────────────────────────────────────────────────────────
 function ensureActiveTimersState() { if (!activeTimersState || typeof activeTimersState !== 'object') activeTimersState = {} }
@@ -52,11 +53,14 @@ export function normalizeTaskTree(list, parentId = null) {
       id: typeof item.id === 'string' ? item.id : uid(),
       title: typeof item.title === 'string' ? item.title : '',
       done: item.done === true,
+      priority: item.priority === true,
       due: typeof item.due === 'string' && item.due ? item.due : null,
       project: typeof item.project === 'string' && item.project ? item.project : null,
       notes: typeof item.notes === 'string' ? item.notes : '',
       timeSpent: clampTimeSpentMs(item.timeSpent),
       sortOrder: typeof item.sortOrder === 'number' && Number.isFinite(item.sortOrder) ? Math.max(0, item.sortOrder) : 0,
+      createdAt: typeof item.createdAt === 'string' && item.createdAt ? item.createdAt : null,
+      updatedAt: typeof item.updatedAt === 'string' && item.updatedAt ? item.updatedAt : null,
       parentId,
       children: normalizeTaskTree(item.children || [], typeof item.id === 'string' ? item.id : null),
       collapsed: item.collapsed === true,
@@ -83,12 +87,15 @@ export function migrate(list, depth = 0) {
     if (!Array.isArray(t.children)) t.children = [];
     if (typeof t.collapsed !== 'boolean') t.collapsed = false;
     if (typeof t.done !== 'boolean') t.done = false;
+    if (typeof t.priority !== 'boolean') t.priority = false;
     if (!('due' in t)) t.due = null;
     if (!('project' in t)) t.project = null;
     if (typeof t.notes !== 'string') t.notes = '';
     if (typeof t.timeSpent !== 'number' || !isFinite(t.timeSpent) || t.timeSpent < 0) t.timeSpent = 0;
     t.timeSpent = clampTimeSpentMs(t.timeSpent);
     if (typeof t.sortOrder !== 'number' || !Number.isFinite(t.sortOrder) || t.sortOrder < 0) t.sortOrder = 0;
+    if (typeof t.createdAt !== 'string' || !t.createdAt) t.createdAt = null;
+    if (typeof t.updatedAt !== 'string' || !t.updatedAt) t.updatedAt = null;
     if (typeof t.timerActive !== 'boolean') t.timerActive = false;
     if (typeof t.timerStart !== 'number' || !isFinite(t.timerStart)) t.timerStart = null;
     if (t.children.length) {
@@ -317,7 +324,8 @@ export function addTask(title) {
   }
   let dueDate = null;
   if (currentView === 'today') { const today = new Date(); today.setHours(0, 0, 0, 0); dueDate = today.toISOString() }
-  const task = { id: uid(), title, done: false, children: [], collapsed: false, due: dueDate, project: assignedProject, notes: '', timeSpent: 0, timerActive: false, timerStart: null, parentId: null };
+  const timestamp=new Date().toISOString();
+  const task = { id: uid(), title, done: false, priority: false, children: [], collapsed: false, due: dueDate, project: assignedProject, notes: '', timeSpent: 0, timerActive: false, timerStart: null, parentId: null, createdAt: timestamp, updatedAt: timestamp };
   tasks.unshift(task); Store.write(tasks);
   if (isServerMode()) queueTaskCreate(task);
   _cb.render?.();
@@ -329,7 +337,8 @@ export function addSubtask(parentId) {
   if (depth === -1 || depth >= MAX_TASK_DEPTH) { _cb.toast?.('Максимальная вложенность — три уровня'); return }
   const inheritedProject = typeof p.project === 'undefined' ? null : p.project;
   const inheritedDue = typeof p.due === 'string' && p.due ? p.due : null;
-  const child = { id: uid(), title: '', done: false, children: [], collapsed: false, due: inheritedDue, project: inheritedProject, notes: '', timeSpent: 0, timerActive: false, timerStart: null, parentId };
+  const timestamp=new Date().toISOString();
+  const child = { id: uid(), title: '', done: false, priority: false, children: [], collapsed: false, due: inheritedDue, project: inheritedProject, notes: '', timeSpent: 0, timerActive: false, timerStart: null, parentId, createdAt: timestamp, updatedAt: timestamp };
   p.children.push(child); p.collapsed = false;
   _cb.setSelectedTaskId?.(child.id);
   Store.write(tasks);
@@ -403,6 +412,35 @@ export function renameTask(id, title) {
     }
   }
   _cb.render?.();
+}
+
+function todayStartIso() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today.toISOString();
+}
+
+export function toggleTaskPriority(id) {
+  const t = findTask(id);
+  if (!t) return { ok: false, reason: 'not-found' };
+  const nextPriority = !t.priority;
+  if (nextPriority) {
+    let activePriorityCount = 0;
+    walkTasks(tasks, (item) => {
+      if (item && item.priority === true && item.done !== true) activePriorityCount += 1;
+    });
+    if (activePriorityCount >= MAX_PRIORITY_TASKS) {
+      _cb.toast?.(`В приоритете может быть не больше ${MAX_PRIORITY_TASKS} задач`);
+      return { ok: false, reason: 'limit' };
+    }
+  }
+  t.priority = nextPriority;
+  if (nextPriority) t.due = todayStartIso();
+  Store.write(tasks);
+  if (isServerMode()) queueTaskUpdate(id, { priority: nextPriority, due: t.due });
+  _cb.render?.();
+  _cb.toast?.(nextPriority ? 'Добавлено в приоритет' : 'Убрано из приоритета');
+  return { ok: true, reason: nextPriority ? 'added' : 'removed' };
 }
 
 export function toggleCollapse(id) { const t = findTask(id); if (!t) return; t.collapsed = !t.collapsed; Store.write(tasks); _cb.render?.() }

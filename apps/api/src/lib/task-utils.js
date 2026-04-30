@@ -3,6 +3,7 @@ function mapRowToTask(row) {
     id: row.id,
     title: row.title,
     done: row.done === 1,
+    priority: row.priority === 1,
     due: row.due || null,
     project: row.projectId || null,
     notes: row.notes || '',

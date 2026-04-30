@@ -3,7 +3,7 @@ import { $, $$, getTaskRowById, isDueToday, isDuePast, formatDue } from './utils
 import {
   tasks, findTask,
   containsTask, getSubtreeDepth,
-  totalTimeMs, toggleTask, toggleTaskTimer, handleDelete, renameTask,
+  totalTimeMs, toggleTask, toggleTaskTimer, handleDelete, renameTask, toggleTaskPriority,
   removeActiveTimerState, moveTaskRelative, promoteTask,
 } from './tasks-data.js';
 import { Store, isServerMode } from './storage.js';
@@ -51,6 +51,7 @@ export function rowClass(t) {
   return 'task' +
     (_cb.getSelectedTaskId?.() === t.id ? ' is-selected' : '') +
     (t.done ? ' done' : '') +
+    (t.priority ? ' is-priority' : '') +
     (t.timerActive ? ' is-timer-active' : '');
 }
 
@@ -323,6 +324,11 @@ export function openContextMenu(taskId, x, y) {
   };
   const btnComplete = document.createElement('div'); btnComplete.className = 'context-item'; btnComplete.textContent = 'Выполнено';
   btnComplete.onclick = () => { closeContextMenu(); _cb.markTaskDone?.(taskId); };
+  const btnPriority = document.createElement('div'); btnPriority.className = 'context-item'; btnPriority.textContent = 'Приоритет';
+  btnPriority.onclick = () => {
+    const result = toggleTaskPriority(taskId);
+    if (result && result.ok) closeContextMenu();
+  };
   const btnAssign = document.createElement('div'); btnAssign.className = 'context-item has-submenu'; btnAssign.textContent = 'Проект';
   btnAssign.addEventListener('mouseenter', () => { openAssignSubmenu(taskId, btnAssign); _cb.closeDuePicker?.(); });
   btnAssign.addEventListener('mouseleave', () => maybeCloseSubmenu());
@@ -340,7 +346,7 @@ export function openContextMenu(taskId, x, y) {
       }
     }, 80);
   });
-  const items = [btnEdit, btnComplete, btnAssign, btnTime, btnDue];
+  const items = [btnEdit, btnComplete, btnPriority, btnAssign, btnTime, btnDue];
   if (t && t.parentId) {
     const btnPromote = document.createElement('div'); btnPromote.className = 'context-item'; btnPromote.textContent = 'Вынести';
     btnPromote.onclick = () => { closeContextMenu(); promoteTask(taskId); };
@@ -526,6 +532,7 @@ export function renderTaskRow(t, depth, container, renderContext = { visibleTask
   const content = document.createElement('div'); content.className = 'task-main';
   const title = document.createElement('div'); title.className = 'task-title';
   const titleText = document.createElement('span'); titleText.className = 'task-title-text'; titleText.textContent = t.title;
+  if (t.priority) titleText.classList.add('is-priority');
   title.appendChild(titleText); content.appendChild(title);
 
   const tagsWrap = document.createElement('div'); tagsWrap.className = 'task-tags';

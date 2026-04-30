@@ -18,6 +18,7 @@ function cloneTask(task) {
     id: task.id,
     title: task.title,
     done: task.done,
+    priority: task.priority,
     due: task.due,
     project: task.project,
     notes: task.notes,
@@ -128,13 +129,15 @@ async function create(data) {
   const id = data.id || crypto.randomUUID();
   const timestamp = nowIso();
   const done = data.done === true;
+  const priority = data.priority === true;
   const completedAt = done ? (data.completedAt || timestamp) : null;
   await db.run(
-    'INSERT INTO tasks (id, title, done, due, projectId, notes, timeSpentMs, parentId, sortOrder, createdAt, updatedAt, completedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO tasks (id, title, done, priority, due, projectId, notes, timeSpentMs, parentId, sortOrder, createdAt, updatedAt, completedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [
       id,
       data.title || '',
       done ? 1 : 0,
+      priority ? 1 : 0,
       data.due || null,
       data.project || null,
       data.notes || '',
@@ -154,12 +157,14 @@ async function update(id, data) {
   if (!current) return null;
   const timestamp = nowIso();
   const done = data.done !== undefined ? data.done === true : current.done;
+  const priority = data.priority !== undefined ? data.priority === true : current.priority;
   const completedAt = done ? (data.completedAt || current.completedAt || timestamp) : null;
   await db.run(
-    'UPDATE tasks SET title = ?, done = ?, due = ?, projectId = ?, notes = ?, timeSpentMs = ?, parentId = ?, sortOrder = ?, updatedAt = ?, completedAt = ? WHERE id = ?',
+    'UPDATE tasks SET title = ?, done = ?, priority = ?, due = ?, projectId = ?, notes = ?, timeSpentMs = ?, parentId = ?, sortOrder = ?, updatedAt = ?, completedAt = ? WHERE id = ?',
     [
       data.title !== undefined ? data.title : current.title,
       done ? 1 : 0,
+      priority ? 1 : 0,
       data.due !== undefined ? data.due : current.due,
       data.project !== undefined ? data.project : current.project,
       data.notes !== undefined ? data.notes : current.notes,
@@ -195,13 +200,15 @@ async function importMany(list = []) {
       const createdAt = task.createdAt || nowIso();
       const updatedAt = task.updatedAt || createdAt;
       const done = task.done === true;
+      const priority = task.priority === true;
       const completedAt = done ? (task.completedAt || updatedAt) : null;
       tx.run(
-        'INSERT INTO tasks (id, title, done, due, projectId, notes, timeSpentMs, parentId, sortOrder, createdAt, updatedAt, completedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n        ON CONFLICT(id) DO UPDATE SET title = excluded.title, done = excluded.done, due = excluded.due, projectId = excluded.projectId, notes = excluded.notes, timeSpentMs = excluded.timeSpentMs, parentId = excluded.parentId, sortOrder = excluded.sortOrder, updatedAt = excluded.updatedAt, completedAt = excluded.completedAt',
+        'INSERT INTO tasks (id, title, done, priority, due, projectId, notes, timeSpentMs, parentId, sortOrder, createdAt, updatedAt, completedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n        ON CONFLICT(id) DO UPDATE SET title = excluded.title, done = excluded.done, priority = excluded.priority, due = excluded.due, projectId = excluded.projectId, notes = excluded.notes, timeSpentMs = excluded.timeSpentMs, parentId = excluded.parentId, sortOrder = excluded.sortOrder, updatedAt = excluded.updatedAt, completedAt = excluded.completedAt',
         [
           task.id,
           task.title || '',
           done ? 1 : 0,
+          priority ? 1 : 0,
           task.due || null,
           task.project || null,
           task.notes || '',

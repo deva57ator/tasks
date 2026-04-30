@@ -364,6 +364,31 @@ function renderTaskTree(list,container){
   const renderContext=buildRenderContext(list);
   for(const t of list){renderTaskRow(t,0,container,renderContext)}
 }
+function parseIsoTs(value){
+  if(typeof value!=='string'||!value)return Number.POSITIVE_INFINITY;
+  const ts=Date.parse(value);
+  return Number.isFinite(ts)?ts:Number.POSITIVE_INFINITY;
+}
+function prioritySortBucket(task){
+  const dueTs=parseIsoTs(task?.due);
+  if(Number.isFinite(dueTs)){
+    if(isDueToday(task?.due))return 1;
+    return dueTs<Date.now()?0:2;
+  }
+  return 3;
+}
+function comparePriorityTasks(a,b){
+  const bucketA=prioritySortBucket(a);
+  const bucketB=prioritySortBucket(b);
+  if(bucketA!==bucketB)return bucketA-bucketB;
+  const dueA=parseIsoTs(a?.due);
+  const dueB=parseIsoTs(b?.due);
+  if(dueA!==dueB)return dueA-dueB;
+  const createdA=parseIsoTs(a?.createdAt);
+  const createdB=parseIsoTs(b?.createdAt);
+  if(createdA!==createdB)return createdA-createdB;
+  return String(a?.title||'').localeCompare(String(b?.title||''),'ru',{sensitivity:'base'});
+}
 function renderTasksWithCompleted(sourceList,container,{emptyText='Пусто'}={}){
   const split=splitCompletedTasks(sourceList);
   const completedCount=countTaskNodes(split.completed);
@@ -580,9 +605,28 @@ function render(){
     return
   }
   document.getElementById('viewTitle').textContent=currentView==='today'?'Сегодня':'Все задачи';
-  const dataList=currentView==='today'?filterTree(tasks,t=>isDueToday(t.due)):tasks;
-  const completedState=renderTasksWithCompleted(dataList,wrap,{emptyText:'Пусто'});
-  renderCompletedDock(completedState.completed,completedState.completedCount);
+  let dataList=currentView==='today'?filterTree(tasks,t=>isDueToday(t.due)):tasks;
+  if(currentView==='today'){
+    const todayPriority=filterTree(dataList,t=>t.priority===true);
+    const regularToday=filterTree(dataList,t=>t.priority!==true);
+    const priorityContainer=document.createElement('section');
+    priorityContainer.className='today-priority-block';
+    const priorityTitle=document.createElement('h3');
+    priorityTitle.className='today-priority-title';
+    priorityTitle.textContent='Приоритет';
+    const priorityList=document.createElement('div');
+    priorityList.className='today-priority-list';
+    priorityContainer.append(priorityTitle,priorityList);
+    wrap.appendChild(priorityContainer);
+    const sortedPriorityRoots=[...todayPriority].sort(comparePriorityTasks);
+    const priorityState=renderTasksWithCompleted(sortedPriorityRoots,priorityList,{emptyText:'Нет приоритетных задач'});
+    dataList=regularToday;
+    const completedState=renderTasksWithCompleted(dataList,wrap,{emptyText:'Пусто'});
+    renderCompletedDock([...priorityState.completed,...completedState.completed],priorityState.completedCount+completedState.completedCount);
+  }else{
+    const completedState=renderTasksWithCompleted(dataList,wrap,{emptyText:'Пусто'});
+    renderCompletedDock(completedState.completed,completedState.completedCount);
+  }
   if(pendingEditId){const rowEl=document.querySelector(`[data-id="${pendingEditId}"]`);const taskObj=findTask(pendingEditId);if(rowEl&&taskObj)startEdit(rowEl,taskObj);pendingEditId=null}
   if(hoveredParentTaskId)setInheritedHover(hoveredParentTaskId);
   syncTimerLoop();

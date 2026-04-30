@@ -112,6 +112,7 @@ export function mapTaskForServer(task) {
     id: task.id,
     title: task.title || '',
     done: task.done === true,
+    priority: task.priority === true,
     due: task.due || null,
     project: task.project || null,
     notes: task.notes || '',
@@ -125,6 +126,7 @@ export function normalizeTaskPatch(patch) {
   const payload = {};
   if (patch.title !== undefined) payload.title = String(patch.title);
   if (patch.done !== undefined) payload.done = !!patch.done;
+  if (patch.priority !== undefined) payload.priority = !!patch.priority;
   if (patch.due !== undefined) payload.due = patch.due || null;
   if (patch.project !== undefined) payload.project = patch.project || null;
   if (patch.notes !== undefined) payload.notes = patch.notes || '';

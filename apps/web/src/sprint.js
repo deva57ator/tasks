@@ -229,6 +229,7 @@ export function renderSprint(container) {
           it.className = 'sprint-task';
           it.setAttribute('draggable', 'true');
           if (t.done) it.classList.add('is-done');
+          if (t.priority) it.classList.add('is-priority');
           it.addEventListener('dragstart', e => { sprintDraggingId = t.id; it.classList.add('is-dragging'); setSprintDropColumn(null); try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', t.id); } catch {} closeContextMenu(); closeDuePicker(); });
           it.addEventListener('dragend', () => { clearSprintDragState(); });
           it.addEventListener('contextmenu', e => { e.preventDefault(); openContextMenu(t.id, e.clientX, e.clientY); });
