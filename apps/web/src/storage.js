@@ -76,6 +76,12 @@ export const FontStore = {
   write(v) { localStorage.setItem(this.key, v); }
 };
 
+export const RadiusStore = {
+  key: 'mini-task-tracker:radius',
+  read() { return localStorage.getItem(this.key) || 'compact'; },
+  write(v) { localStorage.setItem(this.key, v); }
+};
+
 // ---------------------------------------------------------------------------
 // Проекты
 // ---------------------------------------------------------------------------

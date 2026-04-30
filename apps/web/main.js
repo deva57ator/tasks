@@ -28,7 +28,7 @@ import {
   updateYearPlanResizeFromEvent, finalizeYearPlanResize,
   updateYearPlanDraftFromEvent, finalizeYearPlanDraft,
 } from './src/yearplan/render.js';
-import { storageMode, setStorageMode, isServerMode, StorageModeStore, ApiKeyStore, Store, ThemeStore, ThemePaletteStore, FontStore, ProjectsStore, WorkdayStore, persistLocalWorkdayState, registerStorageCallbacks } from './src/storage.js';
+import { storageMode, setStorageMode, isServerMode, StorageModeStore, ApiKeyStore, Store, ThemeStore, ThemePaletteStore, FontStore, RadiusStore, ProjectsStore, WorkdayStore, persistLocalWorkdayState, registerStorageCallbacks } from './src/storage.js';
 import {
   WorkdayUI, workdayState, setWorkdayState,
   buildWorkdayPayloadForServer, hydrateWorkdayStateFromServer,
@@ -688,6 +688,56 @@ function applyFont(fontId){
 const fontSelect=$('#fontSelect');
 if(fontSelect){fontSelect.addEventListener('change',()=>{const fontId=getFontId(fontSelect.value);applyFont(fontId);FontStore.write(fontId)})}
 
+const RADIUS_OPTIONS={
+  none:{
+    '--radius':'0px',
+    '--radius-control':'0px',
+    '--radius-card':'0px',
+    '--radius-panel':'0px',
+    '--context-menu-radius':'0px',
+  },
+  compact:{
+    '--radius':'10px',
+    '--radius-control':'8px',
+    '--radius-card':'12px',
+    '--radius-panel':'14px',
+    '--context-menu-radius':'8px',
+  },
+  round:{
+    '--radius':'18px',
+    '--radius-control':'12px',
+    '--radius-card':'18px',
+    '--radius-panel':'20px',
+    '--context-menu-radius':'12px',
+  },
+};
+function getRadiusId(radiusId){
+  if(radiusId==='balanced')return 'compact';
+  if(radiusId==='soft')return 'round';
+  return Object.prototype.hasOwnProperty.call(RADIUS_OPTIONS,radiusId)?radiusId:'compact';
+}
+function renderRadiusSettings(radiusId){
+  $$('[data-radius-level]').forEach(btn=>{
+    const active=btn.dataset.radiusLevel===radiusId;
+    btn.classList.toggle('is-active',active);
+    btn.setAttribute('aria-pressed',String(active));
+  });
+}
+function applyRadius(radiusId){
+  const nextRadius=getRadiusId(radiusId);
+  document.body.dataset.radius=nextRadius;
+  const vars=RADIUS_OPTIONS[nextRadius];
+  Object.entries(vars).forEach(([name,value])=>{document.documentElement.style.setProperty(name,value)});
+  renderRadiusSettings(nextRadius);
+}
+$$('[data-radius-level]').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const radiusId=getRadiusId(btn.dataset.radiusLevel);
+    applyRadius(radiusId);
+    RadiusStore.write(radiusId);
+  });
+});
+
 const YEAR_PLAN_HOLIDAYS_2026=new Set([
   '2026-01-01',
   '2026-01-02',
@@ -871,4 +921,4 @@ setupMobileSidebar();
 
 ensureWorkdayInteractionGuards();
 
-(function(){applyTheme(ThemeStore.read());applyFont(FontStore.read());initCalendar();updateStorageToggle();refreshDataForCurrentMode()})();
+(function(){applyTheme(ThemeStore.read());applyFont(FontStore.read());applyRadius(RadiusStore.read());initCalendar();updateStorageToggle();refreshDataForCurrentMode()})();
