@@ -84,6 +84,9 @@
         <div class="header-tools">
           <div class="workday-bar" id="workdayBar" aria-live="polite">
             <div class="workday-stats">
+              <span class="workday-rec" id="workdayRec" aria-hidden="true">
+                <span class="workday-rec-dot" aria-hidden="true"></span>
+              </span>
               <div class="workday-stat">
                 <span class="workday-stat-label">Готово</span>
                 <span class="workday-stat-value" id="workdayDone">0</span>
@@ -93,9 +96,6 @@
                   Время
                 </span>
                 <span class="workday-stat-value" id="workdayTime">0 мин</span>
-                <span class="workday-rec" id="workdayRec" aria-hidden="true">
-                  <span class="workday-rec-dot" aria-hidden="true"></span>
-                </span>
               </div>
             </div>
             <button type="button" class="workday-finish" id="workdayFinishBtn">Закрыть день</button>

@@ -740,6 +740,7 @@ export function updateWorkdayUI() {
     WorkdayUI.button.setAttribute('aria-disabled', canInteract ? 'false' : 'true');
     WorkdayUI.button.classList.toggle('is-hidden', !!workdayState && closedForEditing);
   }
+  updateWorkdayRecIndicator();
 }
 
 export function ensureWorkdayRefreshLoop() {

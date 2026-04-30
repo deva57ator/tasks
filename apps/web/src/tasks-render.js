@@ -195,6 +195,7 @@ export function updateTimerDisplays() {
     const id = row.dataset.id;
     const task = findTask(id);
     if (!task) continue;
+    row.classList.toggle('is-timer-active', !!task.timerActive);
     const badge = row.querySelector('.time-spent');
     if (badge) {
       const ms = totalTimeMs(task, now);

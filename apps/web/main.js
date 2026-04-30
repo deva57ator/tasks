@@ -34,7 +34,7 @@ import {
   buildWorkdayPayloadForServer, hydrateWorkdayStateFromServer,
   ensureWorkdayInteractionGuards,
   openWorkdayDialog, closeWorkdayDialog, postponePendingTasks, finishWorkday,
-  updateWorkdayUI, ensureWorkdayRefreshLoop,
+  updateWorkdayUI, ensureWorkdayRefreshLoop, updateWorkdayRecIndicator,
   registerWorkdayCallbacks,
 } from './src/workday.js';
 import { setupSidebarResize, setupMobileSidebar } from './src/sidebar.js';
@@ -352,6 +352,7 @@ function updateProjectSummaryDisplay(){
 }
 function syncDisplays(){
   updateTimerDisplays();
+  updateWorkdayRecIndicator();
 }
 function renderEmptyTask(container,text){
   const empty=document.createElement('div');
