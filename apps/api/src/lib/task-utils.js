@@ -8,6 +8,7 @@ function mapRowToTask(row) {
     notes: row.notes || '',
     timeSpent: Number(row.timeSpentMs || 0),
     parentId: row.parentId || null,
+    sortOrder: Number(row.sortOrder || 0),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     completedAt: row.completedAt || null,
@@ -35,10 +36,9 @@ function buildTaskTree(rows) {
   }
   const sortChildren = (list) => {
     list.sort((a, b) => {
-      if (a.createdAt === b.createdAt) {
-        return a.title.localeCompare(b.title, 'ru', { sensitivity: 'base' });
-      }
-      return a.createdAt < b.createdAt ? -1 : 1;
+      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+      if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? -1 : 1;
+      return a.title.localeCompare(b.title, 'ru', { sensitivity: 'base' });
     });
     for (const item of list) {
       if (item.children && item.children.length) {

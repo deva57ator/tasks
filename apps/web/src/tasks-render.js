@@ -2,9 +2,9 @@ import { MAX_TASK_DEPTH } from './config.js';
 import { $, $$, getTaskRowById, isDueToday, isDuePast, formatDue } from './utils.js';
 import {
   tasks, findTask,
-  detachTaskFromTree, containsTask, getSubtreeDepth,
+  containsTask, getSubtreeDepth,
   totalTimeMs, toggleTask, toggleTaskTimer, handleDelete, renameTask,
-  removeActiveTimerState,
+  removeActiveTimerState, moveTaskRelative, promoteTask,
 } from './tasks-data.js';
 import { Store, isServerMode } from './storage.js';
 import { queueTaskUpdate } from './api.js';
@@ -17,7 +17,8 @@ export function registerTasksRenderCallbacks(cbs) { Object.assign(_cb, cbs); }
 // ── Состояние ──────────────────────────────────────────────────────────────
 export let hoveredParentTaskId = null;
 let draggingTaskId = null;
-let dropTargetId = null;
+let dropTarget = { id: null, position: null }; // логическое состояние: position: 'before' | 'after' | 'child'
+let dropIndicatorId = null; // id элемента, на котором стоит CSS-класс (может отличаться от dropTarget.id)
 export let activeEditId = null;
 export let activeInputEl = null;
 
@@ -89,17 +90,52 @@ function collectVisibleAncestorLevels(task, visibleTaskMap) {
   return levels;
 }
 
-function setDropTarget(id) {
-  if (dropTargetId === id || (dropTargetId === null && id === null)) return;
-  if (dropTargetId) {
-    const prev = document.querySelector(`.task[data-id="${dropTargetId}"]`);
-    prev && prev.classList.remove('is-drop-target');
+function setDropTarget(id, position) {
+  const newId = id || null;
+  const newPos = position || null;
+  if (dropTarget.id === newId && dropTarget.position === newPos) return;
+
+  // Снимаем предыдущий визуальный индикатор
+  if (dropIndicatorId) {
+    const prev = document.querySelector(`.task[data-id="${dropIndicatorId}"]`);
+    if (prev) prev.classList.remove('is-drop-target', 'is-drop-before', 'is-drop-after');
+    dropIndicatorId = null;
   }
-  dropTargetId = id || null;
-  if (dropTargetId) {
-    const el = document.querySelector(`.task[data-id="${dropTargetId}"]`);
-    el && el.classList.add('is-drop-target');
+
+  dropTarget = { id: newId, position: newPos };
+  if (!newId || !newPos) return;
+
+  // Для 'after' ищем следующий видимый элемент и рисуем 'before' на нём —
+  // так обе зоны (нижняя A и верхняя B) дают один и тот же DOM-элемент.
+  let visualId = newId;
+  let visualPos = newPos;
+  if (newPos === 'after') {
+    const el = document.querySelector(`.task[data-id="${newId}"]`);
+    if (el) {
+      const all = Array.from(document.querySelectorAll('#tasks .task[data-id]'));
+      const idx = all.indexOf(el);
+      const next = idx >= 0 && idx < all.length - 1 ? all[idx + 1] : null;
+      if (next && next.dataset.id) { visualId = next.dataset.id; visualPos = 'before'; }
+    }
   }
+
+  const el = document.querySelector(`.task[data-id="${visualId}"]`);
+  if (el) {
+    if (visualPos === 'before') el.classList.add('is-drop-before');
+    else if (visualPos === 'after') el.classList.add('is-drop-after');
+    else el.classList.add('is-drop-target');
+    dropIndicatorId = visualId;
+  }
+}
+
+function getDropPosition(e, row, hasChildren, canAcceptChildren) {
+  const rect = row.getBoundingClientRect();
+  const relY = (e.clientY - rect.top) / rect.height;
+  if (!canAcceptChildren) return relY < 0.5 ? 'before' : 'after';
+  if (hasChildren) return relY < 0.35 ? 'before' : 'child';
+  if (relY < 0.3) return 'before';
+  if (relY > 0.7) return 'after';
+  return 'child';
 }
 
 export function clearDragIndicators() {
@@ -107,7 +143,7 @@ export function clearDragIndicators() {
     const dragEl = document.querySelector(`.task[data-id="${draggingTaskId}"]`);
     dragEl && dragEl.classList.remove('is-dragging');
   }
-  setDropTarget(null);
+  setDropTarget(null, null);
   draggingTaskId = null;
 }
 
@@ -275,11 +311,11 @@ export function openContextMenu(taskId, x, y) {
   _cb.closeDuePicker?.();
   closeTimePresetMenu();
 
+  const t = findTask(taskId);
   const btnEdit = document.createElement('div'); btnEdit.className = 'context-item'; btnEdit.textContent = 'Переименовать';
   btnEdit.onclick = () => {
     closeContextMenu();
     const row = document.querySelector(`.task[data-id="${taskId}"]`);
-    const t = findTask(taskId);
     if (!t) return;
     if (row) startEdit(row, t);
     else { const next = prompt('Название задачи', t.title || ''); if (next !== null) renameTask(taskId, next); }
@@ -303,7 +339,13 @@ export function openContextMenu(taskId, x, y) {
       }
     }, 80);
   });
-  menu.append(btnEdit, btnComplete, btnAssign, btnTime, btnDue);
+  const items = [btnEdit, btnComplete, btnAssign, btnTime, btnDue];
+  if (t && t.parentId) {
+    const btnPromote = document.createElement('div'); btnPromote.className = 'context-item'; btnPromote.textContent = 'Вынести';
+    btnPromote.onclick = () => { closeContextMenu(); promoteTask(taskId); };
+    items.push(btnPromote);
+  }
+  menu.append(...items);
   menu.style.display = 'block';
   const mw = menu.offsetWidth; const mh = menu.offsetHeight;
   const px = Math.min(x, window.innerWidth - mw - 8); const py = Math.min(y, window.innerHeight - mh - 8);
@@ -435,49 +477,40 @@ export function renderTaskRow(t, depth, container, renderContext = { visibleTask
   row.addEventListener('dragend', () => { clearDragIndicators(); });
   row.addEventListener('dragenter', e => {
     if (!draggingTaskId || draggingTaskId === t.id) return;
-    if (!canAcceptChildren) { setDropTarget(null); return; }
-    const dragged = findTask(draggingTaskId); if (!dragged) return;
-    if (containsTask(dragged, t.id)) { setDropTarget(null); return; }
-    const subtreeDepth = getSubtreeDepth(dragged);
-    if (depth + 1 + subtreeDepth > MAX_TASK_DEPTH) { setDropTarget(null); return; }
-    e.preventDefault(); setDropTarget(t.id);
+    const dragged = findTask(draggingTaskId);
+    if (!dragged || containsTask(dragged, t.id)) { setDropTarget(null, null); return; }
+    const position = getDropPosition(e, row, hasChildren, canAcceptChildren);
+    const sd = getSubtreeDepth(dragged);
+    const valid = position === 'child' ? depth + 1 + sd <= MAX_TASK_DEPTH : depth + sd <= MAX_TASK_DEPTH;
+    if (!valid) { setDropTarget(null, null); return; }
+    e.preventDefault();
+    setDropTarget(t.id, position);
   });
   row.addEventListener('dragover', e => {
     if (!draggingTaskId || draggingTaskId === t.id) return;
-    const dragged = findTask(draggingTaskId); if (!dragged) return;
-    if (!canAcceptChildren) { if (e.dataTransfer) e.dataTransfer.dropEffect = 'none'; return; }
-    if (containsTask(dragged, t.id)) return;
-    const subtreeDepth = getSubtreeDepth(dragged);
-    if (depth + 1 + subtreeDepth > MAX_TASK_DEPTH) { if (e.dataTransfer) e.dataTransfer.dropEffect = 'none'; return; }
-    e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    const dragged = findTask(draggingTaskId);
+    if (!dragged || containsTask(dragged, t.id)) { if (e.dataTransfer) e.dataTransfer.dropEffect = 'none'; return; }
+    const position = getDropPosition(e, row, hasChildren, canAcceptChildren);
+    const sd = getSubtreeDepth(dragged);
+    const valid = position === 'child' ? depth + 1 + sd <= MAX_TASK_DEPTH : depth + sd <= MAX_TASK_DEPTH;
+    if (!valid) { if (e.dataTransfer) e.dataTransfer.dropEffect = 'none'; setDropTarget(null, null); return; }
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    setDropTarget(t.id, position);
   });
   row.addEventListener('dragleave', e => {
-    if (dropTargetId !== t.id) return;
+    if (dropTarget.id !== t.id) return;
     const rel = e.relatedTarget; if (rel && row.contains(rel)) return;
-    setDropTarget(null);
+    setDropTarget(null, null);
   });
   row.addEventListener('drop', e => {
     if (!draggingTaskId) return;
     e.preventDefault();
     const sourceId = draggingTaskId;
+    const position = dropTarget.position;
     clearDragIndicators();
-    if (sourceId === t.id) return;
-    const draggedTask = findTask(sourceId); const targetTask = findTask(t.id);
-    if (!draggedTask || !targetTask) return;
-    if (!canAcceptChildren) { _cb.toast?.('Максимальная вложенность — три уровня'); return; }
-    if (containsTask(draggedTask, t.id)) return;
-    const subtreeDepth = getSubtreeDepth(draggedTask);
-    if (depth + 1 + subtreeDepth > MAX_TASK_DEPTH) { _cb.toast?.('Максимальная вложенность — три уровня'); return; }
-    const moved = detachTaskFromTree(sourceId); if (!moved) return;
-    if (!Array.isArray(targetTask.children)) targetTask.children = [];
-    const inheritedProject = typeof targetTask.project === 'undefined' ? null : targetTask.project;
-    targetTask.children.push(moved);
-    moved.project = inheritedProject; moved.parentId = targetTask.id;
-    targetTask.collapsed = false;
-    Store.write(tasks);
-    if (isServerMode()) queueTaskUpdate(moved.id, { parentId: targetTask.id, project: moved.project });
-    _cb.setSelectedTaskId?.(moved.id);
-    _cb.render?.();
+    if (!position || sourceId === t.id) return;
+    moveTaskRelative(sourceId, t.id, position);
   });
   row.addEventListener('contextmenu', e => { e.preventDefault(); openContextMenu(t.id, e.clientX, e.clientY); });
 

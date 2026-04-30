@@ -56,6 +56,7 @@ export function normalizeTaskTree(list, parentId = null) {
       project: typeof item.project === 'string' && item.project ? item.project : null,
       notes: typeof item.notes === 'string' ? item.notes : '',
       timeSpent: clampTimeSpentMs(item.timeSpent),
+      sortOrder: typeof item.sortOrder === 'number' && Number.isFinite(item.sortOrder) ? Math.max(0, item.sortOrder) : 0,
       parentId,
       children: normalizeTaskTree(item.children || [], typeof item.id === 'string' ? item.id : null),
       collapsed: item.collapsed === true,
@@ -87,6 +88,7 @@ export function migrate(list, depth = 0) {
     if (typeof t.notes !== 'string') t.notes = '';
     if (typeof t.timeSpent !== 'number' || !isFinite(t.timeSpent) || t.timeSpent < 0) t.timeSpent = 0;
     t.timeSpent = clampTimeSpentMs(t.timeSpent);
+    if (typeof t.sortOrder !== 'number' || !Number.isFinite(t.sortOrder) || t.sortOrder < 0) t.sortOrder = 0;
     if (typeof t.timerActive !== 'boolean') t.timerActive = false;
     if (typeof t.timerStart !== 'number' || !isFinite(t.timerStart)) t.timerStart = null;
     if (t.children.length) {
@@ -105,6 +107,135 @@ export function getTaskDepth(id, list = tasks, depth = 0) { for (const t of list
 export function getSubtreeDepth(task) { if (!task || !Array.isArray(task.children) || !task.children.length) return 0; let max = 0; for (const child of task.children) { const d = 1 + getSubtreeDepth(child); if (d > max) max = d } return max }
 export function containsTask(root, targetId) { if (!root || !targetId) return false; if (root.id === targetId) return true; if (!Array.isArray(root.children)) return false; for (const child of root.children) { if (containsTask(child, targetId)) return true } return false }
 export function detachTaskFromTree(id, list = tasks) { if (!Array.isArray(list)) return null; for (let i = 0; i < list.length; i++) { const item = list[i]; if (item.id === id) { const pulled = list.splice(i, 1)[0]; if (pulled) pulled.parentId = null; return pulled } const pulled = detachTaskFromTree(id, item.children || []); if (pulled) { if (item.children && item.children.length === 0) item.collapsed = false; return pulled } } return null }
+
+// Возвращает { arr, index, parent } — массив, позицию и родительскую задачу
+export function findTaskList(id, list = tasks, parent = null) {
+  if (!Array.isArray(list)) return null;
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].id === id) return { arr: list, index: i, parent };
+    const result = findTaskList(id, list[i].children || [], list[i]);
+    if (result) return result;
+  }
+  return null;
+}
+
+// Перемещает задачу: position = 'before' | 'after' | 'child'
+export function moveTaskRelative(sourceId, targetId, position) {
+  if (sourceId === targetId) return;
+  const sourceTask = findTask(sourceId);
+  const targetTask = findTask(targetId);
+  if (!sourceTask || !targetTask) return;
+  if (containsTask(sourceTask, targetId)) return;
+
+  const targetDepth = getTaskDepth(targetId);
+  const subtreeDepth = getSubtreeDepth(sourceTask);
+
+  if (position === 'child') {
+    if (targetDepth >= MAX_TASK_DEPTH) { _cb.toast?.('Максимальная вложенность — три уровня'); return; }
+    if (targetDepth + 1 + subtreeDepth > MAX_TASK_DEPTH) { _cb.toast?.('Максимальная вложенность — три уровня'); return; }
+    const moved = detachTaskFromTree(sourceId);
+    if (!moved) return;
+    if (!Array.isArray(targetTask.children)) targetTask.children = [];
+    moved.parentId = targetTask.id;
+    moved.project = targetTask.project ?? null;
+    targetTask.children.push(moved);
+    targetTask.collapsed = false;
+    targetTask.children.forEach((t, i) => { t.sortOrder = i; });
+    Store.write(tasks);
+    if (isServerMode()) {
+      for (const t of targetTask.children) {
+        const patch = { sortOrder: t.sortOrder };
+        if (t.id === moved.id) { patch.parentId = t.parentId; patch.project = t.project; }
+        queueTaskUpdate(t.id, patch);
+      }
+    }
+    _cb.setSelectedTaskId?.(moved.id);
+    _cb.render?.();
+    return;
+  }
+
+  // 'before' или 'after' — реордеринг на том же уровне или между уровнями
+  if (targetDepth + subtreeDepth > MAX_TASK_DEPTH) { _cb.toast?.('Максимальная вложенность — три уровня'); return; }
+
+  const originalParentId = sourceTask.parentId;
+  const preMoveInfo = findTaskList(targetId);
+  if (!preMoveInfo) return;
+
+  const moved = detachTaskFromTree(sourceId);
+  if (!moved) return;
+
+  // Переищем target после отцепления source (индекс мог сдвинуться)
+  const postMoveInfo = findTaskList(targetId);
+  if (!postMoveInfo) {
+    // Крайне редкий случай — откатываемся
+    tasks.unshift(moved);
+    moved.parentId = null;
+    Store.write(tasks);
+    _cb.render?.();
+    return;
+  }
+
+  const insertIdx = position === 'before' ? postMoveInfo.index : postMoveInfo.index + 1;
+  postMoveInfo.arr.splice(insertIdx, 0, moved);
+
+  const newParentId = postMoveInfo.parent ? postMoveInfo.parent.id : null;
+  moved.parentId = newParentId;
+  // Наследуем проект от нового родителя только если родитель изменился
+  if (newParentId !== originalParentId && postMoveInfo.parent) {
+    moved.project = postMoveInfo.parent.project ?? null;
+  }
+
+  postMoveInfo.arr.forEach((t, i) => { t.sortOrder = i; });
+
+  Store.write(tasks);
+  if (isServerMode()) {
+    for (const t of postMoveInfo.arr) {
+      const patch = { sortOrder: t.sortOrder };
+      if (t.id === moved.id) { patch.parentId = t.parentId; patch.project = t.project; }
+      queueTaskUpdate(t.id, patch);
+    }
+  }
+  _cb.setSelectedTaskId?.(moved.id);
+  _cb.render?.();
+}
+
+// Выносит подзадачу на уровень выше (вставляет после родителя в массиве дедушки)
+export function promoteTask(id) {
+  const task = findTask(id);
+  if (!task || !task.parentId) return;
+
+  const oldParentId = task.parentId;
+  const parentInfo = findTaskList(oldParentId);
+  if (!parentInfo) return;
+
+  const { arr: grandparentArr, index: parentIdx, parent: grandparent } = parentInfo;
+
+  const moved = detachTaskFromTree(id);
+  if (!moved) return;
+
+  grandparentArr.splice(parentIdx + 1, 0, moved);
+  moved.parentId = grandparent ? grandparent.id : null;
+
+  grandparentArr.forEach((t, i) => { t.sortOrder = i; });
+
+  const oldParentTask = findTask(oldParentId);
+  const oldChildren = oldParentTask && Array.isArray(oldParentTask.children) ? oldParentTask.children : [];
+  oldChildren.forEach((t, i) => { t.sortOrder = i; });
+  if (oldParentTask && !oldChildren.length) oldParentTask.collapsed = false;
+
+  Store.write(tasks);
+  if (isServerMode()) {
+    queueTaskUpdate(moved.id, { parentId: moved.parentId, sortOrder: moved.sortOrder });
+    for (const t of grandparentArr) {
+      if (t.id !== moved.id) queueTaskUpdate(t.id, { sortOrder: t.sortOrder });
+    }
+    for (const t of oldChildren) {
+      queueTaskUpdate(t.id, { sortOrder: t.sortOrder });
+    }
+  }
+  _cb.setSelectedTaskId?.(moved.id);
+  _cb.render?.();
+}
 
 // ── Таймеры ────────────────────────────────────────────────────────────────
 export function totalTimeMs(task, now = Date.now()) {

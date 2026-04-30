@@ -116,7 +116,8 @@ export function mapTaskForServer(task) {
     project: task.project || null,
     notes: task.notes || '',
     timeSpent: clampTimeSpentMs(task.timeSpent),
-    parentId: task.parentId || null
+    parentId: task.parentId || null,
+    sortOrder: Number.isFinite(Number(task.sortOrder)) ? Math.max(0, Number(task.sortOrder)) : 0
   };
 }
 
@@ -129,6 +130,7 @@ export function normalizeTaskPatch(patch) {
   if (patch.notes !== undefined) payload.notes = patch.notes || '';
   if (patch.timeSpent !== undefined) payload.timeSpent = clampTimeSpentMs(patch.timeSpent);
   if (patch.parentId !== undefined) payload.parentId = patch.parentId || null;
+  if (patch.sortOrder !== undefined) payload.sortOrder = Math.max(0, Number(patch.sortOrder) || 0);
   if (patch.completedAt !== undefined) payload.completedAt = patch.completedAt;
   return payload;
 }

@@ -415,6 +415,9 @@ body.view-sprint .composer,body.view-year .composer{display:none}
 .task[draggable="true"]{cursor:grab}
 .task.is-dragging{opacity:.6;cursor:grabbing}
 .task.is-drop-target{background:var(--hover-strong);box-shadow:0 0 0 2px var(--hint) inset}
+.task.is-drop-before,.task.is-drop-after{position:relative}
+.task.is-drop-before::before{content:'';position:absolute;top:-2px;left:0;right:0;height:2px;background:var(--accent);border-radius:1px;pointer-events:none;z-index:5}
+.task.is-drop-after::after{content:'';position:absolute;bottom:-2px;left:0;right:0;height:2px;background:var(--accent);border-radius:1px;pointer-events:none;z-index:5}
 .task:hover{background:var(--hover);box-shadow:none;transform:translateY(-1px)}
 .task.is-selected{background:var(--sel-bg)}
 .task.is-timer-active{border-color:transparent;box-shadow:inset 0 0 0 2px var(--timer-border)}
