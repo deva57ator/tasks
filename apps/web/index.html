@@ -124,6 +124,10 @@
     <div class="composer">
       <input id="taskInput" class="input" type="text" placeholder="Что нужно сделать?" />
       <button id="addBtn" class="add-btn">Добавить</button>
+      <div class="vacation-composer" id="vacationComposer" aria-hidden="true">
+        <button type="button" class="vacation-add-btn" id="vacationAddBtn">Добавить отпуск</button>
+        <div class="vacation-periods" id="vacationPeriods"></div>
+      </div>
     </div>
     <div class="tasks" id="tasks"></div>
     <section class="completed-dock" id="completedDock" aria-hidden="true"></section>
@@ -333,6 +337,37 @@
       <div class="workday-dialog-actions">
         <button type="button" class="workday-dialog-action" id="workdayPostponeBtn">На завтра</button>
         <button type="button" class="workday-dialog-secondary" id="workdayDialogDone">Закрыть день</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="vacation-overlay" id="vacationOverlay" aria-hidden="true">
+    <div class="vacation-dialog" id="vacationDialog" role="dialog" aria-modal="true" aria-labelledby="vacationDialogTitle">
+      <button type="button" class="vacation-close" id="vacationClose" aria-label="Закрыть окно">×</button>
+      <div class="vacation-title" id="vacationDialogTitle">Период отпуска</div>
+      <div class="vacation-controls">
+        <button type="button" class="vacation-arrow" id="vacationPrev" aria-label="Предыдущий месяц">‹</button>
+        <button type="button" class="vacation-arrow" id="vacationNext" aria-label="Следующий месяц">›</button>
+      </div>
+      <div class="vacation-calendars">
+        <section class="vacation-cal-wrap">
+          <div class="vacation-month-title" id="vacationMonthLeft"></div>
+          <div class="vacation-weekdays">
+            <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
+          </div>
+          <div class="vacation-grid" id="vacationCalLeft"></div>
+        </section>
+        <section class="vacation-cal-wrap">
+          <div class="vacation-month-title" id="vacationMonthRight"></div>
+          <div class="vacation-weekdays">
+            <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
+          </div>
+          <div class="vacation-grid" id="vacationCalRight"></div>
+        </section>
+      </div>
+      <div class="vacation-actions">
+        <button type="button" class="vacation-secondary" id="vacationCancel">Отмена</button>
+        <button type="button" class="vacation-primary" id="vacationOk" disabled>ОК</button>
       </div>
     </div>
   </div>
