@@ -113,6 +113,7 @@ apps/web/
 - `apps/web/src/api.js` — frontend API client, auth lock, очереди.
 - `apps/web/src/tasks-data.js` — state и логика задач.
 - `apps/web/src/workday.js` — логика рабочего дня на клиенте.
+- `apps/web/src/graph.js` — модуль вида `График` (месячная нагрузка + отпуска).
 
 ### `apps/web/src/`
 
@@ -126,6 +127,7 @@ src/
   effects.js             completion effects
   keyboard.js            hotkeys
   projects.js            state и UI проектов
+  graph.js               вид «График», агрегации и отпуска
   sidebar.js             resize/mobile sidebar
   sprint.js              sprint view
   storage.js             localStorage adapters
@@ -154,6 +156,7 @@ yearplan/
 - баги дерева задач — `apps/web/src/tasks-data.js`, `apps/web/src/tasks-render.js`
 - UI проектов — `apps/web/src/projects.js`
 - рабочий день — `apps/web/src/workday.js`
+- график месяца и отпуска — `apps/web/src/graph.js`
 - таймеры и время — `apps/web/src/tasks-data.js`, `apps/web/src/time-dialog.js`
 - year plan — `apps/web/src/yearplan/*`
 - стили и визуал — `apps/web/style.css`

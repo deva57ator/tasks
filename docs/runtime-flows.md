@@ -289,6 +289,46 @@
 - архив импортировался, но статистика странная: `archiveService` и `statsService`
 - рабочий день импортировался без ожидаемых итогов: mapping в `importer.importData`
 
+## Flow 9. Вид «График» и отпуска
+
+### Что запускает
+
+- переход в sidebar-кнопку `График`;
+- навигация по месяцам в `Графике`;
+- добавление/удаление периода отпуска.
+
+### Шаги
+
+1. `main.js` при `currentView === 'graph'` вызывает:
+   - `graphFeature.renderVacationComposer()`
+   - `graphFeature.renderGraphMonth(...)`.
+2. `graph.js` строит матрицу рабочих недель (`Пн–Пт`) для месяца и показывает соседние месяцы как `is-out`.
+3. Для каждого дня применяется фильтрация неактивности:
+   - выходной (`isWeekendDay`),
+   - праздник (`isHolidayDay`),
+   - отпуск (`isVacationDate`).
+4. Для активных дней `graph.js` агрегирует из `tasks`:
+   - `spentMinutes/day` через `totalTimeMs(...)` + anchor date strategy,
+   - `doneCount/day` через `completedAt` (с fallback для старых записей).
+5. Прогресс карточки дня считается как `min(spentMinutes / targetMinutes, 1)` и рендерится заливкой.
+6. Отпуск добавляется через модалку из двух календарей:
+   - диапазон сохраняется в `localStorage`,
+   - composer и график перерисовываются сразу после add/remove.
+
+### Участвующие файлы
+
+- `apps/web/main.js`
+- `apps/web/src/graph.js`
+- `apps/web/src/tasks-data.js`
+- `apps/web/src/utils.js`
+
+### Где искать сбой
+
+- график не обновляется после действий: `render()` ветка `currentView==='graph'` в `main.js` и `rerenderGraphIfVisible()` в `graph.js`
+- неверная неактивность дней: `isOffday` логика в `renderGraphMonth(...)`
+- отпуск пропадает после reload: `readVacationRanges()/writeVacationRanges()` и ключ localStorage
+- расходятся цифры времени: `buildGraphStatsMap(...)`, `resolveSpentAnchorDate(...)`, `totalTimeMs(...)`
+
 ## Flow 9. Деплой на STG
 
 ### Что запускает

@@ -64,6 +64,7 @@
 - `src/workday.js`
 - `src/archive.js`
 - `src/sprint.js`
+- `src/graph.js`
 - `src/yearplan/data.js`
 - `src/yearplan/normalize.js`
 
@@ -85,6 +86,7 @@
 - `src/sidebar.js`
 - `src/keyboard.js`
 - `src/effects.js`
+- `src/graph.js`
 - `src/yearplan/render.js`
 - `src/yearplan/interactions.js`
 
@@ -109,6 +111,7 @@
 - `tasks-data.js` хранит `tasks`, состояние таймеров и операции над деревом.
 - `projects.js` хранит `projects`.
 - `workday.js` хранит `workdayState`.
+- `graph.js` хранит state вида `График`: выбранный месяц, диапазоны отпусков, состояние пикера отпуска.
 - `yearplan/data.js` хранит year plan state, cache и selection/hover metadata.
 
 ### В `localStorage`
@@ -137,6 +140,8 @@
 - `registerYearPlanRenderCallbacks(...)`
 
 Практическое правило: если в модуле есть скрытая зависимость на поведение другого слоя, сначала ищите не `import`, а регистрацию в `main.js`.
+
+Для `graph.js` используется другая схема: модуль инициализируется через `initGraphFeature(...)` и получает зависимости через DI-аргумент (getter'ы текущего view, задач, calendar helpers и `requestRender`).
 
 ## Матрица callback-реестров
 
@@ -181,6 +186,8 @@
 7. `registerTasksRenderCallbacks`
 8. due/sprint/keyboard/effects/time-dialog callbacks
 
+Инициализация `graph.js` выполняется отдельно через `initGraphFeature(...)` и не требует `register*Callbacks`.
+
 Это важно, потому что некоторые модули ожидают, что orchestration-слой уже передал им accessors до первого реального взаимодействия пользователя.
 
 ## Поток данных в `local` режиме
@@ -214,6 +221,24 @@ UI action
 - UI всё равно сначала меняет локальный runtime state;
 - серверный режим здесь оптимистичный по ощущениям;
 - `api.js` использует очереди, debounce и отдельную синхронизацию для `workday`.
+
+## Вид «График» (месячная нагрузка)
+
+`src/graph.js` сейчас отвечает за:
+
+- рендер вида `График` (месячный календарь по `Пн–Пт`);
+- навигацию по месяцам;
+- агрегацию `spentMinutes`/`doneCount` из общего runtime-state `tasks`;
+- инвалидацию дней для выходных, праздников, соседних месяцев и отпусков;
+- UI-композер отпусков (диапазоны, удаление, лимит 5 периодов);
+- модалку выбора отпуска с двумя календарями;
+- realtime-перерисовку графика при добавлении/удалении отпуска.
+
+Архитектурно важно:
+
+- `graph.js` не хранит отдельную копию задач, а читает их через `getTasks()`;
+- работает одинаково в `local` и `server` режимах, потому что использует единый клиентский runtime-state;
+- состояние отпусков хранится локально в `localStorage` ключом `mini-task-tracker:vacation-ranges:v1`.
 
 ## Инициализация приложения
 
