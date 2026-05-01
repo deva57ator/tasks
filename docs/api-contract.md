@@ -69,6 +69,8 @@
 - `project` в API соответствует `projectId` в базе;
 - `timeSpent` в API соответствует `timeSpentMs` в базе;
 - `collapsed`, `timerActive` и `timerStart` в backend API не являются persist-истиной и не должны ожидаться как контрактный ответ.
+- `completedAt` приходит с сервера и сохраняется во фронтенд runtime-state.
+- `timeSpent` — агрегированное время задачи; API не отдает встроенный дневной таймлог по задаче.
 
 ### `GET /api/tasks`
 
@@ -104,6 +106,12 @@ Query params:
   "total": 1
 }
 ```
+
+Важно для monthly graph:
+- API `GET /api/tasks` не предоставляет готовую дневную агрегацию (`spent/day`, `done/day`) отдельным endpoint’ом;
+- клиент собирает агрегацию самостоятельно;
+- для точного `done/day` клиенту нужно корректно учитывать `completedAt`;
+- для точного `spent/day` текущего task shape недостаточно без дополнительной модели/данных дневного учета.
 
 ### `POST /api/tasks`
 

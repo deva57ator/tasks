@@ -45,6 +45,7 @@ import {
   totalTimeMs, hasActiveTimer, syncTimerLoop,
   stopTaskTimer, stopAllTimersExcept,
   addTask, markTaskDone,
+  setTaskPriority,
   afterTasksPersisted, restoreActiveTimersFromStore,
   registerTasksDataCallbacks,
 } from './src/tasks-data.js';
@@ -82,6 +83,7 @@ let selectedTaskId=null;
 let pendingEditId=null;
 let currentView='all';
 let currentProjectId=null;
+let graphMonthDate=new Date(new Date().getFullYear(),new Date().getMonth(),1);
 const completedOpenByView=new Map();
 const recentlyCompletedByView=new Map();
 const completedDockHeightByView=new Map();
@@ -477,16 +479,18 @@ function render(){
   }
   const composer=$('.composer');
   if(composer){
-    const hide=currentView==='sprint'||currentView==='year';
+    const hide=currentView==='sprint'||currentView==='year'||currentView==='graph';
     if(composer.hidden!==hide)composer.hidden=hide;
     composer.setAttribute('aria-hidden',hide?'true':'false');
     document.body.classList.toggle('view-sprint',currentView==='sprint');
   }
   document.body.classList.toggle('view-year',currentView==='year');
+  document.body.classList.toggle('view-graph',currentView==='graph');
   const wrap=$('#tasks');wrap.innerHTML='';
   wrap.classList.toggle('is-project-view',currentView==='project');
   if(currentView==='sprint'){document.getElementById('viewTitle').textContent='Спринт';renderSprint(wrap);syncTimerLoop();return}
   if(currentView==='year'){document.getElementById('viewTitle').textContent='Год';renderYearPlan(wrap);updateWorkdayUI();return}
+  if(currentView==='graph'){document.getElementById('viewTitle').textContent='График';renderGraphMonth(wrap);updateWorkdayUI();return}
   if(currentView==='project'){
     const proj=projects.find(p=>p.id===currentProjectId);
     document.getElementById('viewTitle').textContent=proj?proj.title:'Проект';
@@ -616,12 +620,57 @@ function render(){
     priorityTitle.textContent='Приоритет';
     const priorityList=document.createElement('div');
     priorityList.className='today-priority-list';
+    priorityContainer.addEventListener('dragenter',e=>{
+      e.preventDefault();
+      priorityContainer.classList.add('is-drop-target');
+    });
+    priorityContainer.addEventListener('dragover',e=>{
+      e.preventDefault();
+      if(e.dataTransfer)e.dataTransfer.dropEffect='move';
+      priorityContainer.classList.add('is-drop-target');
+    });
+    priorityContainer.addEventListener('dragleave',e=>{
+      const rel=e.relatedTarget;
+      if(rel&&priorityContainer.contains(rel))return;
+      priorityContainer.classList.remove('is-drop-target');
+    });
+    priorityContainer.addEventListener('drop',e=>{
+      e.preventDefault();
+      priorityContainer.classList.remove('is-drop-target');
+      const taskId=e.dataTransfer?.getData?.('text/plain');
+      if(!taskId)return;
+      setTaskPriority(taskId,true);
+    });
     priorityContainer.append(priorityTitle,priorityList);
     wrap.appendChild(priorityContainer);
     const sortedPriorityRoots=[...todayPriority].sort(comparePriorityTasks);
     const priorityState=renderTasksWithCompleted(sortedPriorityRoots,priorityList,{emptyText:'Нет приоритетных задач'});
     dataList=regularToday;
-    const completedState=renderTasksWithCompleted(dataList,wrap,{emptyText:'Пусто'});
+    const regularContainer=document.createElement('section');
+    regularContainer.className='today-regular-block';
+    regularContainer.addEventListener('dragenter',e=>{
+      e.preventDefault();
+      regularContainer.classList.add('is-drop-target');
+    });
+    regularContainer.addEventListener('dragover',e=>{
+      e.preventDefault();
+      if(e.dataTransfer)e.dataTransfer.dropEffect='move';
+      regularContainer.classList.add('is-drop-target');
+    });
+    regularContainer.addEventListener('dragleave',e=>{
+      const rel=e.relatedTarget;
+      if(rel&&regularContainer.contains(rel))return;
+      regularContainer.classList.remove('is-drop-target');
+    });
+    regularContainer.addEventListener('drop',e=>{
+      e.preventDefault();
+      regularContainer.classList.remove('is-drop-target');
+      const taskId=e.dataTransfer?.getData?.('text/plain');
+      if(!taskId)return;
+      setTaskPriority(taskId,false);
+    });
+    wrap.appendChild(regularContainer);
+    const completedState=renderTasksWithCompleted(dataList,regularContainer,{emptyText:'Пусто'});
     renderCompletedDock([...priorityState.completed,...completedState.completed],priorityState.completedCount+completedState.completedCount);
   }else{
     const completedState=renderTasksWithCompleted(dataList,wrap,{emptyText:'Пусто'});
@@ -631,6 +680,167 @@ function render(){
   if(hoveredParentTaskId)setInheritedHover(hoveredParentTaskId);
   syncTimerLoop();
   updateWorkdayUI()
+}
+
+function renderGraphMonth(container){
+  const targetMinutes=6*60;
+  const formatGraphMinutes=(minutes)=>{
+    const safe=Math.max(0,Math.floor(minutes||0));
+    const h=Math.floor(safe/60);
+    const m=safe%60;
+    return `${h} ч ${String(m).padStart(2,'0')} м`;
+  };
+  const dateKey=(date)=>`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+  const parseTs=(value)=>{
+    if(typeof value!=='string'||!value)return null;
+    const ts=Date.parse(value);
+    return Number.isFinite(ts)?ts:null;
+  };
+  const normalizeToDayStart=(ts)=>{
+    const d=new Date(ts);
+    d.setHours(0,0,0,0);
+    return d;
+  };
+  const resolveSpentAnchorDate=(task,nowTs)=>{
+    if(task?.timerActive)return normalizeToDayStart(nowTs);
+    const completedTs=parseTs(task?.completedAt);
+    if(completedTs!==null)return normalizeToDayStart(completedTs);
+    const updatedTs=parseTs(task?.updatedAt);
+    if(updatedTs!==null)return normalizeToDayStart(updatedTs);
+    const createdTs=parseTs(task?.createdAt);
+    if(createdTs!==null)return normalizeToDayStart(createdTs);
+    return null;
+  };
+  const buildGraphStatsMap=(nowTs)=>{
+    const statsByDay=new Map();
+    const ensureDay=(key)=>{
+      const current=statsByDay.get(key);
+      if(current)return current;
+      const next={spentMinutes:0,doneCount:0};
+      statsByDay.set(key,next);
+      return next;
+    };
+    walkTasks(tasks,task=>{
+      if(!task)return;
+      const completedTs=parseTs(task.completedAt);
+      if(task.done===true&&completedTs!==null){
+        const doneKey=dateKey(normalizeToDayStart(completedTs));
+        ensureDay(doneKey).doneCount+=1;
+      }
+      const spentMs=totalTimeMs(task,nowTs);
+      if(spentMs<=0)return;
+      const anchorDate=resolveSpentAnchorDate(task,nowTs);
+      if(!anchorDate)return;
+      const spentKey=dateKey(anchorDate);
+      ensureDay(spentKey).spentMinutes+=Math.floor(spentMs/60000);
+    });
+    return statsByDay;
+  };
+  const resolveProgressBand=(ratio)=>{
+    if(ratio>=1)return 'is-hit';
+    if(ratio>=0.8)return 'is-high';
+    if(ratio>=0.4)return 'is-mid';
+    return 'is-low';
+  };
+  const monthNames=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+  const weekdayNames=['Пн','Вт','Ср','Чт','Пт'];
+  const monthStart=new Date(graphMonthDate.getFullYear(),graphMonthDate.getMonth(),1);
+  const year=monthStart.getFullYear();
+  const monthIndex=monthStart.getMonth();
+  const monthLabel=`${monthNames[monthIndex]} ${year}`;
+
+  const root=document.createElement('section');
+  root.className='graph-view';
+
+  const header=document.createElement('div');
+  header.className='graph-view-header';
+  const controls=document.createElement('div');
+  controls.className='graph-view-controls';
+
+  const prevBtn=document.createElement('button');
+  prevBtn.type='button';
+  prevBtn.className='year-plan-arrow';
+  prevBtn.textContent='‹';
+  prevBtn.setAttribute('aria-label','Предыдущий месяц');
+  prevBtn.onclick=()=>{
+    graphMonthDate=new Date(year,monthIndex-1,1);
+    render();
+  };
+
+  const nextBtn=document.createElement('button');
+  nextBtn.type='button';
+  nextBtn.className='year-plan-arrow';
+  nextBtn.textContent='›';
+  nextBtn.setAttribute('aria-label','Следующий месяц');
+  nextBtn.onclick=()=>{
+    graphMonthDate=new Date(year,monthIndex+1,1);
+    render();
+  };
+
+  const monthTitle=document.createElement('div');
+  monthTitle.className='graph-view-month';
+  monthTitle.textContent=monthLabel;
+
+  controls.append(prevBtn,monthTitle,nextBtn);
+  header.appendChild(controls);
+  root.appendChild(header);
+
+  const columns=document.createElement('div');
+  columns.className='graph-columns';
+  const monthEnd=new Date(year,monthIndex+1,0);
+  const now=new Date();
+  const nowTs=now.getTime();
+  const statsByDay=buildGraphStatsMap(nowTs);
+  const todayY=now.getFullYear();
+  const todayM=now.getMonth();
+  const todayD=now.getDate();
+  const getMonIndex=(date)=>(date.getDay()+6)%7; // Mon=0 ... Sun=6
+  const firstWeekMonday=new Date(year,monthIndex,1-getMonIndex(monthStart));
+  const lastWeekFriday=new Date(monthEnd);
+  lastWeekFriday.setDate(monthEnd.getDate()+(4-getMonIndex(monthEnd)));
+  const weekStarts=[];
+  for(let cursor=new Date(firstWeekMonday);cursor<=lastWeekFriday;cursor.setDate(cursor.getDate()+7)){
+    weekStarts.push(new Date(cursor));
+  }
+
+  for(let weekday=1;weekday<=5;weekday++){
+    const col=document.createElement('section');
+    col.className='graph-column';
+    const title=document.createElement('div');
+    title.className='graph-column-title';
+    title.textContent=weekdayNames[weekday-1];
+    col.appendChild(title);
+
+    const dayList=document.createElement('div');
+    dayList.className='graph-day-list';
+    for(const weekStart of weekStarts){
+      const date=new Date(weekStart);
+      date.setDate(weekStart.getDate()+(weekday-1));
+      const isOut=date.getMonth()!==monthIndex;
+      const isToday=date.getFullYear()===todayY&&date.getMonth()===todayM&&date.getDate()===todayD;
+      const dayStats=statsByDay.get(dateKey(date))||{spentMinutes:0,doneCount:0};
+      const progressRatio=Math.min(dayStats.spentMinutes/targetMinutes,1);
+      const card=document.createElement('article');
+      card.className='graph-day-card';
+      card.classList.add(resolveProgressBand(progressRatio));
+      if(isOut)card.classList.add('is-out');
+      if(isToday)card.classList.add('is-today');
+      card.style.setProperty('--graph-progress',`${Math.round(progressRatio*100)}%`);
+      card.innerHTML=`
+        <div class="graph-day-progress" aria-hidden="true"></div>
+        <div class="graph-day-content">
+          <div class="graph-day-date">${date.getDate()}</div>
+          <div class="graph-day-metric">Время: ${formatGraphMinutes(dayStats.spentMinutes)}</div>
+          <div class="graph-day-metric">Задач: ${dayStats.doneCount}</div>
+        </div>
+      `;
+      dayList.appendChild(card);
+    }
+    col.appendChild(dayList);
+    columns.appendChild(col);
+  }
+  root.appendChild(columns);
+  container.appendChild(root);
 }
 
 
@@ -869,7 +1079,7 @@ if(taskInput){
     commitTaskInput();
   });
 }
-$$('.nav-btn').forEach(btn=>btn.onclick=()=>{const view=btn.dataset.view;if(view==='today'){switchView('today',currentProjectId,{forceRefresh:currentView==='today'});render();return}if(view==='sprint'){switchView('sprint',currentProjectId,{forceRefresh:currentView==='sprint'});render();return}if(view==='year'){switchView('year',currentProjectId,{forceRefresh:currentView==='year'});render();return}switchView('all',currentProjectId,{forceRefresh:currentView==='all'});render()});
+$$('.nav-btn').forEach(btn=>btn.onclick=()=>{const view=btn.dataset.view;if(view==='today'){switchView('today',currentProjectId,{forceRefresh:currentView==='today'});render();return}if(view==='sprint'){switchView('sprint',currentProjectId,{forceRefresh:currentView==='sprint'});render();return}if(view==='year'){switchView('year',currentProjectId,{forceRefresh:currentView==='year'});render();return}if(view==='graph'){switchView('graph',currentProjectId,{forceRefresh:currentView==='graph'});render();return}switchView('all',currentProjectId,{forceRefresh:currentView==='all'});render()});
 
 const storageToggleBtn=document.getElementById('storageToggle');
 if(storageToggleBtn){storageToggleBtn.addEventListener('click',async()=>{if(isDataLoading)return;const switchingToServer=!isServerMode();updateStorageToggle({loading:true});try{if(!switchingToServer){await setStorageModeAndReload(STORAGE_MODES.LOCAL,{forceReload:true,skipToggleUpdate:true});toast('Режим: localStorage');return}await setStorageModeAndReload(STORAGE_MODES.SERVER,{forceReload:true,skipToggleUpdate:true});const key=ApiKeyStore.read();if(!key){lockApiAuth('missing','Нужен API key для доступа к API');return}toast('Режим: API')}catch(err){console.error(err);if(switchingToServer){lockApiAuth('network','API недоступен')}}finally{updateStorageToggle({loading:false})}})}

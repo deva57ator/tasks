@@ -61,6 +61,7 @@ export function normalizeTaskTree(list, parentId = null) {
       sortOrder: typeof item.sortOrder === 'number' && Number.isFinite(item.sortOrder) ? Math.max(0, item.sortOrder) : 0,
       createdAt: typeof item.createdAt === 'string' && item.createdAt ? item.createdAt : null,
       updatedAt: typeof item.updatedAt === 'string' && item.updatedAt ? item.updatedAt : null,
+      completedAt: typeof item.completedAt === 'string' && item.completedAt ? item.completedAt : null,
       parentId,
       children: normalizeTaskTree(item.children || [], typeof item.id === 'string' ? item.id : null),
       collapsed: item.collapsed === true,
@@ -96,6 +97,7 @@ export function migrate(list, depth = 0) {
     if (typeof t.sortOrder !== 'number' || !Number.isFinite(t.sortOrder) || t.sortOrder < 0) t.sortOrder = 0;
     if (typeof t.createdAt !== 'string' || !t.createdAt) t.createdAt = null;
     if (typeof t.updatedAt !== 'string' || !t.updatedAt) t.updatedAt = null;
+    if (typeof t.completedAt !== 'string' || !t.completedAt) t.completedAt = null;
     if (typeof t.timerActive !== 'boolean') t.timerActive = false;
     if (typeof t.timerStart !== 'number' || !isFinite(t.timerStart)) t.timerStart = null;
     if (t.children.length) {
@@ -325,7 +327,7 @@ export function addTask(title) {
   let dueDate = null;
   if (currentView === 'today') { const today = new Date(); today.setHours(0, 0, 0, 0); dueDate = today.toISOString() }
   const timestamp=new Date().toISOString();
-  const task = { id: uid(), title, done: false, priority: false, children: [], collapsed: false, due: dueDate, project: assignedProject, notes: '', timeSpent: 0, timerActive: false, timerStart: null, parentId: null, createdAt: timestamp, updatedAt: timestamp };
+  const task = { id: uid(), title, done: false, priority: false, children: [], collapsed: false, due: dueDate, project: assignedProject, notes: '', timeSpent: 0, timerActive: false, timerStart: null, parentId: null, createdAt: timestamp, updatedAt: timestamp, completedAt: null };
   tasks.unshift(task); Store.write(tasks);
   if (isServerMode()) queueTaskCreate(task);
   _cb.render?.();
@@ -338,7 +340,7 @@ export function addSubtask(parentId) {
   const inheritedProject = typeof p.project === 'undefined' ? null : p.project;
   const inheritedDue = typeof p.due === 'string' && p.due ? p.due : null;
   const timestamp=new Date().toISOString();
-  const child = { id: uid(), title: '', done: false, priority: false, children: [], collapsed: false, due: inheritedDue, project: inheritedProject, notes: '', timeSpent: 0, timerActive: false, timerStart: null, parentId, createdAt: timestamp, updatedAt: timestamp };
+  const child = { id: uid(), title: '', done: false, priority: false, children: [], collapsed: false, due: inheritedDue, project: inheritedProject, notes: '', timeSpent: 0, timerActive: false, timerStart: null, parentId, createdAt: timestamp, updatedAt: timestamp, completedAt: null };
   p.children.push(child); p.collapsed = false;
   _cb.setSelectedTaskId?.(child.id);
   Store.write(tasks);
@@ -351,6 +353,7 @@ export function toggleTask(id) {
   const t = findTask(id); if (!t) return;
   const now = Date.now(); const wasDone = t.done; const nextDone = !wasDone;
   t.done = nextDone;
+  t.completedAt = nextDone ? new Date(now).toISOString() : null;
   updateWorkdayCompletionState(t, nextDone, now);
   if (nextDone) stopTaskTimer(t, { silent: true });
   if (nextDone) _cb.markRecentlyCompleted?.(id);
@@ -366,6 +369,7 @@ export function markTaskDone(id) {
   const t = findTask(id); if (!t) return;
   if (t.done) { _cb.toast?.('Задача уже выполнена'); return }
   const now = Date.now(); t.done = true;
+  t.completedAt = new Date(now).toISOString();
   updateWorkdayCompletionState(t, true, now);
   stopTaskTimer(t, { silent: true });
   _cb.markRecentlyCompleted?.(id);
@@ -423,7 +427,14 @@ function todayStartIso() {
 export function toggleTaskPriority(id) {
   const t = findTask(id);
   if (!t) return { ok: false, reason: 'not-found' };
-  const nextPriority = !t.priority;
+  return setTaskPriority(id, !t.priority);
+}
+
+export function setTaskPriority(id, enabled) {
+  const t = findTask(id);
+  if (!t) return { ok: false, reason: 'not-found' };
+  const nextPriority = enabled === true;
+  if (t.priority === nextPriority) return { ok: true, reason: 'unchanged' };
   if (nextPriority) {
     let activePriorityCount = 0;
     walkTasks(tasks, (item) => {

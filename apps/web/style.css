@@ -48,8 +48,37 @@ body.sidebar-resizing{cursor:ew-resize}
 .calendar.is-collapsed .cal-viewport{height:calc(var(--cal-cell-size) + 8px);min-height:calc(var(--cal-cell-size) + 8px)}
 .calendar.is-collapsed .cal-week{display:none}
 .calendar.is-collapsed .cal-week.is-active{display:grid}
-.yearplan-access{margin:0 6px 0}
-.yearplan-btn{width:100%}
+.yearplan-access{margin:0 6px 0;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.yearplan-btn{width:100%;margin:0}
+.graph-view{display:flex;flex-direction:column;gap:14px;padding:6px}
+.graph-view-header{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.graph-view-controls{display:flex;align-items:center;gap:8px}
+.graph-view-month{font-weight:800;font-size:18px;min-width:170px;text-align:center}
+.graph-columns{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;align-items:start}
+.graph-column{background:var(--surface);border:1px solid var(--toast-border);border-radius:var(--radius-md);padding:8px;display:flex;flex-direction:column;gap:8px;min-height:320px}
+.graph-column-title{font-size:13px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;padding:2px 4px}
+.graph-day-list{display:flex;flex-direction:column;gap:8px}
+.graph-day-card{position:relative;overflow:hidden;border:1px solid var(--toast-border);border-radius:var(--radius-sm);background:var(--hover);min-height:96px}
+.graph-day-progress{position:absolute;left:0;right:0;bottom:0;height:var(--graph-progress,0%);background:var(--graph-progress-color,var(--accent-soft));pointer-events:none;transition:height .2s ease,background-color .2s ease}
+.graph-day-card.is-low{--graph-progress-color:color-mix(in srgb,var(--accent-soft) 80%,transparent)}
+.graph-day-card.is-mid{--graph-progress-color:color-mix(in srgb,var(--accent-soft-strong) 70%,transparent)}
+.graph-day-card.is-high{--graph-progress-color:color-mix(in srgb,var(--accent) 24%,transparent)}
+.graph-day-card.is-hit{--graph-progress-color:color-mix(in srgb,var(--success) 26%,transparent);border-color:var(--success-border)}
+.graph-day-content{position:relative;z-index:1;padding:8px;display:flex;flex-direction:column;gap:4px}
+.graph-day-card.is-today{border-color:var(--accent-border);box-shadow:0 0 0 2px var(--accent-soft)}
+.graph-day-card.is-hit.is-today{box-shadow:0 0 0 2px color-mix(in srgb,var(--success) 22%,transparent)}
+.graph-day-card.is-out{opacity:.48;background:transparent}
+.graph-day-card.is-out .graph-day-date,.graph-day-card.is-out .graph-day-metric{color:var(--hint)}
+.graph-day-card.is-out .graph-day-progress{display:none}
+.graph-day-date{font-size:13px;font-weight:800}
+.graph-day-metric{font-size:12px;color:var(--muted)}
+@media (max-width:980px){
+  .graph-columns{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:620px){
+  .graph-columns{grid-template-columns:1fr}
+  .graph-view-month{min-width:0;font-size:16px}
+}
 .year-plan{display:flex;flex-direction:column;gap:12px;padding:6px}
 .year-plan-header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .year-plan-controls{display:flex;align-items:center;gap:6px}
@@ -525,8 +554,11 @@ body.theme-dark .note-btn:focus-visible,body.theme-dark .timer-btn:focus-visible
 .completed-list{display:flex;flex-direction:column;gap:6px;overflow-y:auto;overflow-x:hidden;min-height:0;padding-right:2px}
 .completed-list .task{opacity:.76}
 .today-priority-block{display:flex;flex-direction:column;gap:8px;margin-bottom:6px;padding:10px;border:1px solid var(--accent-border);border-radius:var(--radius-md);background:var(--accent-soft)}
+.today-priority-block.is-drop-target{background:var(--accent-soft-strong);box-shadow:0 0 0 2px var(--accent-border) inset}
 .today-priority-title{margin:0;font-size:12px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--muted)}
 .today-priority-list{display:flex;flex-direction:column;gap:6px}
+.today-regular-block{display:flex;flex-direction:column;gap:6px;min-height:56px;border-radius:var(--radius-md)}
+.today-regular-block.is-drop-target{background:var(--hover);box-shadow:0 0 0 2px var(--hint) inset}
 
 @keyframes taskCheckboxBounce{0%{transform:scale(1)}45%{transform:scale(1.14)}100%{transform:scale(1)}}
 
